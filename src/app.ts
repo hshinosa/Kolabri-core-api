@@ -51,6 +51,16 @@ app.use(
 
 app.use(helmet({
     crossOriginResourcePolicy: { policy: 'cross-origin' },
+    contentSecurityPolicy: {
+        directives: {
+            defaultSrc: ["'self'"],
+            scriptSrc: ["'self'"],
+            styleSrc: ["'self'", "'unsafe-inline'"],
+            imgSrc: ["'self'", "data:", "blob:"],
+            connectSrc: ["'self'", process.env.CLIENT_URL || 'http://localhost:8000'],
+        },
+    },
+    hsts: { maxAge: 31536000, includeSubDomains: true },
 }));
 
 // Body parsing
