@@ -2,13 +2,13 @@ import prisma from '../config/database.js';
 import { ApiError } from '../middleware/errorHandler.js';
 import { CreateCourseInput, JoinCourseInput } from '../validators/course.validator.js';
 import { generateJoinCode } from '../utils/helpers.js';
+import { cache } from '../utils/cache.js';
 
 export class CourseService {
     /**
      * Create a new course (lecturer only)
      */
     static async createCourse(data: CreateCourseInput, lecturerId: string) {
-        // Check if course code already exists
         const existingCourse = await prisma.course.findUnique({
             where: { code: data.code },
         });
@@ -17,7 +17,6 @@ export class CourseService {
             throw ApiError.conflict('Course code already exists');
         }
 
-        // Generate unique join code
         let joinCode = generateJoinCode();
         let attempts = 0;
         const maxAttempts = 10;
@@ -37,7 +36,6 @@ export class CourseService {
             throw ApiError.internal('Failed to generate unique join code');
         }
 
-        // Create course
         const course = await prisma.course.create({
             data: {
                 code: data.code,
@@ -53,6 +51,7 @@ export class CourseService {
             },
         });
 
+        cache.invalidatePattern(`courses:${lecturerId}:`);
         return course;
     }
 
@@ -68,6 +67,10 @@ export class CourseService {
 
         if (!course) {
             throw ApiError.notFound('Invalid join code');
+        }
+
+        if (course.isArchived) {
+            throw ApiError.forbidden('This course is archived');
         }
 
         if (!course.isActive) {
@@ -108,10 +111,14 @@ export class CourseService {
      * Get all courses for a user (owned or enrolled)
      */
     static async getMyCourses(userId: string, role: string) {
+        const cacheKey = `courses:${userId}:${role}`;
+        const cached = cache.get(cacheKey);
+        if (cached) return cached;
+
+        let result;
         if (role === 'lecturer') {
-            // Get owned courses
             const courses = await prisma.course.findMany({
-                where: { ownerId: userId },
+                where: { ownerId: userId, isArchived: false },
                 include: {
                     _count: {
                         select: {
@@ -123,7 +130,7 @@ export class CourseService {
                 orderBy: { createdAt: 'desc' },
             });
 
-            return courses.map((course: typeof courses[number]) => ({
+            result = courses.map((course: typeof courses[number]) => ({
                 id: course.id,
                 code: course.code,
                 name: course.name,
@@ -134,7 +141,6 @@ export class CourseService {
                 createdAt: course.createdAt,
             }));
         } else {
-            // Get enrolled courses
             const enrollments = await prisma.courseStudent.findMany({
                 where: { userId },
                 include: {
@@ -152,7 +158,9 @@ export class CourseService {
                 orderBy: { enrolledAt: 'desc' },
             });
 
-            return enrollments.map((enrollment: typeof enrollments[number]) => ({
+            result = enrollments
+                .filter((enrollment: typeof enrollments[number]) => !enrollment.course.isArchived)
+                .map((enrollment: typeof enrollments[number]) => ({
                 id: enrollment.course.id,
                 code: enrollment.course.code,
                 name: enrollment.course.name,
@@ -163,6 +171,9 @@ export class CourseService {
                 enrolledAt: enrollment.enrolledAt,
             }));
         }
+
+        cache.set(cacheKey, result, 3 * 60 * 1000);
+        return result;
     }
 
     /**
@@ -217,6 +228,10 @@ export class CourseService {
 
         if (!course) {
             throw ApiError.notFound('Course not found');
+        }
+
+        if (course.isArchived) {
+            throw ApiError.forbidden('This course is archived');
         }
 
         // Check access: owner or enrolled student

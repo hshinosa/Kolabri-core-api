@@ -1,0 +1,16 @@
+// Prisma Schema Addition for AI Settings
+// Add this to schema.prisma
+
+model AiProvider {
+  id          String   @id @default(uuid())
+  name        String   @unique // "openai", "anthropic", "google", etc.
+  displayName String   @map("display_name") // "OpenAI", "Anthropic", "Google Gemini"
+  apiKey      String   @map("api_key") // Encrypted API key
+  baseUrl     String?  @map("base_url") // Optional custom base URL
+  isActive    Boolean  @default(false) @map("is_active")
+  config      Json?    // Additional config (model list, parameters, etc.)
+  createdAt   DateTime @default(now()) @map("created_at")
+  updatedAt   DateTime @updatedAt @map("updated_at")
+
+  @@map("ai_providers")
+}

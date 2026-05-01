@@ -34,6 +34,8 @@ model User {
 
   // Relations
   ownedCourses    Course[]        @relation("CourseOwner")
+  archivedCourses Course[]        @relation("ArchivedCourses")
+  createdTemplates CourseTemplate[]
   enrolledCourses CourseStudent[]
   groupMembers    GroupMember[]
   learningGoals   LearningGoal[]
@@ -41,7 +43,14 @@ model User {
   knowledgeBases  KnowledgeBase[]
   chatMessages    ChatMessage[]
   aiChats         AiChat[]
+  aiUsages        AiUsage[]
+  aiComparisons   AiModelComparison[]
+  auditLogs       AuditLog[]
 
+  @@index([role])
+  @@index([isActive])
+  @@index([createdAt])
+  @@index([role, isActive])
   @@map("users")
 }
 
@@ -56,6 +65,8 @@ model Course {
   description String?
   joinCode    String   @unique @map("join_code")
   isActive    Boolean  @default(true) @map("is_active")
+  isArchived  Boolean  @default(false) @map("is_archived")
+  archivedAt  DateTime? @map("archived_at")
   createdAt   DateTime @default(now()) @map("created_at")
   updatedAt   DateTime @updatedAt @map("updated_at")
 
@@ -63,12 +74,40 @@ model Course {
   ownerId String @map("owner_id")
   owner   User   @relation("CourseOwner", fields: [ownerId], references: [id], onDelete: Cascade)
 
+  archivedById String? @map("archived_by_id")
+  archivedBy   User?   @relation("ArchivedCourses", fields: [archivedById], references: [id], onDelete: SetNull)
+
   // Relations
   students       CourseStudent[]
   groups         Group[]
   knowledgeBases KnowledgeBase[]
+  aiUsages       AiUsage[]
 
+  @@index([ownerId])
+  @@index([code])
+  @@index([isActive])
+  @@index([isArchived])
+  @@index([createdAt])
+  @@index([ownerId, isActive])
   @@map("courses")
+}
+
+model CourseTemplate {
+  id                    String   @id @default(uuid())
+  name                  String
+  description           String?
+  namePattern           String   @map("name_pattern")
+  descriptionTemplate   String?  @map("description_template")
+  defaultGroups         Json     @map("default_groups")
+  createdById           String   @map("created_by_id")
+  createdAt             DateTime @default(now()) @map("created_at")
+  updatedAt             DateTime @updatedAt @map("updated_at")
+
+  createdBy User @relation(fields: [createdById], references: [id], onDelete: Cascade)
+
+  @@index([createdById])
+  @@index([createdAt])
+  @@map("course_templates")
 }
 
 model CourseStudent {
@@ -82,6 +121,8 @@ model CourseStudent {
   user     User   @relation(fields: [userId], references: [id], onDelete: Cascade)
 
   @@unique([courseId, userId])
+  @@index([courseId])
+  @@index([userId])
   @@map("course_students")
 }
 
@@ -106,6 +147,7 @@ model Group {
   members    GroupMember[]
   chatSpaces ChatSpace[]
 
+  @@index([courseId])
   @@map("groups")
 }
 
@@ -120,6 +162,8 @@ model GroupMember {
   user    User   @relation(fields: [userId], references: [id], onDelete: Cascade)
 
   @@unique([groupId, userId])
+  @@index([groupId])
+  @@index([userId])
   @@map("group_members")
 }
 
@@ -149,6 +193,7 @@ model ChatSpace {
   goals       LearningGoal[]
   reflections Reflection[]
 
+  @@index([groupId])
   @@map("chat_spaces")
 }
 
@@ -170,6 +215,8 @@ model ChatMessage {
   senderId    String    @map("sender_id")
   sender      User      @relation(fields: [senderId], references: [id], onDelete: Cascade)
 
+  @@index([chatSpaceId])
+  @@index([senderId])
   @@map("chat_messages")
 }
 
@@ -241,6 +288,8 @@ model KnowledgeBase {
   uploadedBy String @map("uploaded_by")
   uploader   User   @relation(fields: [uploadedBy], references: [id], onDelete: Cascade)
 
+  @@index([courseId])
+  @@index([uploadedBy])
   @@map("knowledge_bases")
 }
 
@@ -259,6 +308,7 @@ model AiChat {
   user     User           @relation(fields: [userId], references: [id], onDelete: Cascade)
   messages AiChatMessage[]
 
+  @@index([userId])
   @@map("ai_chats")
 }
 
@@ -272,5 +322,110 @@ model AiChatMessage {
   chatId String @map("chat_id")
   chat   AiChat @relation(fields: [chatId], references: [id], onDelete: Cascade)
 
+  @@index([chatId])
   @@map("ai_chat_messages")
+}
+
+// ============================================
+// AI PROVIDER SETTINGS (Admin Configuration)
+// ============================================
+
+model AiProvider {
+  id          String   @id @default(uuid())
+  name        String   @unique // "openai", "anthr0pic", "google", etc.
+  displayName String   @map("display_name") // "0penAI", "", "Google Gemini"
+  apiKey      String   @map("api_key") // Encrypted API key
+  baseUrl     String?  @map("base_url") // Optional custom base URL
+  isActive    Boolean  @default(false) @map("is_active")
+  fallbackOrder Int    @default(0) @map("fallback_order")
+  config      Json?    // Additional config (model list, parameters, etc.)
+  createdAt   DateTime @default(now()) @map("created_at")
+  updatedAt   DateTime @updatedAt @map("updated_at")
+
+  usages      AiUsage[]
+  comparisonResults AiModelComparisonResult[]
+
+  @@index([isActive, fallbackOrder])
+  @@map("ai_providers")
+}
+
+model AiUsage {
+  id               String   @id @default(uuid())
+  userId           String   @map("user_id")
+  courseId         String?  @map("course_id")
+  provider         String
+  providerId       String?  @map("provider_id")
+  model            String
+  promptTokens     Int      @map("prompt_tokens")
+  completionTokens Int      @map("completion_tokens")
+  totalTokens      Int      @map("total_tokens")
+  estimatedCost    Float    @map("estimated_cost")
+  latencyMs        Int      @map("latency_ms")
+  createdAt        DateTime @default(now()) @map("created_at")
+
+  user     User       @relation(fields: [userId], references: [id], onDelete: Cascade)
+  course   Course?    @relation(fields: [courseId], references: [id], onDelete: SetNull)
+  providerRef AiProvider? @relation(fields: [providerId], references: [id], onDelete: SetNull)
+
+  @@index([userId, createdAt])
+  @@index([courseId, createdAt])
+  @@index([provider, createdAt])
+  @@map("ai_usages")
+}
+
+model AiModelComparison {
+  id        String   @id @default(uuid())
+  prompt    String
+  createdBy String   @map("created_by")
+  createdAt DateTime @default(now()) @map("created_at")
+
+  creator User @relation(fields: [createdBy], references: [id], onDelete: Cascade)
+  results AiModelComparisonResult[]
+
+  @@index([createdBy, createdAt])
+  @@map("ai_model_comparisons")
+}
+
+model AiModelComparisonResult {
+  id            String   @id @default(uuid())
+  comparisonId  String   @map("comparison_id")
+  provider      String
+  providerId    String?  @map("provider_id")
+  model         String
+  response      String
+  promptTokens  Int      @map("prompt_tokens")
+  completionTokens Int   @map("completion_tokens")
+  totalTokens   Int      @map("total_tokens")
+  estimatedCost Float    @map("estimated_cost")
+  latencyMs     Int      @map("latency_ms")
+  createdAt     DateTime @default(now()) @map("created_at")
+
+  comparison  AiModelComparison @relation(fields: [comparisonId], references: [id], onDelete: Cascade)
+  providerRef AiProvider?       @relation(fields: [providerId], references: [id], onDelete: SetNull)
+
+  @@index([comparisonId])
+  @@index([provider, model])
+  @@map("ai_model_comparison_results")
+}
+
+// ============================================
+// AUDIT LOGS (Admin Actions)
+// ============================================
+
+model AuditLog {
+  id         String   @id @default(uuid())
+  action     String
+  entityType String   @map("entity_type")
+  entityId   String   @map("entity_id")
+  userId     String   @map("user_id")
+  changes    Json?
+  metadata   Json?
+  createdAt  DateTime @default(now()) @map("created_at")
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([entityType, entityId])
+  @@index([userId])
+  @@index([createdAt])
+  @@map("audit_logs")
 }

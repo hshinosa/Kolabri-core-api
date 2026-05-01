@@ -2,6 +2,7 @@ import prisma from '../config/database.js';
 import { ApiError } from '../middleware/errorHandler.js';
 import { CreateGroupInput } from '../validators/group.validator.js';
 import { randomBytes } from 'crypto';
+import { cache } from '../utils/cache.js';
 
 // Generate a unique join code
 const generateJoinCode = (): string => {

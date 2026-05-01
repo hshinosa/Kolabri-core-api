@@ -1,5 +1,7 @@
 import prisma from '../config/database.js';
 import { ApiError } from '../middleware/errorHandler.js';
+import { aiEngineService } from './aiEngine.service.js';
+import { aiService } from './ai.service.js';
 
 export class AiChatService {
     /**
@@ -46,7 +48,61 @@ export class AiChatService {
     }
 
     /**
-     * Get a specific chat with messages
+     * Get a specific chat metadata (without messages)
+     */
+    static async getChatMetadata(chatId: string, userId: string) {
+        const chat = await prisma.aiChat.findUnique({
+            where: { id: chatId },
+        });
+
+        if (!chat) {
+            throw ApiError.notFound('Chat not found');
+        }
+
+        if (chat.userId !== userId) {
+            throw ApiError.forbidden('You do not have access to this chat');
+        }
+
+        return {
+            id: chat.id,
+            title: chat.title,
+            createdAt: chat.createdAt,
+            updatedAt: chat.updatedAt,
+        };
+    }
+
+    /**
+     * Get messages for a specific chat
+     */
+    static async getChatMessages(chatId: string, userId: string) {
+        const chat = await prisma.aiChat.findUnique({
+            where: { id: chatId },
+            select: { userId: true },
+        });
+
+        if (!chat) {
+            throw ApiError.notFound('Chat not found');
+        }
+
+        if (chat.userId !== userId) {
+            throw ApiError.forbidden('You do not have access to this chat');
+        }
+
+        const messages = await prisma.aiChatMessage.findMany({
+            where: { chatId },
+            orderBy: { createdAt: 'asc' },
+        });
+
+        return messages.map((m) => ({
+            id: m.id,
+            role: m.role,
+            content: m.content,
+            createdAt: m.createdAt,
+        }));
+    }
+
+    /**
+     * Get a specific chat with messages (legacy - for backward compatibility)
      */
     static async getChat(chatId: string, userId: string) {
         const chat = await prisma.aiChat.findUnique({
@@ -134,19 +190,72 @@ export class AiChatService {
         };
     }
 
+    static async getChatWithUser(chatId: string, userId: string) {
+        const chat = await prisma.aiChat.findUnique({
+            where: { id: chatId },
+            include: {
+                messages: {
+                    orderBy: { createdAt: 'asc' as const },
+                    take: 40,
+                },
+                user: { select: { name: true } },
+            },
+        });
+
+        if (!chat || chat.userId !== userId) return null;
+
+        return {
+            messages: chat.messages,
+            userName: chat.user?.name ?? null,
+        };
+    }
+
     /**
      * Send a message and get AI response
      */
     static async sendMessage(chatId: string, userId: string, content: string) {
-        // Add user message
         const userMessage = await this.addMessage(chatId, userId, 'user', content);
 
-        // TODO: Integrate with actual AI service (OpenAI, Gemini, etc.)
-        // For now, return a placeholder response
-        const aiResponse = `Ini adalah respons placeholder dari AI. Pesan Anda: "${content}"`;
+        const chat = await prisma.aiChat.findUnique({
+            where: { id: chatId },
+            include: {
+                messages: {
+                    orderBy: { createdAt: 'asc' },
+                    take: 40,
+                },
+                user: { select: { name: true } },
+            },
+        });
 
-        // Add AI response
-        const assistantMessage = await this.addMessage(chatId, userId, 'assistant', aiResponse);
+        const history = (chat?.messages ?? [])
+            .filter((m) => m.id !== userMessage.id)
+            .map((m) => ({
+                role: m.role as 'user' | 'assistant',
+                content: m.content,
+            }));
+
+        const activeProviders = await prisma.aiProvider.count({ where: { isActive: true } });
+
+        const result = activeProviders > 0
+            ? await aiService.sendWithConfiguredFallback(content, {
+                userId,
+                history,
+                systemPrompt: chat?.user?.name
+                    ? `You are a helpful learning assistant for ${chat.user.name}. Answer clearly and supportively.`
+                    : 'You are a helpful learning assistant. Answer clearly and supportively.',
+            })
+            : await aiEngineService.personalChat(
+                content,
+                history,
+                chat?.user?.name ?? undefined,
+            );
+
+        const assistantMessage = await this.addMessage(
+            chatId,
+            userId,
+            'assistant',
+            'content' in result ? result.content : result.reply,
+        );
 
         return {
             userMessage,

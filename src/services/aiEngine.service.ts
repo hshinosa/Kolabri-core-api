@@ -188,7 +188,7 @@ export class AIEngineService {
         };
 
         if (this.secret) {
-            headers['X-API-Key'] = this.secret;
+            headers['Authorization'] = `Bearer ${this.secret}`;
         }
 
         return headers;
@@ -527,6 +527,56 @@ export class AIEngineService {
             return {
                 success: false,
                 prompt: '',
+                error: error instanceof Error ? error.message : 'Unknown error',
+            };
+        }
+    }
+
+    async personalChatStream(
+        message: string,
+        history: Array<{ role: 'user' | 'assistant'; content: string }>,
+        userName?: string
+    ): Promise<globalThis.Response> {
+        return fetch(`${this.baseUrl}/api/chat/personal/stream`, {
+            method: 'POST',
+            headers: this.getHeaders(),
+            body: JSON.stringify({
+                message,
+                history: history.slice(-20),
+                user_name: userName,
+            }),
+            signal: AbortSignal.timeout(this.timeout),
+        });
+    }
+
+    async personalChat(
+        message: string,
+        history: Array<{ role: 'user' | 'assistant'; content: string }>,
+        userName?: string
+    ): Promise<{ reply: string; success: boolean; tokens_used: number; error?: string }> {
+        try {
+            const response = await fetch(`${this.baseUrl}/api/chat/personal`, {
+                method: 'POST',
+                headers: this.getHeaders(),
+                body: JSON.stringify({
+                    message,
+                    history: history.slice(-20),
+                    user_name: userName,
+                }),
+                signal: AbortSignal.timeout(this.timeout),
+            });
+
+            if (!response.ok) {
+                throw new Error(`AI Engine responded with ${response.status}`);
+            }
+
+            return await response.json() as { reply: string; success: boolean; tokens_used: number; error?: string };
+        } catch (error) {
+            logger.error('AI Engine personal chat failed:', error);
+            return {
+                reply: 'Maaf, AI Assistant sedang tidak tersedia saat ini. Silakan coba lagi nanti.',
+                success: false,
+                tokens_used: 0,
                 error: error instanceof Error ? error.message : 'Unknown error',
             };
         }

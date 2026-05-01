@@ -7,6 +7,16 @@ import { JwtPayload } from '../middleware/auth.js';
 
 const SALT_ROUNDS = 10;
 
+// In-memory token blacklist (for revoked tokens)
+const tokenBlacklist = new Set<string>();
+
+export interface RefreshTokenPayload {
+    userId: string;
+    email: string;
+    role: 'student' | 'lecturer' | 'admin';
+    type: 'refresh';
+}
+
 export class AuthService {
     /**
      * Register a new user
@@ -41,15 +51,22 @@ export class AuthService {
             },
         });
 
-        // Generate JWT token for auto-login after registration
-        const token = this.generateToken({
+        // Generate access and refresh tokens for auto-login after registration
+        const accessToken = this.generateAccessToken({
+            userId: user.id,
+            email: user.email,
+            role: user.role,
+        });
+
+        const refreshToken = this.generateRefreshToken({
             userId: user.id,
             email: user.email,
             role: user.role,
         });
 
         return {
-            token,
+            accessToken,
+            refreshToken,
             user,
         };
     }
@@ -78,15 +95,22 @@ export class AuthService {
             throw ApiError.unauthorized('Invalid email or password');
         }
 
-        // Generate JWT
-        const token = this.generateToken({
+        // Generate access and refresh tokens
+        const accessToken = this.generateAccessToken({
+            userId: user.id,
+            email: user.email,
+            role: user.role,
+        });
+
+        const refreshToken = this.generateRefreshToken({
             userId: user.id,
             email: user.email,
             role: user.role,
         });
 
         return {
-            token,
+            accessToken,
+            refreshToken,
             user: {
                 id: user.id,
                 name: user.name,
@@ -120,16 +144,104 @@ export class AuthService {
     }
 
     /**
-     * Generate JWT token
+     * Generate access token (short-lived: 15 minutes)
      */
-    private static generateToken(payload: JwtPayload): string {
+    private static generateAccessToken(payload: JwtPayload): string {
         const secret = process.env.JWT_SECRET;
-        const expiresIn = process.env.JWT_EXPIRES_IN || '7d';
 
         if (!secret) {
             throw ApiError.internal('JWT secret not configured');
         }
 
-        return jwt.sign(payload, secret, { expiresIn } as jwt.SignOptions);
+        return jwt.sign(payload, secret, { expiresIn: '15m' } as jwt.SignOptions);
+    }
+
+    /**
+     * Generate refresh token (long-lived: 7 days)
+     */
+    private static generateRefreshToken(payload: Omit<JwtPayload, 'type'>): string {
+        const secret = process.env.JWT_REFRESH_SECRET || process.env.JWT_SECRET;
+
+        if (!secret) {
+            throw ApiError.internal('JWT secret not configured');
+        }
+
+        const refreshPayload: RefreshTokenPayload = {
+            ...payload,
+            type: 'refresh',
+        };
+
+        return jwt.sign(refreshPayload, secret, { expiresIn: '7d' } as jwt.SignOptions);
+    }
+
+    /**
+     * Refresh access token using refresh token
+     */
+    static async refreshAccessToken(refreshToken: string) {
+        const secret = process.env.JWT_REFRESH_SECRET || process.env.JWT_SECRET;
+
+        if (!secret) {
+            throw ApiError.internal('JWT secret not configured');
+        }
+
+        // Check if token is blacklisted
+        if (tokenBlacklist.has(refreshToken)) {
+            throw ApiError.unauthorized('Token has been revoked');
+        }
+
+        try {
+            const decoded = jwt.verify(refreshToken, secret) as RefreshTokenPayload;
+
+            // Verify it's a refresh token
+            if (decoded.type !== 'refresh') {
+                throw ApiError.unauthorized('Invalid token type');
+            }
+
+            // Verify user still exists and is active
+            const user = await prisma.user.findUnique({
+                where: { id: decoded.userId },
+            });
+
+            if (!user || !user.isActive) {
+                throw ApiError.unauthorized('User not found or inactive');
+            }
+
+            // Generate new access token
+            const newAccessToken = this.generateAccessToken({
+                userId: decoded.userId,
+                email: decoded.email,
+                role: decoded.role,
+            });
+
+            return {
+                accessToken: newAccessToken,
+            };
+        } catch (error) {
+            if (error instanceof jwt.JsonWebTokenError) {
+                throw ApiError.unauthorized('Invalid refresh token');
+            } else if (error instanceof jwt.TokenExpiredError) {
+                throw ApiError.unauthorized('Refresh token expired');
+            }
+            throw error;
+        }
+    }
+
+    /**
+     * Logout and revoke refresh token
+     */
+    static async logout(refreshToken: string) {
+        // Add token to blacklist
+        tokenBlacklist.add(refreshToken);
+
+        return {
+            message: 'Logged out successfully',
+        };
+    }
+
+    /**
+     * Check if token is blacklisted
+     */
+    static isTokenBlacklisted(token: string): boolean {
+        return tokenBlacklist.has(token);
     }
 }

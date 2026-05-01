@@ -1,5 +1,6 @@
 import { Response, NextFunction } from 'express';
 import { AiChatService } from '../services/aiChat.service.js';
+import { aiEngineService } from '../services/aiEngine.service.js';
 import { AuthenticatedRequest } from '../middleware/auth.js';
 
 export class AiChatController {
@@ -40,14 +41,30 @@ export class AiChatController {
 
     /**
      * GET /api/ai-chats/:id
-     * Get a specific chat with messages
+     * Get a specific chat WITHOUT messages (metadata only)
      */
     static async show(req: AuthenticatedRequest, res: Response, next: NextFunction) {
         try {
-            const chat = await AiChatService.getChat(req.params.id, req.user!.userId);
+            const chat = await AiChatService.getChatMetadata(req.params.id, req.user!.userId);
 
             res.json({
                 data: chat,
+            });
+        } catch (error) {
+            next(error);
+        }
+    }
+
+    /**
+     * GET /api/ai-chats/:id/messages
+     * Get messages for a specific chat
+     */
+    static async getMessages(req: AuthenticatedRequest, res: Response, next: NextFunction) {
+        try {
+            const messages = await AiChatService.getChatMessages(req.params.id, req.user!.userId);
+
+            res.json({
+                data: messages,
             });
         } catch (error) {
             next(error);
@@ -108,6 +125,88 @@ export class AiChatController {
                     message: 'Chat deleted successfully',
                 },
             });
+        } catch (error) {
+            next(error);
+        }
+    }
+
+    static async streamMessage(req: AuthenticatedRequest, res: Response, next: NextFunction) {
+        try {
+            const { content } = req.body;
+            const userId = req.user!.userId;
+            const chatId = req.params.id;
+
+            const userMessage = await AiChatService.addMessage(chatId, userId, 'user', content);
+
+            const chat = await AiChatService.getChatWithUser(chatId, userId);
+            const history = (chat?.messages ?? [])
+                .filter((m: { id: string }) => m.id !== userMessage.id)
+                .map((m: { role: string; content: string }) => ({
+                    role: m.role as 'user' | 'assistant',
+                    content: m.content,
+                }));
+
+            res.setHeader('Content-Type', 'text/event-stream');
+            res.setHeader('Cache-Control', 'no-cache');
+            res.setHeader('Connection', 'keep-alive');
+            res.setHeader('X-Accel-Buffering', 'no');
+            res.flushHeaders();
+
+            res.write(`data: ${JSON.stringify({ type: 'user_message', id: userMessage.id })}\n\n`);
+
+            const streamResp = await aiEngineService.personalChatStream(
+                content,
+                history,
+                chat?.userName ?? undefined,
+            );
+
+            if (!streamResp.ok || !streamResp.body) {
+                const fallback = 'Maaf, AI Assistant sedang tidak tersedia.';
+                await AiChatService.addMessage(chatId, userId, 'assistant', fallback);
+                res.write(`data: ${JSON.stringify({ content: fallback })}\n\n`);
+                res.write('data: [DONE]\n\n');
+                res.end();
+                return;
+            }
+
+            let fullReply = '';
+            const reader = streamResp.body.getReader();
+            const decoder = new TextDecoder();
+
+            while (true) {
+                const { done, value } = await reader.read();
+                if (done) break;
+
+                const text = decoder.decode(value, { stream: true });
+                const lines = text.split('\n');
+
+                for (const line of lines) {
+                    if (!line.startsWith('data: ')) continue;
+                    const payload = line.slice(6);
+
+                    if (payload === '[DONE]') {
+                        continue;
+                    }
+
+                    try {
+                        const parsed = JSON.parse(payload);
+                        if (parsed.content) {
+                            fullReply += parsed.content;
+                        }
+                    } catch {
+                    }
+
+                    res.write(`${line}\n\n`);
+                }
+            }
+
+            if (fullReply) {
+                const saved = await AiChatService.addMessage(chatId, userId, 'assistant', fullReply);
+                res.write(`data: ${JSON.stringify({ type: 'assistant_saved', id: saved.id })}\n\n`);
+            }
+
+            res.write('data: [DONE]\n\n');
+            res.end();
         } catch (error) {
             next(error);
         }

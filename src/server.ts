@@ -5,6 +5,7 @@ import app from './app.js';
 import { initSocketIO } from './socket/index.js';
 import { connectMongoDB } from './config/mongodb.js';
 import { logger } from './utils/logger.js';
+import { setupWebSocket } from './websocket/server.js';
 
 const PORT = process.env.PORT || 3000;
 
@@ -18,6 +19,9 @@ async function bootstrap() {
 
         // Initialize Socket.IO
         initSocketIO(server);
+
+        // Initialize admin WebSocket
+        setupWebSocket(server);
 
         // Start server
         server.listen(PORT, () => {

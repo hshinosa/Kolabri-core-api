@@ -31,6 +31,8 @@ router.patch('/:id', validateBody(updateTitleSchema), AiChatController.updateTit
 router.delete('/:id', AiChatController.delete);
 
 // Messages
+router.get('/:id/messages', AiChatController.getMessages);
 router.post('/:id/messages', validateBody(sendMessageSchema), AiChatController.sendMessage);
+router.post('/:id/messages/stream', validateBody(sendMessageSchema), AiChatController.streamMessage);
 
 export default router;

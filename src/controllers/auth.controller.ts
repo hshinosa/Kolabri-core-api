@@ -9,10 +9,10 @@ export class AuthController {
      */
     static async register(req: Request, res: Response, next: NextFunction) {
         try {
-            const user = await AuthService.register(req.body);
+            const result = await AuthService.register(req.body);
 
             res.status(201).json({
-                data: user,
+                data: result,
                 meta: {
                     message: 'User registered successfully',
                 },
@@ -24,7 +24,7 @@ export class AuthController {
 
     /**
      * POST /api/auth/login
-     * Login user and return JWT token
+     * Login user and return access + refresh tokens
      */
     static async login(req: Request, res: Response, next: NextFunction) {
         try {
@@ -34,6 +34,60 @@ export class AuthController {
                 data: result,
                 meta: {
                     message: 'Login successful',
+                },
+            });
+        } catch (error) {
+            next(error);
+        }
+    }
+
+    /**
+     * POST /api/auth/refresh
+     * Refresh access token using refresh token
+     */
+    static async refresh(req: Request, res: Response, next: NextFunction) {
+        try {
+            const { refreshToken } = req.body;
+
+            if (!refreshToken) {
+                return res.status(400).json({
+                    error: { code: 'BAD_REQUEST', message: 'Refresh token required' },
+                });
+            }
+
+            const result = await AuthService.refreshAccessToken(refreshToken);
+
+            res.json({
+                data: result,
+                meta: {
+                    message: 'Token refreshed successfully',
+                },
+            });
+        } catch (error) {
+            next(error);
+        }
+    }
+
+    /**
+     * POST /api/auth/logout
+     * Logout and revoke refresh token
+     */
+    static async logout(req: Request, res: Response, next: NextFunction) {
+        try {
+            const { refreshToken } = req.body;
+
+            if (!refreshToken) {
+                return res.status(400).json({
+                    error: { code: 'BAD_REQUEST', message: 'Refresh token required' },
+                });
+            }
+
+            const result = await AuthService.logout(refreshToken);
+
+            res.json({
+                data: result,
+                meta: {
+                    message: 'Logged out successfully',
                 },
             });
         } catch (error) {

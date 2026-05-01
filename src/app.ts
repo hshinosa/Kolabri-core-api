@@ -16,13 +16,16 @@ import aiChatRoutes from './routes/aiChat.routes.js';
 import chatSpaceRoutes from './routes/chatSpace.routes.js';
 import healthRoutes from './routes/health.routes.js';
 import analyticsRoutes from './routes/analytics.routes.js';
+import userRoutes from './routes/user.routes.js';
+import dashboardRoutes from './routes/dashboard.routes.js';
+import courseAdminRoutes from './routes/course-admin.routes.js';
+import courseTemplateRoutes from './routes/course-template.routes.js';
+import aiProviderRoutes from './routes/ai-provider.routes.js';
+import adminAiRoutes from './routes/admin-ai.routes.js';
+import auditLogRoutes from './routes/audit-log.routes.js';
 
 const app = express();
 
-// Security middleware
-app.use(helmet());
-
-// CORS configuration
 const allowedOrigins = [
     process.env.CLIENT_URL || 'http://localhost:8000',
     'http://localhost:8000',
@@ -33,19 +36,22 @@ const allowedOrigins = [
 
 app.use(
     cors({
-        origin: (origin, callback) => {
-            // Allow requests with no origin (mobile apps, Postman, etc.)
-            if (!origin) return callback(null, true);
-            
-            if (allowedOrigins.includes(origin) || process.env.NODE_ENV === 'development') {
+        origin: function (origin, callback) {
+            if (!origin || allowedOrigins.includes(origin)) {
                 callback(null, true);
             } else {
-                callback(new Error('Not allowed by CORS'));
+                callback(null, false);
             }
         },
         credentials: true,
+        methods: ['GET', 'POST', 'PUT', 'DELETE', 'PATCH', 'OPTIONS'],
+        allowedHeaders: ['Content-Type', 'Authorization', 'Accept'],
     })
 );
+
+app.use(helmet({
+    crossOriginResourcePolicy: { policy: 'cross-origin' },
+}));
 
 // Body parsing
 app.use(express.json({ limit: '10mb' }));
@@ -66,6 +72,13 @@ app.use('/api/reflections', reflectionRoutes);
 app.use('/api/ai-chats', aiChatRoutes);
 app.use('/api/chat-spaces', chatSpaceRoutes);
 app.use('/api/analytics', analyticsRoutes);
+app.use('/api/admin/users', userRoutes);
+app.use('/api/admin/dashboard', dashboardRoutes);
+app.use('/api/admin/courses', courseAdminRoutes);
+app.use('/api/admin/course-templates', courseTemplateRoutes);
+app.use('/api/admin/ai-providers', aiProviderRoutes);
+app.use('/api/admin/audit-logs', auditLogRoutes);
+app.use('/api/admin', adminAiRoutes);
 app.use('/health', healthRoutes);
 
 // 404 handler
