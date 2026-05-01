@@ -14,6 +14,13 @@ services:
       - "5432:5432"
     volumes:
       - postgres_data:/var/lib/postgresql/data
+    command: >
+      postgres
+      -c shared_buffers=64MB
+      -c work_mem=4MB
+      -c maintenance_work_mem=32MB
+      -c effective_cache_size=256MB
+      -c max_connections=50
     healthcheck:
       test: ["CMD-SHELL", "pg_isready -U postgres"]
       interval: 5s
@@ -26,6 +33,7 @@ services:
       - "27017:27017"
     volumes:
       - mongo_data:/data/db
+    command: mongod --wiredTigerCacheSizeGB 0.25
     healthcheck:
       test: ["CMD", "mongosh", "--eval", "db.adminCommand('ping')"]
       interval: 5s
@@ -36,8 +44,24 @@ services:
     image: redis:7-alpine
     ports:
       - "6379:6379"
+    command: redis-server --maxmemory 64mb --maxmemory-policy allkeys-lru
     healthcheck:
       test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 3s
+      retries: 5
+
+  qdrant:
+    image: qdrant/qdrant:latest
+    ports:
+      - "6333:6333"
+      - "6334:6334"
+    volumes:
+      - qdrant_data:/qdrant/storage
+    environment:
+      QDRANT__STORAGE__ON_DISK_PAYLOAD: "true"
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:6333/healthz"]
       interval: 5s
       timeout: 3s
       retries: 5
@@ -54,14 +78,16 @@ services:
     environment:
       HOST: "0.0.0.0"
       PORT: "8001"
-      ENV: development
-      DEBUG: "true"
+      ENV: production
+      DEBUG: "false"
       MONGO_URI: mongodb://mongodb:27017
       MONGO_DB_NAME: kolabri
       ENABLE_MONGODB_LOGGING: "true"
       CORE_API_URL: http://core-api:3000
       CORE_API_SECRET: shared-secret-key
-      CHROMA_PERSIST_DIR: /app/data/chroma
+      QDRANT_URL: http://qdrant:6333
+      QDRANT_COLLECTION_PREFIX: kolabri
+      EMBEDDING_MODEL: BAAI/bge-small-en-v1.5
       ENABLE_EFFICIENCY_GUARD: "true"
       CACHE_TTL_SECONDS: "3600"
       RATE_LIMIT_MAX_REQUESTS: "100"
@@ -73,12 +99,14 @@ services:
         condition: service_healthy
       redis:
         condition: service_healthy
+      qdrant:
+        condition: service_healthy
     healthcheck:
       test: ["CMD", "curl", "-f", "http://localhost:8001/api/health"]
       interval: 10s
       timeout: 5s
       retries: 5
-      start_period: 15s
+      start_period: 30s
 
   core-api:
     build:
@@ -88,7 +116,8 @@ services:
       - "3000:3000"
     environment:
       PORT: "3000"
-      NODE_ENV: development
+      NODE_ENV: production
+      NODE_OPTIONS: "--max-old-space-size=256"
       DATABASE_URL: postgresql://postgres:123hshi@postgres:5432/kolabri-db?schema=public
       MONGODB_URL: mongodb://mongodb:27017/kolabri
       JWT_SECRET: your-super-secret-jwt-key-change-this-in-production
@@ -120,8 +149,8 @@ services:
     ports:
       - "8000:80"
     environment:
-      APP_ENV: local
-      APP_DEBUG: "true"
+      APP_ENV: production
+      APP_DEBUG: "false"
       APP_URL: http://localhost:8000
       DB_CONNECTION: pgsql
       DB_HOST: postgres
@@ -133,9 +162,11 @@ services:
       API_BASE_URL: http://core-api:3000
       AI_ENGINE_URL: http://ai-engine:8001
       SOCKET_URL: http://core-api:3000
-      SESSION_DRIVER: database
-      CACHE_STORE: database
-      QUEUE_CONNECTION: database
+      SESSION_DRIVER: file
+      CACHE_STORE: file
+      QUEUE_CONNECTION: sync
+      PHP_FPM_PM: static
+      PHP_FPM_MAX_CHILDREN: "2"
     env_file:
       - ./Kolabri-client-app/.env
     depends_on:
@@ -147,3 +178,4 @@ services:
 volumes:
   postgres_data:
   mongo_data:
+  qdrant_data:
