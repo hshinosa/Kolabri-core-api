@@ -4,7 +4,7 @@ interface CacheEntry<T> {
 }
 
 class SimpleCache {
-    private cache: Map<string, CacheEntry<any>> = new Map();
+    private cache: Map<string, CacheEntry<unknown>> = new Map();
     private defaultTTL: number = 5 * 60 * 1000;
 
     set<T>(key: string, data: T, ttl?: number): void {

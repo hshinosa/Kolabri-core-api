@@ -281,7 +281,7 @@ export class GoalService {
     /**
      * Get the shared goal for a specific chat space
      */
-    static async getUserGoalInChatSpace(chatSpaceId: string, userId: string) {
+    static async getUserGoalInChatSpace(chatSpaceId: string, _userId: string) {
         // Get the single shared goal for this chat space (not user-specific)
         const goal = await prisma.learningGoal.findFirst({
             where: { chatSpaceId },

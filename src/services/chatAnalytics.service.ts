@@ -6,7 +6,7 @@
  * based on actual stored chat messages with engagement analysis.
  */
 
-import { ChatLog, IChatLog, IEngagementAnalysis } from '../models/ChatLog.js';
+import { ChatLog, IEngagementAnalysis } from '../models/ChatLog.js';
 import { logger } from '../utils/logger.js';
 
 // Plain message type for lean queries

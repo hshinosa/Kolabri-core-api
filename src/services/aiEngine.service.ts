@@ -140,9 +140,6 @@ interface GroupAnalyticsResponse {
     error?: string;
 }
 
-interface EngagementAnalysisRequest {
-    text: string;
-}
 
 interface EngagementAnalysisResponse {
     success: boolean;

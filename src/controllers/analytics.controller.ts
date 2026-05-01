@@ -12,7 +12,6 @@ import { chatAnalyticsService } from '../services/chatAnalytics.service.js';
 import prisma from '../config/database.js';
 import { ApiError } from '../middleware/errorHandler.js';
 import { ChatLog } from '../models/ChatLog.js';
-import { logger } from '../utils/logger.js';
 
 export class AnalyticsController {
     /**

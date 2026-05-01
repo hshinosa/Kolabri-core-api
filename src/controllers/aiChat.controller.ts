@@ -193,8 +193,7 @@ export class AiChatController {
                         if (parsed.content) {
                             fullReply += parsed.content;
                         }
-                    } catch {
-                    }
+                    } catch { /* skip unparseable SSE chunks */ }
 
                     res.write(`${line}\n\n`);
                 }
