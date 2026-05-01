@@ -1,265 +1,123 @@
 # Kolabri Core API
 
-Backend API service for Kolabri - AI-Powered Collaborative Learning Platform. Built with Express.js, TypeScript, PostgreSQL, and Socket.IO.
+Express.js backend for Kolabri. Handles auth, data persistence, real-time chat, and proxies AI requests to the AI Engine.
 
-## 🎯 Purpose
+## Architecture
 
-Core-API is the central backend service that:
-- Manages **Authentication & Authorization** (JWT-based)
-- Handles **Course & Group Management** (CRUD operations)
-- Coordinates **Real-time Chat** via Socket.IO
-- Integrates with **AI-Engine** for RAG queries and interventions
-- Logs **Process Mining Events** for research analytics
-- Manages **Knowledge Base** document uploads
-
-## 🛠️ Tech Stack
-
-- **Runtime:** Node.js 20.x
-- **Framework:** Express.js 4.x
-- **Language:** TypeScript
-- **Database:** PostgreSQL (via Prisma ORM)
-- **Real-time:** Socket.IO
-- **Authentication:** JWT
-- **Validation:** Zod
-
-## Prerequisites
-
-- Node.js >= 20.0.0
-- PostgreSQL 14+
-- MongoDB (optional, for chat logs)
-
-## 🗄️ Database Setup
-
-### Prerequisites
-
-- PostgreSQL 14+ installed and running
-- Database `kolabri-db` created (or update .env with your database name)
-
-### Quick Setup
-
-```bash
-# Generate Prisma client
-npm run db:generate
-
-# Run migrations
-npm run db:migrate
-
-# Seed demo data (optional)
-npm run db:seed
+```
+Client App (Laravel) → Core API (Express) → AI Engine (FastAPI)
+                                          → PostgreSQL (Prisma)
+                                          → MongoDB (chat logs, activity)
 ```
 
-### ⚠️ Shared Database with Laravel Client
+Core API is the central coordination layer. It owns user sessions, course/group data, and real-time communication. AI-related requests are forwarded to the AI Engine service.
 
-**Important:** This project shares the PostgreSQL database with the **Laravel Client App**.
+## Tech stack
 
-**Migration Order:**
+- Node.js 20+, TypeScript
+- Express.js 4.x
+- Prisma ORM (PostgreSQL)
+- Mongoose (MongoDB)
+- Socket.IO (real-time chat)
+- JWT authentication
+- Zod validation
+- express-rate-limit
+
+## Setup
+
 ```bash
-# 1. Run Core-API migrations FIRST
-cd Kolabri-core-api
-npx prisma migrate deploy
-
-# 2. Then run Laravel migrations
-cd ../Kolabri-client-app
-php artisan migrate
+npm install
+cp .env.example .env
 ```
 
-**Table Ownership:**
-- **Core-API manages:** `users`, `courses`, `groups`, `chat_spaces`, `chat_messages`, `learning_goals`, `reflections`, `knowledge_bases`, `ai_chats`
-- **Laravel manages:** `sessions`, `cache`, `jobs` (infrastructure tables)
+Configure `.env`:
+```
+PORT=3000
+DATABASE_URL=postgresql://postgres:password@localhost:5432/kolabri-db
+MONGODB_URL=mongodb://localhost:27017/kolabri
+JWT_SECRET=your-secret-key
+AI_ENGINE_URL=http://localhost:8001
+CORE_API_SECRET=shared-secret-key
+```
 
-**Troubleshooting:**
-- If `migrate:fresh` was run in Laravel, Core-API tables will be deleted
-- See `prisma/reset_for_prisma.sql` and `prisma/apply_migration_*.sql` for recovery
+Database setup:
+```bash
+npx prisma db push
+npx prisma generate
+```
 
-### Available SQL Fix Scripts
+Run:
+```bash
+npm run dev
+```
 
-Located in `prisma/` directory:
-- `fix_role_column.sql` - Fix missing role column in users table
-- `reset_for_prisma.sql` - Reset database for fresh Prisma migrations
-- `apply_migration_1.sql` - Apply first migration manually
-- `apply_migration_2.sql` - Apply second migration manually
+## API routes
 
-## 🚀 Quick Start
-
-## API Endpoints
-
-### Authentication
-
-| Method | Endpoint | Description |
-|--------|----------|-------------|
-| POST | `/api/auth/register` | Register new user |
-| POST | `/api/auth/login` | Login and get JWT |
-| GET | `/api/auth/me` | Get current user profile |
-
-### Courses
-
-| Method | Endpoint | Description |
-|--------|----------|-------------|
-| GET | `/api/courses` | Get my courses |
-| POST | `/api/courses` | Create course (lecturer) |
-| POST | `/api/courses/join` | Join course with code (student) |
-| GET | `/api/courses/:id` | Get course details |
-| GET | `/api/courses/:id/students` | Get enrolled students |
-| POST | `/api/courses/:id/knowledge-base` | Upload PDF |
-| GET | `/api/courses/:id/knowledge-base` | Get knowledge base files |
-
-### Groups
-
-| Method | Endpoint | Description |
-|--------|----------|-------------|
-| POST | `/api/groups` | Create group (lecturer) |
-| GET | `/api/groups/course/:courseId` | Get groups in course |
-| GET | `/api/groups/my/:courseId` | Get my group in course |
-| GET | `/api/groups/:id` | Get group details |
-
-### Learning Goals
-
-| Method | Endpoint | Description |
-|--------|----------|-------------|
-| POST | `/api/goals` | Submit learning goal |
-| GET | `/api/goals/me` | Get my goals |
-| GET | `/api/goals/group/:groupId` | Get group goals |
-| GET | `/api/goals/:id` | Get goal details |
-
-### Reflections
-
-| Method | Endpoint | Description |
-|--------|----------|-------------|
-| POST | `/api/reflections` | Submit reflection |
-| GET | `/api/reflections/me` | Get my reflections |
-| GET | `/api/reflections/goal/:goalId` | Get reflections for goal |
-
-### Health Check
-
-| Method | Endpoint | Description |
-|--------|----------|-------------|
-| GET | `/health` | Service health status |
-
-## WebSocket Events
-
-### Client → Server
-
-| Event | Payload | Description |
-|-------|---------|-------------|
-| `join_room` | `{ courseId, groupId }` | Join a chat room |
-| `send_message` | `{ roomId, content }` | Send message |
-| `typing` | `{ roomId, isTyping }` | Typing indicator |
-| `leave_room` | `roomId` | Leave a chat room |
-
-### Server → Client
-
-| Event | Payload | Description |
-|-------|---------|-------------|
-| `room_joined` | `{ roomId, courseId, groupId }` | Confirmation of room join |
-| `receive_message` | Message object | New message received |
-| `user_joined` | `{ userId, userName }` | User joined room |
-| `user_typing` | `{ userId, userName, isTyping }` | User typing indicator |
-| `ai_typing` | `{ isTyping }` | AI is processing |
-| `error` | `{ message }` | Error occurred |
-
-## Demo Credentials
-
-After running `npm run db:seed`:
-
-- **Lecturer:** `lecturer@kolabri.edu` / `password123`
-- **Student:** `student1@kolabri.edu` / `password123`
-- **Course Join Code:** `HCI2024`
-
-## Scripts
-
-| Script | Description |
+| Prefix | Description |
 |--------|-------------|
-| `npm run dev` | Start development server |
-| `npm run build` | Build for production |
-| `npm start` | Start production server |
-| `npm run lint` | Run ESLint |
-| `npm run lint:fix` | Fix ESLint issues |
-| `npm run format` | Format with Prettier |
-| `npm run db:generate` | Generate Prisma client |
-| `npm run db:migrate` | Run database migrations |
-| `npm run db:push` | Push schema to database |
-| `npm run db:seed` | Seed demo data |
-| `npm run db:studio` | Open Prisma Studio |
-| `npm test` | Run tests |
+| `/api/auth` | Register, login, logout, token refresh |
+| `/api/courses` | Course CRUD (student-facing) |
+| `/api/groups` | Group membership, chat spaces |
+| `/api/ai-chats` | Personal AI chat sessions |
+| `/api/admin/dashboard` | Admin stats, activity feed |
+| `/api/admin/users` | User management (admin) |
+| `/api/admin/courses` | Course admin (clone, archive, bulk) |
+| `/api/admin/ai-providers` | AI provider configuration |
+| `/api/admin/usage-stats` | AI usage tracking |
+| `/api/admin/audit-logs` | Audit trail |
+| `/health` | Health check |
 
-## 🐛 Troubleshooting
+All admin routes require JWT + admin role. Rate limiting is applied globally (configurable via `RATE_LIMIT_MAX_REQUESTS`).
 
-### Database Issues
+## AI Engine integration
 
-#### Error: "column users.role does not exist"
-**Cause:** Database was reset but migrations table still shows them as applied.
+The `AIEngineService` (`src/services/aiEngine.service.ts`) proxies requests to the AI Engine:
 
-**Fix:**
+- `POST /api/chat` — orchestrated group chat with intervention
+- `POST /api/ask` — RAG query against course materials
+- `POST /api/intervention/*` — analyze, summarize, generate prompts
+- `POST /api/ingest` — document ingestion
+- `GET /api/analytics/*` — engagement and group analytics
+
+## Real-time
+
+Socket.IO handles group chat. Events:
+- `join_room` / `leave_room`
+- `send_message` / `new_message`
+- `typing` / `stop_typing`
+
+WebSocket server at `/ws` pushes admin notifications.
+
+## Testing
+
 ```bash
-# Apply the fix SQL
-npx prisma db execute --file prisma/fix_role_column.sql
-
-# Regenerate client
-npx prisma generate
+npm run build    # TypeScript compilation check
+npm run lint     # ESLint
 ```
 
-#### Error: "table public.users does not exist"
-**Cause:** Laravel `migrate:fresh` deleted Core-API tables.
+## Docker
 
-**Fix:**
 ```bash
-# Apply migrations manually
-npx prisma db execute --file prisma/apply_migration_1.sql
-npx prisma db execute --file prisma/apply_migration_2.sql
-
-# Regenerate client
-npx prisma generate
+docker-compose up
 ```
 
-#### Migration Timeout / Advisory Lock Error
-**Cause:** Another process is holding database lock.
+The `docker-compose.yml` starts PostgreSQL, MongoDB, Redis, AI Engine, Core API, and Client App together.
 
-**Fix:**
-```bash
-# Wait a few seconds and retry:
-npx prisma migrate deploy
-```
-
-### Connection Issues
-
-#### PostgreSQL Connection Refused
-```bash
-# Verify PostgreSQL is running
-# Check DATABASE_URL in .env
-```
-
-#### Prisma Client Not Found
-```bash
-# Regenerate client
-npm run db:generate
-```
-
-## Project Structure
+## Project structure
 
 ```
-core-api/
-├── prisma/
-│   ├── schema.prisma    # Database schema
-│   └── seed.ts          # Seed script
-├── src/
-│   ├── config/          # Database & env config
-│   ├── controllers/     # Request handlers
-│   ├── middleware/      # Auth, validation, etc.
-│   ├── models/          # MongoDB schemas
-│   ├── routes/          # API routes
-│   ├── services/        # Business logic
-│   ├── socket/          # Socket.IO handlers
-│   ├── types/           # TypeScript types
-│   ├── utils/           # Helper functions
-│   ├── validators/      # Zod schemas
-│   ├── app.ts           # Express app
-│   └── server.ts        # Entry point
-├── .env.example
-├── package.json
-├── tsconfig.json
-└── README.md
+src/
+  controllers/    Route handlers
+  services/       Business logic
+  routes/         Express route definitions
+  middleware/     Auth, rate limiting, audit log
+  validators/     Zod schemas
+  websocket/      WebSocket server
+prisma/
+  schema.prisma   Database schema
 ```
 
-## License
+## Related services
 
-MIT
+- [Kolabri Client App](../Kolabri-client-app) — Laravel + React frontend
+- [Kolabri AI Engine](../Kolabri-ai-engine) — FastAPI, RAG, NLP
