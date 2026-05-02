@@ -79,6 +79,7 @@ app.use('/api/courses', courseRoutes);
 app.use('/api/groups', groupRoutes);
 app.use('/api/goals', goalRoutes);
 app.use('/api/reflections', reflectionRoutes);
+app.use('/api/ai-chat', aiChatRoutes);
 app.use('/api/ai-chats', aiChatRoutes);
 app.use('/api/chat-spaces', chatSpaceRoutes);
 app.use('/api/analytics', analyticsRoutes);
@@ -89,6 +90,7 @@ app.use('/api/admin/course-templates', courseTemplateRoutes);
 app.use('/api/admin/ai-providers', aiProviderRoutes);
 app.use('/api/admin/audit-logs', auditLogRoutes);
 app.use('/api/admin', adminAiRoutes);
+app.use('/api/health', healthRoutes);
 app.use('/health', healthRoutes);
 
 // 404 handler

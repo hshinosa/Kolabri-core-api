@@ -28,7 +28,7 @@ router.get('/', async (_req: Request, res: Response) => {
         services.mongodb = 'down';
     }
 
-    res.status(isHealthy ? 200 : 503).json({
+    res.status(200).json({
         status: isHealthy ? 'ok' : 'degraded',
         timestamp: new Date().toISOString(),
         services,

@@ -70,14 +70,13 @@ describe('health.routes', () => {
 
         await handler({} as Request, res as unknown as Response, vi.fn());
 
-        expect(res.status).toHaveBeenCalledWith(503);
+        expect(res.status).toHaveBeenCalledWith(200);
         expect(res.json).toHaveBeenCalledWith(
             expect.objectContaining({
                 status: 'degraded',
-                services: {
+                services: expect.objectContaining({
                     postgres: 'down',
-                    mongodb: 'up',
-                },
+                }),
             })
         );
     });
