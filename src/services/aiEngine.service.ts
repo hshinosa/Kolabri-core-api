@@ -717,12 +717,32 @@ export class AIEngineService {
             };
         }
     }
-    async trackActivity(groupId: string): Promise<void> {
+    async refineGoal(
+        currentGoal: string,
+        missingCriteria: string[]
+    ): Promise<{ success: boolean; refined_goal?: string; error?: string }> {
+        try {
+            return await this.resilient(async () => {
+                const response = await this.fetchWithTimeout(`${this.baseUrl}/api/goals/refine`, {
+                    method: 'POST',
+                    headers: this.getHeaders(),
+                    body: JSON.stringify({ current_goal: currentGoal, missing_criteria: missingCriteria }),
+                }, ANALYTICS_TIMEOUT);
+                if (!response.ok) throw new Error(`AI Engine responded with ${response.status}`);
+                return await response.json() as { success: boolean; refined_goal: string };
+            });
+        } catch (error) {
+            logger.error('AI Engine goal refinement failed:', error);
+            return { success: false, error: error instanceof Error ? error.message : 'Unknown error' };
+        }
+    }
+
+    async trackActivity(groupId: string, userId?: string): Promise<void> {
         try {
             await this.fetchWithTimeout(`${this.baseUrl}/api/track-activity`, {
                 method: 'POST',
                 headers: this.getHeaders(),
-                body: JSON.stringify({ group_id: groupId }),
+                body: JSON.stringify({ group_id: groupId, user_id: userId }),
             }, 3000);
         } catch {
             logger.debug('AI Engine track activity failed (non-critical)');

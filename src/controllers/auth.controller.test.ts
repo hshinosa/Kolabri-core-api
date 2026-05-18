@@ -105,11 +105,7 @@ describe('AuthController', () => {
         await AuthController.refresh(req as Request, res as Response, next);
 
         expect(mockAuthService.refreshAccessToken).not.toHaveBeenCalled();
-        expect(res.status).toHaveBeenCalledWith(400);
-        expect(res.json).toHaveBeenCalledWith({
-            error: { code: 'BAD_REQUEST', message: 'Refresh token required' },
-        });
-        expect(next).not.toHaveBeenCalled();
+        expect(next).toHaveBeenCalledWith(expect.objectContaining({ statusCode: 400, code: 'BAD_REQUEST' }));
     });
 
     it('refreshes an access token when refresh token exists', async () => {
@@ -137,11 +133,7 @@ describe('AuthController', () => {
         await AuthController.logout(req as Request, res as Response, next);
 
         expect(mockAuthService.logout).not.toHaveBeenCalled();
-        expect(res.status).toHaveBeenCalledWith(400);
-        expect(res.json).toHaveBeenCalledWith({
-            error: { code: 'BAD_REQUEST', message: 'Refresh token required' },
-        });
-        expect(next).not.toHaveBeenCalled();
+        expect(next).toHaveBeenCalledWith(expect.objectContaining({ statusCode: 400, code: 'BAD_REQUEST' }));
     });
 
     it('logs out a user and returns success message', async () => {

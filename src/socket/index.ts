@@ -497,7 +497,7 @@ export function initSocketIO(server: HttpServer): Server {
                     }
                 }).catch(() => {});
 
-                aiEngineService.trackActivity(groupId).catch(() => {});
+                aiEngineService.trackActivity(groupId, user.id).catch(() => {});
 
                 // Broadcast message to room
                 const message = {

@@ -79,7 +79,12 @@ export class GoalService {
         const aiValidation = await aiEngineService.validateGoal(data.content, userId, chatSpaceId);
         if (aiValidation.success) {
             if (!aiValidation.is_valid) {
-                throw ApiError.badRequest(aiValidation.feedback || 'Goal tidak memenuhi kriteria Bloom\'s taxonomy');
+                let errorMessage = aiValidation.feedback || 'Goal tidak memenuhi kriteria Bloom\'s taxonomy';
+                const refinement = await aiEngineService.refineGoal(data.content, aiValidation.missing_criteria || []).catch(() => ({ success: false as const }));
+                if (refinement.success && 'refined_goal' in refinement && refinement.refined_goal) {
+                    errorMessage += `\n\nSaran perbaikan: "${refinement.refined_goal}"`;
+                }
+                throw ApiError.badRequest(errorMessage);
             }
             isValidated = aiValidation.is_valid;
             goalFeedback = aiValidation.feedback;

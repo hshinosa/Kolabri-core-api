@@ -122,12 +122,12 @@ describe('KnowledgeBaseService', () => {
         });
         aiEngineServiceMock.deleteDocument.mockRejectedValue(new Error('vector error'));
         fsMock.unlink.mockRejectedValue(new Error('fs error'));
-        prismaMock.knowledgeBase.delete.mockResolvedValue({ id: 'file-1' });
+        prismaMock.knowledgeBase.update.mockResolvedValue({ id: 'file-1' });
 
         const result = await KnowledgeBaseService.deleteFile('file-1', 'lecturer-1');
 
         expect(loggerMock.warn).toHaveBeenCalledTimes(2);
-        expect(prismaMock.knowledgeBase.delete).toHaveBeenCalledWith({ where: { id: 'file-1' } });
+        expect(prismaMock.knowledgeBase.update).toHaveBeenCalledWith({ where: { id: 'file-1' }, data: { deletedAt: expect.any(Date) } });
         expect(result).toEqual({ success: true });
     });
 

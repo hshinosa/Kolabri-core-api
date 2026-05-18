@@ -54,7 +54,7 @@ describe('CourseAdminService', () => {
 
         expect(prismaMock.course.findMany).toHaveBeenCalledWith(
             expect.objectContaining({
-                where: { isArchived: false },
+                where: { isArchived: false, deletedAt: null },
                 skip: 0,
                 take: 10,
             })

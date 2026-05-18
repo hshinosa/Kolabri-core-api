@@ -1,8 +1,10 @@
 import jwt from 'jsonwebtoken';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import request from 'supertest';
+import bcrypt from 'bcrypt';
 
 import app from '../../app.js';
+import prisma from '../../config/database.js';
 
 type TestRole = 'student' | 'lecturer' | 'admin';
 
@@ -28,13 +30,26 @@ describe('Black-box API Tests', () => {
     let lecturerToken: string;
     let studentToken: string;
 
-    beforeAll(() => {
+    beforeAll(async () => {
         process.env.JWT_SECRET = process.env.JWT_SECRET || 'blackbox-test-secret';
         lecturerToken = createToken('lecturer');
         studentToken = createToken('student');
+
+        const hashedPassword = await bcrypt.hash('TestPass123!', 10);
+        await prisma.user.upsert({
+            where: { id: 'lecturer-user-id' },
+            update: {},
+            create: { id: 'lecturer-user-id', email: 'lecturer@example.com', name: 'Test Lecturer', role: 'lecturer', password: hashedPassword },
+        });
+        await prisma.user.upsert({
+            where: { id: 'student-user-id' },
+            update: {},
+            create: { id: 'student-user-id', email: 'student@example.com', name: 'Test Student', role: 'student', password: hashedPassword },
+        });
     });
 
-    afterAll(() => {
+    afterAll(async () => {
+        await prisma.user.deleteMany({ where: { id: { in: ['lecturer-user-id', 'student-user-id'] } } });
         if (process.env.JWT_SECRET === 'blackbox-test-secret') {
             delete process.env.JWT_SECRET;
         }

@@ -24,8 +24,8 @@ const {
             getGroupAnalytics: vi.fn(),
         },
         prismaMock: {
-            group: { findUnique: vi.fn() },
-            course: { findUnique: vi.fn() },
+group: { findUnique: vi.fn(), findFirst: vi.fn() },
+course: { findUnique: vi.fn(), findFirst: vi.fn() },
         },
         chatLogFindMock,
         recentMessagesSortMock,
@@ -88,7 +88,7 @@ describe('AnalyticsController', () => {
     });
 
     it('returns shaped group analytics with members, chat spaces, and recent activity', async () => {
-        prismaMock.group.findUnique.mockResolvedValue({
+        prismaMock.group.findFirst.mockResolvedValue({
             id: 'group-1',
             name: 'Alpha',
             course: { ownerId: 'lecturer-1', name: 'Intro AI', code: 'IF101' },
@@ -127,8 +127,8 @@ describe('AnalyticsController', () => {
 
         await AnalyticsController.getGroupAnalytics(req as Request, res as Response, next);
 
-        expect(prismaMock.group.findUnique).toHaveBeenCalledWith({
-            where: { id: 'group-1' },
+        expect(prismaMock.group.findFirst).toHaveBeenCalledWith({
+            where: { id: 'group-1', deletedAt: null },
             include: expect.objectContaining({
                 course: { select: { ownerId: true, name: true, code: true } },
             }),
@@ -202,7 +202,7 @@ describe('AnalyticsController', () => {
     });
 
     it('forwards not found error when group does not exist', async () => {
-        prismaMock.group.findUnique.mockResolvedValue(null);
+        prismaMock.group.findFirst.mockResolvedValue(null);
         const req = mockReq({ params: { groupId: 'missing-group' } });
         const res = mockRes();
         const next = mockNext();
@@ -219,7 +219,7 @@ describe('AnalyticsController', () => {
     });
 
     it('forwards forbidden error when lecturer does not own the course group', async () => {
-        prismaMock.group.findUnique.mockResolvedValue({
+        prismaMock.group.findFirst.mockResolvedValue({
             id: 'group-1',
             name: 'Alpha',
             course: { ownerId: 'lecturer-2', name: 'Intro AI', code: 'IF101' },
@@ -242,7 +242,7 @@ describe('AnalyticsController', () => {
     });
 
     it('returns aggregated course analytics summary across groups', async () => {
-        prismaMock.course.findUnique.mockResolvedValue({
+        prismaMock.course.findFirst.mockResolvedValue({
             id: 'course-1',
             name: 'Intro AI',
             code: 'IF101',

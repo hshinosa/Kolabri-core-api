@@ -82,6 +82,7 @@ export class CourseAdminService {
 
         const where = {
             isArchived: false,
+            deletedAt: null,
             ...(ownerId ? { ownerId } : {}),
             ...(search
                 ? {

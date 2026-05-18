@@ -1,0 +1,54 @@
+import { z } from 'zod';
+import type { Socket } from 'socket.io';
+
+export const joinRoomSchema = z.object({
+    courseId: z.string().uuid('Invalid course ID'),
+    groupId: z.string().uuid('Invalid group ID'),
+    chatSpaceId: z.string().uuid('Invalid chat space ID'),
+});
+
+export const sendMessageSchema = z.object({
+    roomId: z.string().min(1, 'Room ID is required'),
+    content: z.string().max(10000, 'Message too long'),
+    courseId: z.string().min(1, 'Course ID is required'),
+    groupId: z.string().min(1, 'Group ID is required'),
+    replyTo: z.object({
+        messageId: z.string(),
+        senderId: z.string(),
+        senderName: z.string(),
+        content: z.string(),
+    }).optional(),
+    attachments: z.array(z.object({
+        id: z.string(),
+        name: z.string(),
+        type: z.string(),
+        size: z.number(),
+        url: z.string(),
+        previewUrl: z.string().optional(),
+    })).optional(),
+    mentions: z.array(z.string()).optional(),
+});
+
+export const typingSchema = z.object({
+    roomId: z.string().min(1, 'Room ID is required'),
+    isTyping: z.boolean(),
+});
+
+export const deleteMessageSchema = z.object({
+    messageId: z.string().min(1, 'Message ID is required'),
+    roomId: z.string().min(1, 'Room ID is required'),
+});
+
+export function emitValidationError(
+    socket: Pick<Socket, 'emit'>,
+    event: string,
+    issues: Array<{ path: (string | number)[]; message: string }>
+): void {
+    socket.emit('validation_error', {
+        event,
+        details: issues.map(issue => ({
+            field: issue.path.join('.') || 'unknown',
+            message: issue.message,
+        })),
+    });
+}

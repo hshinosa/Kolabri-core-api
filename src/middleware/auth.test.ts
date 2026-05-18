@@ -2,7 +2,15 @@ import http from 'node:http';
 
 import express from 'express';
 import jwt from 'jsonwebtoken';
-import { afterEach, beforeEach, describe, expect, it } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+
+const { prismaMock } = vi.hoisted(() => ({
+    prismaMock: {
+        user: { findFirst: vi.fn() },
+    },
+}));
+
+vi.mock('../config/database.js', () => ({ default: prismaMock }));
 
 import { verifyToken } from './auth.js';
 import { errorHandler } from './errorHandler.js';
@@ -60,6 +68,7 @@ async function makeRequest(token?: string): Promise<{ status: number; body: stri
 describe('verifyToken', () => {
     beforeEach(() => {
         process.env.JWT_SECRET = 'test-secret';
+        vi.clearAllMocks();
     });
 
     afterEach(() => {
@@ -67,6 +76,8 @@ describe('verifyToken', () => {
     });
 
     it('passes valid token and attaches user to request', async () => {
+        prismaMock.user.findFirst.mockResolvedValue({ id: 'user-1' });
+
         const token = jwt.sign(
             {
                 userId: 'user-1',
@@ -134,6 +145,40 @@ describe('verifyToken', () => {
                 code: 'UNAUTHORIZED',
                 message: 'Invalid token',
             },
+        });
+    });
+
+    it('returns 401 when user does not exist in database', async () => {
+        prismaMock.user.findFirst.mockResolvedValue(null);
+
+        const token = jwt.sign(
+            { userId: 'deleted-user', email: 'gone@example.com', role: 'student' },
+            process.env.JWT_SECRET as string,
+            { expiresIn: '1h' }
+        );
+
+        const response = await makeRequest(token);
+
+        expect(response.status).toBe(401);
+        expect(JSON.parse(response.body)).toEqual({
+            error: { code: 'UNAUTHORIZED', message: 'User not found' },
+        });
+    });
+
+    it('returns 401 when user is soft-deleted', async () => {
+        prismaMock.user.findFirst.mockResolvedValue(null);
+
+        const token = jwt.sign(
+            { userId: 'soft-deleted-user', email: 'inactive@example.com', role: 'student' },
+            process.env.JWT_SECRET as string,
+            { expiresIn: '1h' }
+        );
+
+        const response = await makeRequest(token);
+
+        expect(response.status).toBe(401);
+        expect(JSON.parse(response.body)).toEqual({
+            error: { code: 'UNAUTHORIZED', message: 'User not found' },
         });
     });
 });

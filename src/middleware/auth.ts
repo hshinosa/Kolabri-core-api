@@ -1,6 +1,8 @@
 import { Request, Response, NextFunction } from 'express';
 import jwt from 'jsonwebtoken';
 import { ApiError } from './errorHandler.js';
+import prisma from '../config/database.js';
+import { userActiveCache } from '../utils/userActiveCache.js';
 
 export interface JwtPayload {
     userId: string;
@@ -12,10 +14,7 @@ export interface AuthenticatedRequest extends Request {
     user?: JwtPayload;
 }
 
-/**
- * Verify JWT token and attach user to request
- */
-export function verifyToken(req: AuthenticatedRequest, _res: Response, next: NextFunction): void {
+export async function verifyToken(req: AuthenticatedRequest, _res: Response, next: NextFunction): Promise<void> {
     try {
         const authHeader = req.headers.authorization;
 
@@ -31,22 +30,35 @@ export function verifyToken(req: AuthenticatedRequest, _res: Response, next: Nex
         }
 
         const decoded = jwt.verify(token, secret) as JwtPayload;
+
+        const cached = userActiveCache.get(decoded.userId);
+        if (cached === null) {
+            const user = await prisma.user.findFirst({
+                where: { id: decoded.userId, deletedAt: null },
+                select: { id: true },
+            });
+            if (!user) {
+                userActiveCache.set(decoded.userId, false);
+                return next(ApiError.unauthorized('User not found'));
+            }
+            userActiveCache.set(decoded.userId, true);
+        } else if (cached === false) {
+            return next(ApiError.unauthorized('User not found'));
+        }
+
         req.user = decoded;
         next();
     } catch (error) {
-        if (error instanceof jwt.JsonWebTokenError) {
-            next(ApiError.unauthorized('Invalid token'));
-        } else if (error instanceof jwt.TokenExpiredError) {
+        if (error instanceof jwt.TokenExpiredError) {
             next(ApiError.unauthorized('Token expired'));
+        } else if (error instanceof jwt.JsonWebTokenError) {
+            next(ApiError.unauthorized('Invalid token'));
         } else {
             next(error);
         }
     }
 }
 
-/**
- * Check if user has required role
- */
 export function checkRole(allowedRoles: Array<'student' | 'lecturer' | 'admin'>) {
     return (req: AuthenticatedRequest, _res: Response, next: NextFunction): void => {
         if (!req.user) {
@@ -61,17 +73,6 @@ export function checkRole(allowedRoles: Array<'student' | 'lecturer' | 'admin'>)
     };
 }
 
-/**
- * Shorthand: Require lecturer role
- */
 export const requireLecturer = checkRole(['lecturer', 'admin']);
-
-/**
- * Shorthand: Require student role
- */
 export const requireStudent = checkRole(['student']);
-
-/**
- * Shorthand: Require any authenticated user
- */
 export const requireAuth = verifyToken;

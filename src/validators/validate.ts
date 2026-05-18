@@ -2,9 +2,6 @@ import { Request, Response, NextFunction } from 'express';
 import { ZodSchema, ZodError } from 'zod';
 import { ApiError } from '../middleware/errorHandler.js';
 
-/**
- * Middleware factory for validating request body with Zod schema
- */
 export function validateBody<T>(schema: ZodSchema<T>) {
     return (req: Request, _res: Response, next: NextFunction): void => {
         try {
@@ -12,16 +9,11 @@ export function validateBody<T>(schema: ZodSchema<T>) {
             next();
         } catch (error) {
             if (error instanceof ZodError) {
-                const details = error.errors.reduce(
-                    (acc, err) => {
-                        const path = err.path.join('.');
-                        acc[path] = err.message;
-                        return acc;
-                    },
-                    {} as Record<string, string>
-                );
-
-                next(ApiError.badRequest('Validation failed', details));
+                const details = error.errors.map(err => ({
+                    field: err.path.join('.') || 'unknown',
+                    message: err.message,
+                }));
+                next(ApiError.badRequest('Validation failed', details as unknown as Record<string, unknown>));
             } else {
                 next(error);
             }
@@ -29,9 +21,6 @@ export function validateBody<T>(schema: ZodSchema<T>) {
     };
 }
 
-/**
- * Middleware factory for validating request params with Zod schema
- */
 export function validateParams<T>(schema: ZodSchema<T>) {
     return (req: Request, _res: Response, next: NextFunction): void => {
         try {
@@ -47,9 +36,6 @@ export function validateParams<T>(schema: ZodSchema<T>) {
     };
 }
 
-/**
- * Middleware factory for validating request query with Zod schema
- */
 export function validateQuery<T>(schema: ZodSchema<T>) {
     return (req: Request, _res: Response, next: NextFunction): void => {
         try {

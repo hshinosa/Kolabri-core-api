@@ -135,7 +135,7 @@ export class KnowledgeBaseService {
         }
 
         const files = await prisma.knowledgeBase.findMany({
-            where: { courseId },
+            where: { courseId, deletedAt: null },
             select: {
                 id: true,
                 fileName: true,
@@ -253,9 +253,9 @@ export class KnowledgeBaseService {
             logger.warn(`Failed to delete file from disk: ${file.filePath}`);
         }
 
-        // Delete database record
-        await prisma.knowledgeBase.delete({
+        await prisma.knowledgeBase.update({
             where: { id: fileId },
+            data: { deletedAt: new Date() },
         });
 
         return { success: true };

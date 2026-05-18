@@ -17,8 +17,8 @@ export class GroupService {
             throw ApiError.forbidden('Only lecturers can delete groups');
         }
 
-        const group = await prisma.group.findUnique({
-            where: { id: groupId },
+        const group = await prisma.group.findFirst({
+            where: { id: groupId, deletedAt: null },
             include: {
                 course: {
                     select: { ownerId: true },
@@ -34,8 +34,9 @@ export class GroupService {
             throw ApiError.forbidden('You do not own this course');
         }
 
-        await prisma.group.delete({
+        await prisma.group.update({
             where: { id: groupId },
+            data: { deletedAt: new Date() },
         });
 
         return { success: true };

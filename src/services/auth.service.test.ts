@@ -3,7 +3,7 @@ import jwt from 'jsonwebtoken';
 
 const { prismaMock, bcryptMock } = vi.hoisted(() => ({
     prismaMock: {
-        user: { findUnique: vi.fn(), create: vi.fn() },
+        user: { findUnique: vi.fn(), findFirst: vi.fn(), create: vi.fn() },
     },
     bcryptMock: {
         hash: vi.fn(),
@@ -34,7 +34,7 @@ describe('AuthService', () => {
     });
 
     it('registers a new user and returns access and refresh tokens', async () => {
-        prismaMock.user.findUnique.mockResolvedValue(null);
+        prismaMock.user.findFirst.mockResolvedValue(null);
         bcryptMock.hash.mockResolvedValue('hashed-password');
         prismaMock.user.create.mockResolvedValue({
             id: 'user-1',
@@ -63,7 +63,7 @@ describe('AuthService', () => {
     });
 
     it('rejects login when the password does not match', async () => {
-        prismaMock.user.findUnique.mockResolvedValue({
+        prismaMock.user.findFirst.mockResolvedValue({
             id: 'user-1',
             name: 'Alya',
             email: 'alya@example.com',
@@ -85,7 +85,7 @@ describe('AuthService', () => {
             process.env.JWT_REFRESH_SECRET as string,
             { expiresIn: '1h' }
         );
-        prismaMock.user.findUnique.mockResolvedValue({
+        prismaMock.user.findFirst.mockResolvedValue({
             id: 'user-1',
             email: 'alya@example.com',
             role: 'student',

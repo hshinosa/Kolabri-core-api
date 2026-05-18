@@ -232,23 +232,32 @@ export class AiChatService {
             .map((m) => ({
                 role: m.role as 'user' | 'assistant',
                 content: m.content,
-            }));
+            }))
+            .slice(-20);
 
         const activeProviders = await prisma.aiProvider.count({ where: { isActive: true } });
 
-        const result = activeProviders > 0
-            ? await aiService.sendWithConfiguredFallback(content, {
-                userId,
-                history,
-                systemPrompt: chat?.user?.name
-                    ? `You are a helpful learning assistant for ${chat.user.name}. Answer clearly and supportively.`
-                    : 'You are a helpful learning assistant. Answer clearly and supportively.',
-            })
-            : await aiEngineService.personalChat(
-                content,
-                history,
-                chat?.user?.name ?? undefined,
-            );
+        let result: { content: string } | { reply: string };
+
+        try {
+            result = activeProviders > 0
+                ? await aiService.sendWithConfiguredFallback(content, {
+                    userId,
+                    history,
+                    systemPrompt: chat?.user?.name
+                        ? `You are a helpful learning assistant for ${chat.user.name}. Answer clearly and supportively.`
+                        : 'You are a helpful learning assistant. Answer clearly and supportively.',
+                })
+                : await aiEngineService.personalChat(
+                    content,
+                    history,
+                    chat?.user?.name ?? undefined,
+                );
+        } catch {
+            result = {
+                reply: 'Maaf, AI Assistant sedang tidak tersedia saat ini. Silakan coba lagi nanti.',
+            };
+        }
 
         const assistantMessage = await this.addMessage(
             chatId,

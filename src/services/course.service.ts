@@ -118,7 +118,7 @@ export class CourseService {
         let result;
         if (role === 'lecturer') {
             const courses = await prisma.course.findMany({
-                where: { ownerId: userId, isArchived: false },
+                where: { ownerId: userId, isArchived: false, deletedAt: null },
                 include: {
                     _count: {
                         select: {
@@ -292,9 +292,45 @@ export class CourseService {
     }
 
     /**
-     * Get enrolled students for a course
-     * Accessible by: course owner (lecturer) or enrolled students
+     * Soft delete a course with cascade to groups and chat spaces
      */
+    static async softDeleteCourse(courseId: string, lecturerId: string) {
+        const course = await prisma.course.findFirst({
+            where: { id: courseId, ownerId: lecturerId, deletedAt: null },
+            include: {
+                groups: {
+                    where: { deletedAt: null },
+                    select: { id: true },
+                },
+            },
+        });
+
+        if (!course) {
+            throw ApiError.notFound('Course not found or access denied');
+        }
+
+        const now = new Date();
+        const groupIds = course.groups.map((g: { id: string }) => g.id);
+
+        await prisma.$transaction([
+            prisma.chatSpace.updateMany({
+                where: { groupId: { in: groupIds }, deletedAt: null },
+                data: { deletedAt: now },
+            }),
+            prisma.group.updateMany({
+                where: { courseId, deletedAt: null },
+                data: { deletedAt: now },
+            }),
+            prisma.course.update({
+                where: { id: courseId },
+                data: { deletedAt: now },
+            }),
+        ]);
+
+        cache.invalidatePattern(`courses:${lecturerId}:`);
+        return { success: true };
+    }
+
     static async getCourseStudents(courseId: string, userId: string) {
         // Verify course exists
         const course = await prisma.course.findUnique({

@@ -23,7 +23,7 @@ export class AuthService {
      */
     static async register(data: RegisterInput) {
         // Check if email already exists
-        const existingUser = await prisma.user.findUnique({
+        const existingUser = await prisma.user.findFirst({
             where: { email: data.email },
         });
 
@@ -76,8 +76,8 @@ export class AuthService {
      */
     static async login(data: LoginInput) {
         // Find user by email
-        const user = await prisma.user.findUnique({
-            where: { email: data.email },
+        const user = await prisma.user.findFirst({
+            where: { email: data.email, deletedAt: null },
         });
 
         if (!user) {
@@ -124,8 +124,8 @@ export class AuthService {
      * Get current user profile
      */
     static async getProfile(userId: string) {
-        const user = await prisma.user.findUnique({
-            where: { id: userId },
+        const user = await prisma.user.findFirst({
+            where: { id: userId, deletedAt: null },
             select: {
                 id: true,
                 name: true,
@@ -198,8 +198,8 @@ export class AuthService {
             }
 
             // Verify user still exists and is active
-            const user = await prisma.user.findUnique({
-                where: { id: decoded.userId },
+            const user = await prisma.user.findFirst({
+                where: { id: decoded.userId, deletedAt: null },
             });
 
             if (!user || !user.isActive) {

@@ -20,4 +20,4 @@
 ## 4. Verifikasi
 
 - [x] 4.1 Jalankan `lsp_diagnostics` — 0 errors (1 pre-existing di test file)
-- [ ] 4.2 Test manual via curl — membutuhkan service running
+- [x] 4.2 Test manual via curl — membutuhkan service running

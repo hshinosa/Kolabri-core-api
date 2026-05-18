@@ -2,7 +2,7 @@
 
 - [x] 1.1 Tambah `TrackActivityRequest(BaseModel)` ke `app/api/schemas.py`
 - [x] 1.2 Tambah endpoint `POST /api/track-activity` ke `app/api/routes.py`
-- [ ] 1.3 Verifikasi endpoint bisa dipanggil — membutuhkan service running
+- [x] 1.3 Verifikasi endpoint bisa dipanggil — membutuhkan service running
 
 ## 2. Core API Client
 

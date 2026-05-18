@@ -46,6 +46,7 @@ router.get('/:id', validateParams(idSchema), UserController.show);
 router.post('/', validateBody(createUserSchema), UserController.create);
 router.put('/:id', validateParams(idSchema), validateBody(updateUserSchema), UserController.update);
 router.delete('/:id', validateParams(idSchema), UserController.delete);
+router.delete('/:id/hard', validateParams(idSchema), UserController.hardDelete);
 router.post(
     '/:id/reset-password',
     validateParams(idSchema),

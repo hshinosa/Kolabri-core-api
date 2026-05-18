@@ -1,6 +1,7 @@
 import { Request, Response, NextFunction } from 'express';
 import { AuthService } from '../services/auth.service.js';
 import { AuthenticatedRequest } from '../middleware/auth.js';
+import { ApiError } from '../middleware/errorHandler.js';
 
 export class AuthController {
     /**
@@ -50,9 +51,7 @@ export class AuthController {
             const { refreshToken } = req.body;
 
             if (!refreshToken) {
-                return res.status(400).json({
-                    error: { code: 'BAD_REQUEST', message: 'Refresh token required' },
-                });
+                return next(ApiError.badRequest('Refresh token required'));
             }
 
             const result = await AuthService.refreshAccessToken(refreshToken);
@@ -77,9 +76,7 @@ export class AuthController {
             const { refreshToken } = req.body;
 
             if (!refreshToken) {
-                return res.status(400).json({
-                    error: { code: 'BAD_REQUEST', message: 'Refresh token required' },
-                });
+                return next(ApiError.badRequest('Refresh token required'));
             }
 
             const result = await AuthService.logout(refreshToken);

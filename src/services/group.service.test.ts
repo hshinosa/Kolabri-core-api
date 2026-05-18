@@ -2,7 +2,7 @@ import { beforeEach, describe, expect, it, vi } from 'vitest';
 
 const { prismaMock, randomBytesMock } = vi.hoisted(() => ({
     prismaMock: {
-        group: { findUnique: vi.fn(), create: vi.fn(), createMany: vi.fn(), delete: vi.fn(), findMany: vi.fn() },
+        group: { findUnique: vi.fn(), findFirst: vi.fn(), create: vi.fn(), createMany: vi.fn(), delete: vi.fn(), update: vi.fn(), findMany: vi.fn() },
         course: { findUnique: vi.fn() },
         courseStudent: { findUnique: vi.fn(), findMany: vi.fn() },
         groupMember: { findUnique: vi.fn(), findFirst: vi.fn(), create: vi.fn(), createMany: vi.fn() },
@@ -37,14 +37,14 @@ describe('GroupService', () => {
     });
 
     it('deletes a group when the lecturer owns the course', async () => {
-        prismaMock.group.findUnique.mockResolvedValue({
+        prismaMock.group.findFirst.mockResolvedValue({
             id: 'group-1',
             course: { ownerId: 'lecturer-1' },
         });
 
         const result = await GroupService.deleteGroup('group-1', 'lecturer-1', 'lecturer');
 
-        expect(prismaMock.group.delete).toHaveBeenCalledWith({ where: { id: 'group-1' } });
+        expect(prismaMock.group.update).toHaveBeenCalledWith({ where: { id: 'group-1' }, data: { deletedAt: expect.any(Date) } });
         expect(result).toEqual({ success: true });
     });
 

@@ -80,6 +80,20 @@ export class UserController {
         }
     }
 
+    static async hardDelete(req: AuthenticatedRequest, res: Response, next: NextFunction) {
+        try {
+            await UserService.hardDeleteUser(req.params.id, req.user!.userId);
+
+            res.json({
+                meta: {
+                    message: 'User permanently deleted',
+                },
+            });
+        } catch (error) {
+            next(error);
+        }
+    }
+
     static async resetPassword(req: AuthenticatedRequest, res: Response, next: NextFunction) {
         try {
             await UserService.resetPassword(

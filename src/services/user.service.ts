@@ -3,6 +3,7 @@ import prisma from '../config/database.js';
 import { ApiError } from '../middleware/errorHandler.js';
 import { AuditLogService } from './audit-log.service.js';
 import { broadcastAdminEvent } from '../websocket/server.js';
+import { userActiveCache } from '../utils/userActiveCache.js';
 import {
     CreateUserInput,
     ListUsersQuery,
@@ -31,6 +32,7 @@ export class UserService {
         const skip = (page - 1) * limit;
 
         const where = {
+            deletedAt: null,
             ...(role ? { role } : {}),
             ...(search
                 ? {
@@ -77,8 +79,8 @@ export class UserService {
     }
 
     static async getUserById(id: string) {
-        const user = await prisma.user.findUnique({
-            where: { id },
+        const user = await prisma.user.findFirst({
+            where: { id, deletedAt: null },
             select: userSelect,
         });
 
@@ -164,6 +166,10 @@ export class UserService {
             select: userSelect,
         });
 
+        if (data.isActive !== undefined && data.isActive !== user.isActive) {
+            userActiveCache.invalidate(id);
+        }
+
         const action = data.role !== undefined && data.role !== user.role
             ? 'ROLE_CHANGE'
             : data.isActive !== undefined && data.isActive !== user.isActive
@@ -200,6 +206,24 @@ export class UserService {
         return updatedUser;
     }
 
+    static async hardDeleteUser(id: string, currentUserId: string) {
+        if (id === currentUserId) {
+            throw ApiError.forbidden('Cannot delete your own account');
+        }
+
+        const user = await prisma.user.findUnique({
+            where: { id },
+            select: userSelect,
+        });
+
+        if (!user) {
+            throw ApiError.notFound('User not found');
+        }
+
+        await prisma.user.delete({ where: { id } });
+        return { success: true };
+    }
+
     static async deleteUser(id: string, currentUserId: string, actorUserId: string) {
         if (id === currentUserId) {
             throw ApiError.forbidden('Cannot delete your own account');
@@ -214,9 +238,12 @@ export class UserService {
             throw ApiError.notFound('User not found');
         }
 
-        await prisma.user.delete({
+        await prisma.user.update({
             where: { id },
+            data: { deletedAt: new Date() },
         });
+
+        userActiveCache.invalidate(id);
 
         const auditLog = await AuditLogService.logAction({
             action: 'DELETE',
@@ -283,8 +310,9 @@ export class UserService {
             throw ApiError.notFound('One or more users were not found');
         }
 
-        const result = await prisma.user.deleteMany({
-            where: { id: { in: uniqueUserIds } },
+        const result = await prisma.user.updateMany({
+            where: { id: { in: uniqueUserIds }, deletedAt: null },
+            data: { deletedAt: new Date() },
         });
 
         return {
