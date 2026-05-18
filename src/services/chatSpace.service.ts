@@ -2,6 +2,8 @@ import prisma from '../config/database.js';
 import { ApiError } from '../middleware/errorHandler.js';
 import { getIO } from '../socket/index.js';
 import { logger } from '../utils/logger.js';
+import { ChatLog } from '../models/ChatLog.js';
+import { aiEngineService } from './aiEngine.service.js';
 
 // Type for ChatSpace with session fields
 interface ChatSpaceWithSession {
@@ -79,11 +81,35 @@ export class ChatSpaceService {
             logger.warn('Failed to broadcast session closure', { error });
         }
 
+        let summary: string | null = null;
+        try {
+            const recentMessages = await ChatLog.find({
+                chatSpaceId,
+                isDeleted: { $ne: true },
+                senderType: { $in: ['student', 'lecturer'] },
+            }).sort({ createdAt: -1 }).limit(30).lean();
+
+            if (recentMessages.length > 0) {
+                const summaryResult = await aiEngineService.generateSummary(
+                    recentMessages.reverse().map((m) => ({
+                        sender: m.senderName,
+                        content: m.content,
+                        timestamp: new Date(m.createdAt).toISOString(),
+                    })),
+                    chatSpaceId
+                );
+                summary = summaryResult.success ? summaryResult.summary : null;
+            }
+        } catch {
+            logger.debug('summary_generation_failed');
+        }
+
         return {
             id: updatedChatSpace.id,
             name: updatedChatSpace.name,
             closedAt: updatedChatSpace.closedAt,
             closedBy: updatedChatSpace.closedBy,
+            summary,
         };
     }
 
