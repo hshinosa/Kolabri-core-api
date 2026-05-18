@@ -8,6 +8,8 @@ import type { IAttachment, IReplyTo } from '../models/ChatLog.js';
 import { SilenceEvent } from '../models/SilenceEvent.js';
 import prisma from '../config/database.js';
 import { aiEngineService } from '../services/aiEngine.service.js';
+import { socketRateLimiter } from '../utils/socketRateLimiter.js';
+import { joinRoomSchema, sendMessageSchema, typingSchema, deleteMessageSchema, emitValidationError } from '../validators/socket.validator.js';
 
 interface ChatHistoryItem {
     _id: { toString(): string };
@@ -202,6 +204,17 @@ export function initSocketIO(server: HttpServer): Server {
             }
 
             const decoded = jwt.verify(token as string, secret) as JwtPayload;
+
+            const user = await prisma.user.findFirst({
+                where: { id: decoded.userId, deletedAt: null },
+                select: { id: true },
+            });
+
+            if (!user) {
+                logger.warn(`Socket auth rejected: User ${decoded.userId} not found or inactive`);
+                return next(new Error('User not found'));
+            }
+
             socket.user = decoded;
             
             logger.debug(`Socket auth success for user: ${decoded.email}`);
@@ -219,8 +232,19 @@ export function initSocketIO(server: HttpServer): Server {
 
         // Join room (by chatSpace)
         socket.on('join_room', async (data: { courseId: string; groupId: string; chatSpaceId: string }) => {
+            if (!socketRateLimiter.isAllowed(socket.id, 'join_room')) {
+                const violations = socketRateLimiter.recordViolation(socket.id);
+                socket.emit('rate_limit_exceeded', { event: 'join_room', retryAfter: socketRateLimiter.getRetryAfter(socket.id, 'join_room'), message: 'Too many join requests.' });
+                if (violations >= socketRateLimiter.disconnectThreshold) socket.disconnect(true);
+                return;
+            }
+            const joinParsed = joinRoomSchema.safeParse(data);
+            if (!joinParsed.success) {
+                emitValidationError(socket, 'join_room', joinParsed.error.issues);
+                return;
+            }
             try {
-                const { courseId, groupId, chatSpaceId } = data;
+                const { courseId, groupId, chatSpaceId } = joinParsed.data;
 
                 if (!socket.user) {
                     socket.emit('error', { message: 'Not authenticated' });
@@ -388,8 +412,19 @@ export function initSocketIO(server: HttpServer): Server {
             }>;
             mentions?: string[];
         }) => {
+            if (!socketRateLimiter.isAllowed(socket.id, 'send_message')) {
+                const violations = socketRateLimiter.recordViolation(socket.id);
+                socket.emit('rate_limit_exceeded', { event: 'send_message', retryAfter: socketRateLimiter.getRetryAfter(socket.id, 'send_message'), message: 'Too many messages. Please slow down.' });
+                if (violations >= socketRateLimiter.disconnectThreshold) socket.disconnect(true);
+                return;
+            }
+            const msgParsed = sendMessageSchema.safeParse(data);
+            if (!msgParsed.success) {
+                emitValidationError(socket, 'send_message', msgParsed.error.issues);
+                return;
+            }
             try {
-                const { roomId, content, courseId, groupId, replyTo, attachments, mentions } = data;
+                const { roomId, content, courseId, groupId, replyTo, attachments, mentions } = msgParsed.data;
 
                 if (!socket.user || (!content.trim() && (!attachments || attachments.length === 0))) {
                     return;
@@ -398,8 +433,8 @@ export function initSocketIO(server: HttpServer): Server {
                 // roomId is chatSpaceId
                 const chatSpaceId = roomId;
 
-                const chatSpaceRecord = await prisma.chatSpace.findUnique({
-                    where: { id: chatSpaceId },
+                const chatSpaceRecord = await prisma.chatSpace.findFirst({
+                    where: { id: chatSpaceId, deletedAt: null },
                     select: { closedAt: true },
                 });
 
@@ -418,8 +453,8 @@ export function initSocketIO(server: HttpServer): Server {
                 }
 
                 // Get user details
-                const user = await prisma.user.findUnique({
-                    where: { id: socket.user.userId },
+                const user = await prisma.user.findFirst({
+                    where: { id: socket.user.userId, deletedAt: null },
                     select: { id: true, name: true, role: true },
                 });
 
@@ -451,6 +486,16 @@ export function initSocketIO(server: HttpServer): Server {
                     engagement,
                 });
                 await chatLog.save();
+
+                aiEngineService.analyzeEngagement(content.trim()).then(async (aiEngagement) => {
+                    if (aiEngagement.success && aiEngagement.engagement_type !== 'unknown') {
+                        await ChatLog.findByIdAndUpdate(chatLog._id, {
+                            'engagement.lexicalVariety': Math.round(aiEngagement.lexical_variety * 100),
+                            'engagement.isHigherOrder': aiEngagement.is_higher_order,
+                            'engagement.engagementType': aiEngagement.engagement_type.toLowerCase() as 'cognitive' | 'behavioral' | 'emotional',
+                        });
+                    }
+                }).catch(() => {});
 
                 // Broadcast message to room
                 const message = {
@@ -490,7 +535,20 @@ export function initSocketIO(server: HttpServer): Server {
         // Delete message (only own messages)
         socket.on('delete_message', async (data: { roomId: string; messageId: string }) => {
             try {
-                const { roomId, messageId } = data;
+                if (!socketRateLimiter.isAllowed(socket.id, 'delete_message')) {
+                    const violations = socketRateLimiter.recordViolation(socket.id);
+                    socket.emit('rate_limit_exceeded', { event: 'delete_message', retryAfter: socketRateLimiter.getRetryAfter(socket.id, 'delete_message') });
+                    if (violations >= socketRateLimiter.disconnectThreshold) socket.disconnect(true);
+                    return;
+                }
+
+                const parsed = deleteMessageSchema.safeParse(data);
+                if (!parsed.success) {
+                    emitValidationError(socket, 'delete_message', parsed.error.issues);
+                    return;
+                }
+
+                const { roomId, messageId } = parsed.data;
 
                 if (!socket.user) {
                     socket.emit('error', { message: 'Not authenticated' });
@@ -527,6 +585,9 @@ export function initSocketIO(server: HttpServer): Server {
 
         // Typing indicator
         socket.on('typing', (data: { roomId: string; isTyping: boolean }) => {
+            if (!socketRateLimiter.isAllowed(socket.id, 'typing')) return;
+            const typingParsed = typingSchema.safeParse(data);
+            if (!typingParsed.success) return;
             if (!socket.user) return;
 
             socket.to(data.roomId).emit('user_typing', {
@@ -564,6 +625,7 @@ export function initSocketIO(server: HttpServer): Server {
 
         // Disconnect
         socket.on('disconnect', () => {
+            socketRateLimiter.cleanup(socket.id);
             // Clear typing indicator and remove from room tracking
             if (socket.user && socket.currentRoom) {
                 socket.to(socket.currentRoom).emit('user_typing', {
@@ -780,9 +842,35 @@ async function checkAndIntervenForQuality(
             return;
         }
 
-        // Select intervention message
-        const messages = QUALITY_INTERVENTIONS[interventionType];
-        const interventionMessage = messages[Math.floor(Math.random() * messages.length)];
+        let interventionMessage: string;
+        try {
+            const aiResult = await aiEngineService.analyzeIntervention({
+                messages: recentMessages.slice(0, 10).map(m => ({
+                    sender: m.senderName,
+                    content: m.content,
+                    timestamp: new Date(m.createdAt).toISOString(),
+                    sender_id: m.senderId,
+                })),
+                topic: qualityIssue,
+                chat_room_id: chatSpaceId,
+                intervention_type: interventionType,
+                force: true,
+            });
+            if (aiResult.success && aiResult.message) {
+                interventionMessage = aiResult.message;
+            } else {
+                const promptResult = await aiEngineService.generatePrompt(
+                    qualityIssue,
+                    `Diskusi kelompok membutuhkan intervensi: ${qualityIssue}`,
+                    'medium'
+                );
+                interventionMessage = promptResult.success && promptResult.prompt
+                    ? promptResult.prompt
+                    : QUALITY_INTERVENTIONS[interventionType][Math.floor(Math.random() * QUALITY_INTERVENTIONS[interventionType].length)];
+            }
+        } catch {
+            interventionMessage = QUALITY_INTERVENTIONS[interventionType][Math.floor(Math.random() * QUALITY_INTERVENTIONS[interventionType].length)];
+        }
 
         // Save intervention message
         const chatLog = new ChatLog({
