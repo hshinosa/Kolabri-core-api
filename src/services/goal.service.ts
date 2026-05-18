@@ -3,6 +3,7 @@ import { ApiError } from '../middleware/errorHandler.js';
 import { CreateGoalInput } from '../validators/goal.validator.js';
 import { validateGoalContent } from '../utils/helpers.js';
 import { GroupService } from './group.service.js';
+import { aiEngineService } from './aiEngine.service.js';
 
 export class GoalService {
     /**
@@ -71,13 +72,26 @@ export class GoalService {
             throw ApiError.badRequest(validation.message);
         }
 
-        // Create single goal for the chat space (userId is who created it, but it's shared)
+        let isValidated = true;
+        let goalFeedback: string | undefined;
+        let socraticHint: string | undefined;
+
+        const aiValidation = await aiEngineService.validateGoal(data.content, userId, chatSpaceId);
+        if (aiValidation.success) {
+            if (!aiValidation.is_valid) {
+                throw ApiError.badRequest(aiValidation.feedback || 'Goal tidak memenuhi kriteria Bloom\'s taxonomy');
+            }
+            isValidated = aiValidation.is_valid;
+            goalFeedback = aiValidation.feedback;
+            socraticHint = aiValidation.socratic_hint;
+        }
+
         const goal = await prisma.learningGoal.create({
             data: {
                 content: data.content,
                 chatSpaceId,
-                userId, // Track who created it
-                isValidated: true,
+                userId,
+                isValidated,
             },
             include: {
                 user: {
@@ -102,6 +116,8 @@ export class GoalService {
             chatSpace: goal.chatSpace,
             createdBy: goal.user,
             createdAt: goal.createdAt,
+            feedback: goalFeedback,
+            socratic_hint: socraticHint,
         };
     }
 
