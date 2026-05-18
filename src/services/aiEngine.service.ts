@@ -8,6 +8,15 @@
 import fs from 'fs/promises';
 import { Blob } from 'node:buffer';
 import { logger } from '../utils/logger.js';
+import { aiEngineCircuitBreaker, withRetry, isRetryableError } from '../utils/circuitBreaker.js';
+
+const LLM_TIMEOUT = 30000;
+const INGEST_TIMEOUT = 60000;
+const BATCH_INGEST_TIMEOUT = 120000;
+const ANALYTICS_TIMEOUT = 15000;
+const INTERVENTION_TIMEOUT = 20000;
+const HEALTH_TIMEOUT = 5000;
+const DELETE_TIMEOUT = 10000;
 
 // Types
 interface AskResponse {
@@ -168,12 +177,10 @@ interface ProcessMiningExportResponse {
 export class AIEngineService {
     private baseUrl: string;
     private secret: string;
-    private timeout: number;
 
     constructor() {
         this.baseUrl = process.env.AI_ENGINE_URL || 'http://localhost:8001';
         this.secret = process.env.AI_ENGINE_SECRET || '';
-        this.timeout = 30000; // 30 seconds
     }
 
     /**
@@ -191,16 +198,53 @@ export class AIEngineService {
         return headers;
     }
 
+    private async resilient<T>(fn: () => Promise<T>, retryable = true): Promise<T> {
+        return aiEngineCircuitBreaker.execute(() =>
+            retryable ? withRetry(fn, 3, isRetryableError) : fn()
+        );
+    }
+
+    private async fetchWithTimeout(
+        url: string,
+        options: RequestInit,
+        timeoutMs: number
+    ): Promise<Response> {
+        const controller = new AbortController();
+        const timeout = setTimeout(() => controller.abort(), timeoutMs);
+
+        try {
+            return await fetch(url, {
+                ...options,
+                signal: controller.signal,
+            });
+        } catch (error) {
+            if (error instanceof Error && error.name === 'AbortError' && controller.signal.aborted) {
+                const timeoutError = new Error('AI Engine request timed out');
+                timeoutError.name = 'TimeoutError';
+                throw timeoutError;
+            }
+            throw error;
+        } finally {
+            clearTimeout(timeout);
+        }
+    }
+
     /**
      * Check if AI Engine is available
      */
     async isAvailable(): Promise<boolean> {
         try {
-            const response = await fetch(`${this.baseUrl}/api/health`, {
-                method: 'GET',
-                headers: this.getHeaders(),
-                signal: AbortSignal.timeout(5000),
-            });
+            const response = await this.resilient(
+                () => this.fetchWithTimeout(
+                    `${this.baseUrl}/api/health`,
+                    {
+                        method: 'GET',
+                        headers: this.getHeaders(),
+                    },
+                    HEALTH_TIMEOUT
+                ),
+                false
+            );
 
             if (response.ok) {
                 const data = await response.json() as HealthResponse;
@@ -223,24 +267,20 @@ export class AIEngineService {
         chatSpaceId?: string
     ): Promise<AskResponse> {
         try {
-            const response = await fetch(`${this.baseUrl}/api/ask`, {
-                method: 'POST',
-                headers: this.getHeaders(),
-                body: JSON.stringify({
-                    query,
-                    course_id: courseId,
-                    user_name: userName,
-                    chat_space_id: chatSpaceId,
-                }),
-                signal: AbortSignal.timeout(this.timeout),
+            return await this.resilient(async () => {
+                const response = await this.fetchWithTimeout(`${this.baseUrl}/api/ask`, {
+                    method: 'POST',
+                    headers: this.getHeaders(),
+                    body: JSON.stringify({
+                        query,
+                        course_id: courseId,
+                        user_name: userName,
+                        chat_space_id: chatSpaceId,
+                    }),
+                }, LLM_TIMEOUT);
+                if (!response.ok) throw new Error(`AI Engine responded with ${response.status}`);
+                return await response.json() as AskResponse;
             });
-
-            if (!response.ok) {
-                throw new Error(`AI Engine responded with ${response.status}`);
-            }
-
-            const data = await response.json() as AskResponse;
-            return data;
         } catch (error) {
             logger.error('AI Engine ask failed:', error);
             return {
@@ -261,37 +301,33 @@ export class AIEngineService {
         fileName: string
     ): Promise<IngestResponse> {
         try {
-            // Read file
             const fileBuffer = await fs.readFile(filePath);
 
-            // Create form data
-            const formData = new FormData();
-            const fileBlob = new Blob([fileBuffer], {
-                type: 'application/pdf',
+            return await this.resilient(async () => {
+                const formData = new FormData();
+                const fileBlob = new Blob([fileBuffer], { type: 'application/pdf' });
+                formData.append('file', fileBlob, fileName);
+                formData.append('course_id', courseId);
+                formData.append('file_id', fileId);
+
+                const headers: Record<string, string> = {};
+                if (this.secret) {
+                    headers['X-API-Key'] = this.secret;
+                }
+
+                const response = await this.fetchWithTimeout(`${this.baseUrl}/api/ingest`, {
+                    method: 'POST',
+                    headers,
+                    body: formData,
+                }, INGEST_TIMEOUT);
+
+                if (!response.ok) {
+                    const errorText = await response.text();
+                    throw new Error(`AI Engine responded with ${response.status}: ${errorText}`);
+                }
+
+                return await response.json() as IngestResponse;
             });
-            formData.append('file', fileBlob, fileName);
-            formData.append('course_id', courseId);
-            formData.append('file_id', fileId);
-
-            const headers: Record<string, string> = {};
-            if (this.secret) {
-                headers['X-API-Key'] = this.secret;
-            }
-
-            const response = await fetch(`${this.baseUrl}/api/ingest`, {
-                method: 'POST',
-                headers,
-                body: formData,
-                signal: AbortSignal.timeout(60000), // 60 seconds for file processing
-            });
-
-            if (!response.ok) {
-                const errorText = await response.text();
-                throw new Error(`AI Engine responded with ${response.status}: ${errorText}`);
-            }
-
-            const data = await response.json() as IngestResponse;
-            return data;
         } catch (error) {
             logger.error('AI Engine ingest failed:', error);
             throw error;
@@ -306,18 +342,17 @@ export class AIEngineService {
         collectionName?: string
     ): Promise<boolean> {
         try {
-            const url = new URL(`${this.baseUrl}/api/documents/${documentId}`);
-            if (collectionName) {
-                url.searchParams.append('collection_name', collectionName);
-            }
-
-            const response = await fetch(url.toString(), {
-                method: 'DELETE',
-                headers: this.getHeaders(),
-                signal: AbortSignal.timeout(this.timeout),
+            return await this.resilient(async () => {
+                const url = new URL(`${this.baseUrl}/api/documents/${documentId}`);
+                if (collectionName) {
+                    url.searchParams.append('collection_name', collectionName);
+                }
+                const response = await this.fetchWithTimeout(url.toString(), {
+                    method: 'DELETE',
+                    headers: this.getHeaders(),
+                }, DELETE_TIMEOUT);
+                return response.ok;
             });
-
-            return response.ok;
         } catch (error) {
             logger.error('AI Engine delete document failed:', error);
             return false;
@@ -340,45 +375,48 @@ export class AIEngineService {
         }
     ): Promise<BatchUploadResponse> {
         try {
-            const formData = new FormData();
+            const fileBuffers = await Promise.all(
+                files.map(async (file) => ({
+                    name: file.name,
+                    buffer: await fs.readFile(file.path),
+                    contentType: this.getContentType(file.name),
+                }))
+            );
 
-            // Add all files
-            for (const file of files) {
-                const fileBuffer = await fs.readFile(file.path);
-                const contentType = this.getContentType(file.name);
-                const blob = new Blob([fileBuffer], { type: contentType });
-                formData.append('files', blob, file.name);
-            }
+            return await this.resilient(async () => {
+                const formData = new FormData();
 
-            // Add metadata
-            formData.append('course_id', courseId);
-            
-            if (options?.extractImages !== undefined) {
-                formData.append('extract_images', options.extractImages.toString());
-            }
-            if (options?.performOcr !== undefined) {
-                formData.append('perform_ocr', options.performOcr.toString());
-            }
+                for (const { name, buffer, contentType } of fileBuffers) {
+                    const blob = new Blob([buffer], { type: contentType });
+                    formData.append('files', blob, name);
+                }
 
-            const batchHeaders: Record<string, string> = {};
-            if (this.secret) {
-                batchHeaders['X-API-Key'] = this.secret;
-            }
+                formData.append('course_id', courseId);
+                if (options?.extractImages !== undefined) {
+                    formData.append('extract_images', options.extractImages.toString());
+                }
+                if (options?.performOcr !== undefined) {
+                    formData.append('perform_ocr', options.performOcr.toString());
+                }
 
-            const response = await fetch(`${this.baseUrl}/api/ingest/batch`, {
-                method: 'POST',
-                headers: batchHeaders,
-                body: formData,
-                signal: AbortSignal.timeout(300000), // 5 minutes for batch processing
+                const batchHeaders: Record<string, string> = {};
+                if (this.secret) {
+                    batchHeaders['X-API-Key'] = this.secret;
+                }
+
+                const response = await this.fetchWithTimeout(`${this.baseUrl}/api/ingest/batch`, {
+                    method: 'POST',
+                    headers: batchHeaders,
+                    body: formData,
+                }, BATCH_INGEST_TIMEOUT);
+
+                if (!response.ok) {
+                    const errorText = await response.text();
+                    throw new Error(`AI Engine responded with ${response.status}: ${errorText}`);
+                }
+
+                return await response.json() as BatchUploadResponse;
             });
-
-            if (!response.ok) {
-                const errorText = await response.text();
-                throw new Error(`AI Engine responded with ${response.status}: ${errorText}`);
-            }
-
-            const data = await response.json() as BatchUploadResponse;
-            return data;
         } catch (error) {
             logger.error('AI Engine batch ingest failed:', error);
             throw error;
@@ -433,18 +471,15 @@ export class AIEngineService {
         request: InterventionRequest
     ): Promise<InterventionResponse> {
         try {
-            const response = await fetch(`${this.baseUrl}/api/intervention/analyze`, {
-                method: 'POST',
-                headers: this.getHeaders(),
-                body: JSON.stringify(request),
-                signal: AbortSignal.timeout(this.timeout),
+            return await this.resilient(async () => {
+                const response = await this.fetchWithTimeout(`${this.baseUrl}/api/intervention/analyze`, {
+                    method: 'POST',
+                    headers: this.getHeaders(),
+                    body: JSON.stringify(request),
+                }, INTERVENTION_TIMEOUT);
+                if (!response.ok) throw new Error(`AI Engine responded with ${response.status}`);
+                return await response.json() as InterventionResponse;
             });
-
-            if (!response.ok) {
-                throw new Error(`AI Engine responded with ${response.status}`);
-            }
-
-            return await response.json() as InterventionResponse;
         } catch (error) {
             logger.error('AI Engine intervention analysis failed:', error);
             return {
@@ -467,22 +502,19 @@ export class AIEngineService {
         chatRoomId: string
     ): Promise<SummaryResponse> {
         try {
-            const response = await fetch(`${this.baseUrl}/api/intervention/summary`, {
-                method: 'POST',
-                headers: this.getHeaders(),
-                body: JSON.stringify({
-                    messages,
-                    chat_room_id: chatRoomId,
-                    include_action_items: true,
-                }),
-                signal: AbortSignal.timeout(this.timeout),
+            return await this.resilient(async () => {
+                const response = await this.fetchWithTimeout(`${this.baseUrl}/api/intervention/summary`, {
+                    method: 'POST',
+                    headers: this.getHeaders(),
+                    body: JSON.stringify({
+                        messages,
+                        chat_room_id: chatRoomId,
+                        include_action_items: true,
+                    }),
+                }, INTERVENTION_TIMEOUT);
+                if (!response.ok) throw new Error(`AI Engine responded with ${response.status}`);
+                return await response.json() as SummaryResponse;
             });
-
-            if (!response.ok) {
-                throw new Error(`AI Engine responded with ${response.status}`);
-            }
-
-            return await response.json() as SummaryResponse;
         } catch (error) {
             logger.error('AI Engine summary generation failed:', error);
             return {
@@ -503,22 +535,15 @@ export class AIEngineService {
         difficulty: 'easy' | 'medium' | 'hard' = 'medium'
     ): Promise<{ success: boolean; prompt: string; error?: string }> {
         try {
-            const response = await fetch(`${this.baseUrl}/api/intervention/prompt`, {
-                method: 'POST',
-                headers: this.getHeaders(),
-                body: JSON.stringify({
-                    topic,
-                    context,
-                    difficulty,
-                }),
-                signal: AbortSignal.timeout(this.timeout),
+            return await this.resilient(async () => {
+                const response = await this.fetchWithTimeout(`${this.baseUrl}/api/intervention/prompt`, {
+                    method: 'POST',
+                    headers: this.getHeaders(),
+                    body: JSON.stringify({ topic, context, difficulty }),
+                }, INTERVENTION_TIMEOUT);
+                if (!response.ok) throw new Error(`AI Engine responded with ${response.status}`);
+                return await response.json() as { success: boolean; prompt: string; error?: string };
             });
-
-            if (!response.ok) {
-                throw new Error(`AI Engine responded with ${response.status}`);
-            }
-
-            return await response.json() as { success: boolean; prompt: string; error?: string };
         } catch (error) {
             logger.error('AI Engine prompt generation failed:', error);
             return {
@@ -534,16 +559,19 @@ export class AIEngineService {
         history: Array<{ role: 'user' | 'assistant'; content: string }>,
         userName?: string
     ): Promise<globalThis.Response> {
-        return fetch(`${this.baseUrl}/api/chat/personal/stream`, {
-            method: 'POST',
-            headers: this.getHeaders(),
-            body: JSON.stringify({
-                message,
-                history: history.slice(-20),
-                user_name: userName,
-            }),
-            signal: AbortSignal.timeout(this.timeout),
-        });
+        return await this.resilient(() => this.fetchWithTimeout(
+            `${this.baseUrl}/api/chat/personal/stream`,
+            {
+                method: 'POST',
+                headers: this.getHeaders(),
+                body: JSON.stringify({
+                    message,
+                    history: history.slice(-20),
+                    user_name: userName,
+                }),
+            },
+            LLM_TIMEOUT
+        ));
     }
 
     async personalChat(
@@ -552,22 +580,19 @@ export class AIEngineService {
         userName?: string
     ): Promise<{ reply: string; success: boolean; tokens_used: number; error?: string }> {
         try {
-            const response = await fetch(`${this.baseUrl}/api/chat/personal`, {
-                method: 'POST',
-                headers: this.getHeaders(),
-                body: JSON.stringify({
-                    message,
-                    history: history.slice(-20),
-                    user_name: userName,
-                }),
-                signal: AbortSignal.timeout(this.timeout),
+            return await this.resilient(async () => {
+                const response = await this.fetchWithTimeout(`${this.baseUrl}/api/chat/personal`, {
+                    method: 'POST',
+                    headers: this.getHeaders(),
+                    body: JSON.stringify({
+                        message,
+                        history: history.slice(-20),
+                        user_name: userName,
+                    }),
+                }, LLM_TIMEOUT);
+                if (!response.ok) throw new Error(`AI Engine responded with ${response.status}`);
+                return await response.json() as { reply: string; success: boolean; tokens_used: number; error?: string };
             });
-
-            if (!response.ok) {
-                throw new Error(`AI Engine responded with ${response.status}`);
-            }
-
-            return await response.json() as { reply: string; success: boolean; tokens_used: number; error?: string };
         } catch (error) {
             logger.error('AI Engine personal chat failed:', error);
             return {
@@ -593,18 +618,15 @@ export class AIEngineService {
         request: OrchestrationRequest
     ): Promise<OrchestrationResponse> {
         try {
-            const response = await fetch(`${this.baseUrl}/api/chat`, {
-                method: 'POST',
-                headers: this.getHeaders(),
-                body: JSON.stringify(request),
-                signal: AbortSignal.timeout(this.timeout),
+            return await this.resilient(async () => {
+                const response = await this.fetchWithTimeout(`${this.baseUrl}/api/chat`, {
+                    method: 'POST',
+                    headers: this.getHeaders(),
+                    body: JSON.stringify(request),
+                }, LLM_TIMEOUT);
+                if (!response.ok) throw new Error(`AI Engine responded with ${response.status}`);
+                return await response.json() as OrchestrationResponse;
             });
-
-            if (!response.ok) {
-                throw new Error(`AI Engine responded with ${response.status}`);
-            }
-
-            return await response.json() as OrchestrationResponse;
         } catch (error) {
             logger.error('AI Engine orchestrated chat failed:', error);
             return {
@@ -623,17 +645,14 @@ export class AIEngineService {
      */
     async getGroupAnalytics(groupId: string): Promise<GroupAnalyticsResponse> {
         try {
-            const response = await fetch(`${this.baseUrl}/api/analytics/group/${groupId}`, {
-                method: 'GET',
-                headers: this.getHeaders(),
-                signal: AbortSignal.timeout(this.timeout),
+            return await this.resilient(async () => {
+                const response = await this.fetchWithTimeout(`${this.baseUrl}/api/analytics/group/${groupId}`, {
+                    method: 'GET',
+                    headers: this.getHeaders(),
+                }, ANALYTICS_TIMEOUT);
+                if (!response.ok) throw new Error(`AI Engine responded with ${response.status}`);
+                return await response.json() as GroupAnalyticsResponse;
             });
-
-            if (!response.ok) {
-                throw new Error(`AI Engine responded with ${response.status}`);
-            }
-
-            return await response.json() as GroupAnalyticsResponse;
         } catch (error) {
             logger.error('AI Engine group analytics failed:', error);
             return {
@@ -650,18 +669,15 @@ export class AIEngineService {
      */
     async analyzeEngagement(text: string): Promise<EngagementAnalysisResponse> {
         try {
-            const response = await fetch(`${this.baseUrl}/api/analytics/engagement`, {
-                method: 'POST',
-                headers: this.getHeaders(),
-                body: JSON.stringify({ text }),
-                signal: AbortSignal.timeout(this.timeout),
+            return await this.resilient(async () => {
+                const response = await this.fetchWithTimeout(`${this.baseUrl}/api/analytics/engagement`, {
+                    method: 'POST',
+                    headers: this.getHeaders(),
+                    body: JSON.stringify({ text }),
+                }, ANALYTICS_TIMEOUT);
+                if (!response.ok) throw new Error(`AI Engine responded with ${response.status}`);
+                return await response.json() as EngagementAnalysisResponse;
             });
-
-            if (!response.ok) {
-                throw new Error(`AI Engine responded with ${response.status}`);
-            }
-
-            return await response.json() as EngagementAnalysisResponse;
         } catch (error) {
             logger.error('AI Engine engagement analysis failed:', error);
             return {
@@ -684,17 +700,14 @@ export class AIEngineService {
      */
     async exportProcessMiningData(): Promise<ProcessMiningExportResponse> {
         try {
-            const response = await fetch(`${this.baseUrl}/api/analytics/export`, {
-                method: 'GET',
-                headers: this.getHeaders(),
-                signal: AbortSignal.timeout(this.timeout),
+            return await this.resilient(async () => {
+                const response = await this.fetchWithTimeout(`${this.baseUrl}/api/analytics/export`, {
+                    method: 'GET',
+                    headers: this.getHeaders(),
+                }, ANALYTICS_TIMEOUT);
+                if (!response.ok) throw new Error(`AI Engine responded with ${response.status}`);
+                return await response.json() as ProcessMiningExportResponse;
             });
-
-            if (!response.ok) {
-                throw new Error(`AI Engine responded with ${response.status}`);
-            }
-
-            return await response.json() as ProcessMiningExportResponse;
         } catch (error) {
             logger.error('AI Engine process mining export failed:', error);
             return {
@@ -702,6 +715,38 @@ export class AIEngineService {
                 file_url: '',
                 error: error instanceof Error ? error.message : 'Unknown error',
             };
+        }
+    }
+    async trackActivity(groupId: string): Promise<void> {
+        try {
+            await this.fetchWithTimeout(`${this.baseUrl}/api/track-activity`, {
+                method: 'POST',
+                headers: this.getHeaders(),
+                body: JSON.stringify({ group_id: groupId }),
+            }, 3000);
+        } catch {
+            logger.debug('AI Engine track activity failed (non-critical)');
+        }
+    }
+
+    async validateGoal(
+        goalText: string,
+        userId: string,
+        chatSpaceId: string
+    ): Promise<{ success: boolean; is_valid: boolean; score: number; feedback: string; socratic_hint?: string; missing_criteria?: string[]; error?: string }> {
+        try {
+            return await this.resilient(async () => {
+                const response = await this.fetchWithTimeout(`${this.baseUrl}/api/goals/validate`, {
+                    method: 'POST',
+                    headers: this.getHeaders(),
+                    body: JSON.stringify({ goal_text: goalText, user_id: userId, chat_space_id: chatSpaceId }),
+                }, ANALYTICS_TIMEOUT);
+                if (!response.ok) throw new Error(`AI Engine responded with ${response.status}`);
+                return await response.json() as { success: boolean; is_valid: boolean; score: number; feedback: string; socratic_hint?: string; missing_criteria?: string[] };
+            });
+        } catch (error) {
+            logger.error('AI Engine goal validation failed:', error);
+            return { success: false, is_valid: true, score: 0, feedback: '', error: error instanceof Error ? error.message : 'Unknown error' };
         }
     }
 }
