@@ -5,6 +5,7 @@ import helmet from 'helmet';
 import { errorHandler } from './middleware/errorHandler.js';
 import { requestLogger } from './middleware/requestLogger.js';
 import { rateLimiter } from './middleware/rateLimiter.js';
+import { sanitizeBody } from './middleware/sanitize.js';
 
 // Routes
 import authRoutes from './routes/auth.routes.js';
@@ -23,6 +24,7 @@ import courseTemplateRoutes from './routes/course-template.routes.js';
 import aiProviderRoutes from './routes/ai-provider.routes.js';
 import adminAiRoutes from './routes/admin-ai.routes.js';
 import auditLogRoutes from './routes/audit-log.routes.js';
+import webhookRoutes from './routes/webhook.routes.js';
 
 const app = express();
 
@@ -66,6 +68,7 @@ app.use(helmet({
 // Body parsing
 app.use(express.json({ limit: '10mb' }));
 app.use(express.urlencoded({ extended: true }));
+app.use(sanitizeBody);
 
 // Request logging
 app.use(requestLogger);
@@ -92,6 +95,7 @@ app.use('/api/admin/audit-logs', auditLogRoutes);
 app.use('/api/admin', adminAiRoutes);
 app.use('/api/health', healthRoutes);
 app.use('/health', healthRoutes);
+app.use('/api/webhooks', webhookRoutes);
 
 // 404 handler
 app.use((_req, res) => {
