@@ -1,7 +1,8 @@
 import { Router, Request, Response } from 'express';
 import prisma from '../config/database.js';
 import { ChatLog } from '../models/ChatLog.js';
-import { getIO } from '../socket/index.js';
+import { getSocketEmitter } from '../utils/socketEmitter.js';
+import { roomNames } from '../socket/rooms.js';
 import { logger } from '../utils/logger.js';
 
 const router = Router();
@@ -18,8 +19,8 @@ router.post('/ai-intervention', async (req: Request, res: Response) => {
     }
 
     try {
-        const io = getIO();
-        if (!io) {
+        const emitter = getSocketEmitter();
+        if (!emitter) {
             return res.status(503).json({ error: 'Socket.IO not initialized' });
         }
 
@@ -40,7 +41,7 @@ router.post('/ai-intervention', async (req: Request, res: Response) => {
 
         let delivered = 0;
         for (const chatSpace of group.chatSpaces) {
-            const roomId = `course_${group.course.id}_group_${groupId}_space_${chatSpace.id}`;
+            const roomId = roomNames.chatSpace(chatSpace.id);
 
             const chatLog = new ChatLog({
                 courseId: group.course.id,
@@ -54,7 +55,7 @@ router.post('/ai-intervention', async (req: Request, res: Response) => {
             });
             await chatLog.save();
 
-            io.to(roomId).emit('receive_message', {
+            emitter.emit(roomId, 'receive_message', {
                 id: chatLog._id?.toString(),
                 senderId: 'ai',
                 senderName: 'AI Assistant',
@@ -65,7 +66,7 @@ router.post('/ai-intervention', async (req: Request, res: Response) => {
                 createdAt: chatLog.createdAt.toISOString(),
             });
 
-            io.to(roomId).emit('quality_intervention', {
+            emitter.emit(roomId, 'quality_intervention', {
                 chatSpaceId: chatSpace.id,
                 interventionType: type,
                 metadata: metadata || {},

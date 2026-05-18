@@ -1,6 +1,6 @@
 import prisma from '../config/database.js';
 import { ApiError } from '../middleware/errorHandler.js';
-import { getIO } from '../socket/index.js';
+import { getSocketEmitter } from '../utils/socketEmitter.js';
 import { logger } from '../utils/logger.js';
 import { ChatLog } from '../models/ChatLog.js';
 import { aiEngineService } from './aiEngine.service.js';
@@ -22,8 +22,8 @@ export class ChatSpaceService {
      * Close a chat space session (lecturer/admin owner or group member)
      */
     static async closeSession(chatSpaceId: string, userId: string, userRole: 'student' | 'lecturer' | 'admin') {
-        const chatSpace = await prisma.chatSpace.findUnique({
-            where: { id: chatSpaceId },
+        const chatSpace = await prisma.chatSpace.findFirst({
+            where: { id: chatSpaceId, deletedAt: null },
             include: {
                 group: {
                     include: {
@@ -72,7 +72,7 @@ export class ChatSpaceService {
         const closeMessage = `Sesi diskusi ini telah ditutup oleh ${actorLabel}.`;
 
         try {
-            getIO().to(chatSpaceId).emit('session_closed', {
+            getSocketEmitter()?.emit(chatSpaceId, 'session_closed', {
                 chatSpaceId,
                 closedAt: updatedChatSpace.closedAt?.toISOString(),
                 message: closeMessage,
@@ -121,8 +121,8 @@ export class ChatSpaceService {
             throw ApiError.forbidden('Only lecturers can reopen chat sessions');
         }
 
-        const chatSpace = await prisma.chatSpace.findUnique({
-            where: { id: chatSpaceId },
+        const chatSpace = await prisma.chatSpace.findFirst({
+            where: { id: chatSpaceId, deletedAt: null },
             include: {
                 group: {
                     include: {
@@ -153,7 +153,7 @@ export class ChatSpaceService {
         }) as unknown as { id: string; name: string; closedAt: Date | null; closedBy: string | null };
 
         try {
-            getIO().to(chatSpaceId).emit('session_reopened', {
+            getSocketEmitter()?.emit(chatSpaceId, 'session_reopened', {
                 chatSpaceId,
             });
         } catch (error) {
@@ -186,9 +186,8 @@ export class ChatSpaceService {
      * Get chat space status including reflection requirement
      */
     static async getChatSpaceStatus(chatSpaceId: string, userId: string, userRole: string) {
-        // Get chat space with group info
-        const chatSpace = await prisma.chatSpace.findUnique({
-            where: { id: chatSpaceId },
+        const chatSpace = await prisma.chatSpace.findFirst({
+            where: { id: chatSpaceId, deletedAt: null },
             include: {
                 group: {
                     include: {
@@ -246,8 +245,8 @@ export class ChatSpaceService {
         content: string, 
         userId: string
     ) {
-        const chatSpace = await prisma.chatSpace.findUnique({
-            where: { id: chatSpaceId },
+        const chatSpace = await prisma.chatSpace.findFirst({
+            where: { id: chatSpaceId, deletedAt: null },
             include: {
                 group: {
                     include: {

@@ -2,6 +2,7 @@ import { beforeEach, describe, expect, it, vi } from 'vitest';
 import type { NextFunction, Request, Response } from 'express';
 
 import { ApiError, errorHandler } from './errorHandler.js';
+import { logger } from '../utils/logger.js';
 
 describe('errorHandler', () => {
     beforeEach(() => {
@@ -46,8 +47,8 @@ describe('errorHandler', () => {
         });
     });
 
-    it('logs errors to console outside production mode', () => {
-        const consoleSpy = vi.spyOn(console, 'error').mockImplementation(() => undefined);
+    it('routes errors through the structured logger outside production', () => {
+        const loggerSpy = vi.spyOn(logger, 'error').mockImplementation(() => logger);
         const statusMock = vi.fn().mockReturnThis();
         const jsonMock = vi.fn();
         const res = { status: statusMock, json: jsonMock } as unknown as Response;
@@ -55,6 +56,9 @@ describe('errorHandler', () => {
 
         errorHandler(ApiError.notFound('Missing resource'), {} as Request, res, vi.fn() as NextFunction);
 
-        expect(consoleSpy).toHaveBeenCalledWith('Error:', expect.objectContaining({ message: 'Missing resource' }));
+        expect(loggerSpy).toHaveBeenCalledWith(
+            'Request error [NOT_FOUND 404]:',
+            expect.objectContaining({ message: 'Missing resource' }),
+        );
     });
 });

@@ -1,4 +1,6 @@
-const CACHE_TTL_MS = 5 * 60 * 1000;
+// Short TTL: security state (deactivation, soft-delete) must propagate fast.
+// 30s = bounded window for compromise/abuse, low enough to not leak access.
+const CACHE_TTL_MS = 30 * 1000;
 
 interface CacheEntry {
     value: boolean;
@@ -27,6 +29,10 @@ class UserActiveCache {
 
     invalidate(userId: string): void {
         this.store.delete(userId);
+    }
+
+    invalidateAll(): void {
+        this.store.clear();
     }
 }
 

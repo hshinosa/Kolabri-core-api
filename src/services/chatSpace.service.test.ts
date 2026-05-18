@@ -1,30 +1,44 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
-const { prismaMock, ioMock, getIOMock, loggerMock } = vi.hoisted(() => ({
+const { prismaMock, emitterMock, loggerMock } = vi.hoisted(() => ({
     prismaMock: {
-        chatSpace: { findUnique: vi.fn(), update: vi.fn() },
+        chatSpace: { findUnique: vi.fn(), findFirst: vi.fn(), update: vi.fn() },
         reflection: { findFirst: vi.fn(), create: vi.fn() },
     },
-    ioMock: {
-        to: vi.fn(),
+    emitterMock: {
+        emit: vi.fn(),
     },
-    getIOMock: vi.fn(),
     loggerMock: { warn: vi.fn(), info: vi.fn(), error: vi.fn() },
 }));
-
-ioMock.to.mockReturnValue({ emit: vi.fn() });
-getIOMock.mockReturnValue(ioMock);
 
 vi.mock('../config/database.js', () => ({
     default: prismaMock,
 }));
 
-vi.mock('../socket/index.js', () => ({
-    getIO: getIOMock,
+vi.mock('../utils/socketEmitter.js', () => ({
+    getSocketEmitter: () => emitterMock,
 }));
 
 vi.mock('../utils/logger.js', () => ({
     logger: loggerMock,
+}));
+
+vi.mock('../models/ChatLog.js', () => ({
+    ChatLog: {
+        find: vi.fn(() => ({
+            sort: vi.fn(() => ({
+                limit: vi.fn(() => ({
+                    lean: vi.fn(() => Promise.resolve([])),
+                })),
+            })),
+        })),
+    },
+}));
+
+vi.mock('./aiEngine.service.js', () => ({
+    aiEngineService: {
+        generateSummary: vi.fn(() => Promise.resolve({ success: false, summary: null })),
+    },
 }));
 
 import { ChatSpaceService } from './chatSpace.service.js';
@@ -32,14 +46,11 @@ import { ChatSpaceService } from './chatSpace.service.js';
 describe('ChatSpaceService', () => {
     beforeEach(() => {
         vi.clearAllMocks();
-        ioMock.to.mockReturnValue({ emit: vi.fn() });
     });
 
     it('closes a session for a student group member and broadcasts the closure', async () => {
         const closedAt = new Date('2026-05-03T10:00:00.000Z');
-        const emitMock = vi.fn();
-        ioMock.to.mockReturnValue({ emit: emitMock });
-        prismaMock.chatSpace.findUnique.mockResolvedValue({
+        prismaMock.chatSpace.findFirst.mockResolvedValue({
             id: 'chat-1',
             name: 'General',
             closedAt: null,
@@ -64,7 +75,7 @@ describe('ChatSpaceService', () => {
                 data: expect.objectContaining({ closedBy: 'student-1' }),
             })
         );
-        expect(emitMock).toHaveBeenCalledWith('session_closed', {
+        expect(emitterMock.emit).toHaveBeenCalledWith('chat-1', 'session_closed', {
             chatSpaceId: 'chat-1',
             closedAt: closedAt.toISOString(),
             message: 'Sesi diskusi ini telah ditutup oleh mahasiswa.',
@@ -74,11 +85,12 @@ describe('ChatSpaceService', () => {
             name: 'General',
             closedAt,
             closedBy: 'student-1',
+            summary: null,
         });
     });
 
     it('rejects closing a session when the student is not a group member', async () => {
-        prismaMock.chatSpace.findUnique.mockResolvedValue({
+        prismaMock.chatSpace.findFirst.mockResolvedValue({
             id: 'chat-1',
             name: 'General',
             closedAt: null,
@@ -96,7 +108,7 @@ describe('ChatSpaceService', () => {
     });
 
     it('computes chat space reflection status for a closed student session', async () => {
-        prismaMock.chatSpace.findUnique.mockResolvedValue({
+        prismaMock.chatSpace.findFirst.mockResolvedValue({
             id: 'chat-1',
             name: 'General',
             closedAt: new Date('2026-05-03T10:00:00.000Z'),
@@ -124,7 +136,7 @@ describe('ChatSpaceService', () => {
 
     it('submits a closed-session reflection and links the user goal when available', async () => {
         const createdAt = new Date('2026-05-03T12:00:00.000Z');
-        prismaMock.chatSpace.findUnique.mockResolvedValue({
+        prismaMock.chatSpace.findFirst.mockResolvedValue({
             id: 'chat-1',
             name: 'General',
             closedAt: new Date('2026-05-03T10:00:00.000Z'),
@@ -165,7 +177,7 @@ describe('ChatSpaceService', () => {
     });
 
     it('rejects reflection submission before the session is closed', async () => {
-        prismaMock.chatSpace.findUnique.mockResolvedValue({
+        prismaMock.chatSpace.findFirst.mockResolvedValue({
             id: 'chat-1',
             name: 'General',
             closedAt: null,

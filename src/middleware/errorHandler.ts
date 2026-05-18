@@ -1,4 +1,5 @@
 import { Request, Response, NextFunction } from 'express';
+import { logger } from '../utils/logger.js';
 
 export interface AppError extends Error {
     statusCode?: number;
@@ -54,9 +55,8 @@ export function errorHandler(
     const code = err.code || 'INTERNAL_ERROR';
     const message = err.message || 'An unexpected error occurred';
 
-    // Log error in development
     if (process.env.NODE_ENV !== 'production') {
-        console.error('Error:', err);
+        logger.error(`Request error [${code} ${statusCode}]:`, err);
     }
 
     res.status(statusCode).json({

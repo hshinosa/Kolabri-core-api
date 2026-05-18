@@ -34,10 +34,10 @@ const { prismaMock, aiEngineServiceMock, ChatLogMock, SilenceEventMock, jwtMock 
 vi.mock('../config/database.js', () => ({ default: prismaMock }));
 vi.mock('../services/aiEngine.service.js', () => ({ aiEngineService: aiEngineServiceMock }));
 vi.mock('../models/ChatLog.js', () => {
-    function ChatLog(data: any) {
+    function ChatLog(this: Record<string, unknown>, data: Record<string, unknown>) {
         Object.assign(this, data);
-        (this as any)._id = { toString: () => 'mock-id' };
-        (this as any).createdAt = new Date('2026-06-01T00:00:00Z');
+        this._id = { toString: () => 'mock-id' };
+        this.createdAt = new Date('2026-06-01T00:00:00Z');
     }
     ChatLog.find = ChatLogMock.find;
     ChatLog.findById = ChatLogMock.findById;
@@ -46,7 +46,9 @@ vi.mock('../models/ChatLog.js', () => {
     return { ChatLog };
 });
 vi.mock('../models/SilenceEvent.js', () => {
-    function SilenceEvent(data: any) { Object.assign(this, data); }
+    function SilenceEvent(this: Record<string, unknown>, data: Record<string, unknown>) {
+        Object.assign(this, data);
+    }
     SilenceEvent.prototype.save = SilenceEventMock.prototype.save;
     return { SilenceEvent };
 });

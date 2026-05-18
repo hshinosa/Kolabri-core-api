@@ -2,7 +2,7 @@ import { beforeEach, describe, expect, it, vi } from 'vitest';
 
 const { prismaMock, cacheMock, generateJoinCodeMock } = vi.hoisted(() => ({
     prismaMock: {
-        course: { findUnique: vi.fn(), findMany: vi.fn(), create: vi.fn() },
+        course: { findUnique: vi.fn(), findFirst: vi.fn(), findMany: vi.fn(), create: vi.fn() },
         courseStudent: { findUnique: vi.fn(), create: vi.fn(), findMany: vi.fn() },
     },
     cacheMock: { get: vi.fn(), set: vi.fn(), invalidatePattern: vi.fn() },
@@ -87,7 +87,7 @@ describe('CourseService', () => {
     });
 
     it('joins an active course when the student is not yet enrolled', async () => {
-        prismaMock.course.findUnique.mockResolvedValue({
+        prismaMock.course.findFirst.mockResolvedValue({
             id: 'course-1',
             code: 'IF101',
             name: 'Intro AI',
@@ -99,6 +99,9 @@ describe('CourseService', () => {
 
         const result = await CourseService.joinCourse({ join_code: 'JOIN01' }, 'student-1');
 
+        expect(prismaMock.course.findFirst).toHaveBeenCalledWith({
+            where: { joinCode: 'JOIN01', deletedAt: null },
+        });
         expect(prismaMock.courseStudent.create).toHaveBeenCalledWith({
             data: {
                 courseId: 'course-1',
@@ -114,7 +117,7 @@ describe('CourseService', () => {
     });
 
     it('rejects archived courses when joining', async () => {
-        prismaMock.course.findUnique.mockResolvedValue({ isArchived: true, isActive: true });
+        prismaMock.course.findFirst.mockResolvedValue({ isArchived: true, isActive: true });
 
         await expect(CourseService.joinCourse({ join_code: 'JOIN01' }, 'student-1')).rejects.toMatchObject({
             statusCode: 403,
@@ -123,7 +126,7 @@ describe('CourseService', () => {
     });
 
     it('rejects inactive courses when joining', async () => {
-        prismaMock.course.findUnique.mockResolvedValue({ isArchived: false, isActive: false });
+        prismaMock.course.findFirst.mockResolvedValue({ isArchived: false, isActive: false });
 
         await expect(CourseService.joinCourse({ join_code: 'JOIN01' }, 'student-1')).rejects.toMatchObject({
             statusCode: 403,
@@ -132,7 +135,7 @@ describe('CourseService', () => {
     });
 
     it('rejects duplicate enrollments when joining a course', async () => {
-        prismaMock.course.findUnique.mockResolvedValue({
+        prismaMock.course.findFirst.mockResolvedValue({
             id: 'course-1',
             isArchived: false,
             isActive: true,
@@ -142,6 +145,15 @@ describe('CourseService', () => {
         await expect(CourseService.joinCourse({ join_code: 'JOIN01' }, 'student-1')).rejects.toMatchObject({
             statusCode: 409,
             message: 'Already enrolled in this course',
+        });
+    });
+
+    it('rejects soft-deleted courses (findFirst returns null when deletedAt is set)', async () => {
+        prismaMock.course.findFirst.mockResolvedValue(null);
+
+        await expect(CourseService.joinCourse({ join_code: 'JOIN01' }, 'student-1')).rejects.toMatchObject({
+            statusCode: 404,
+            message: 'Invalid join code',
         });
     });
 

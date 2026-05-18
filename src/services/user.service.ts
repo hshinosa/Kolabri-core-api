@@ -221,6 +221,7 @@ export class UserService {
         }
 
         await prisma.user.delete({ where: { id } });
+        userActiveCache.invalidate(id);
         return { success: true };
     }
 
@@ -314,6 +315,10 @@ export class UserService {
             where: { id: { in: uniqueUserIds }, deletedAt: null },
             data: { deletedAt: new Date() },
         });
+
+        for (const id of uniqueUserIds) {
+            userActiveCache.invalidate(id);
+        }
 
         return {
             deletedCount: result.count,

@@ -1,9 +1,24 @@
-import rateLimit from 'express-rate-limit';
+import rateLimit, { type Options } from 'express-rate-limit';
+import { RedisStore } from 'rate-limit-redis';
 import { AuthenticatedRequest } from './auth.js';
+import { getRedis } from '../config/redis.js';
+
+function buildStore(prefix: string): Options['store'] | undefined {
+    const redis = getRedis();
+    if (!redis) return undefined;
+    return new RedisStore({
+        prefix: `rl:${prefix}:`,
+        // ioredis's `call(...)` accepts variadic args; cast at the boundary because
+        // RedisStore expects an opaque RedisReply.
+        sendCommand: (command: string, ...args: string[]) =>
+            (redis.call(command, ...args) as unknown) as Promise<unknown>,
+    } as unknown as ConstructorParameters<typeof RedisStore>[0]) as unknown as Options['store'];
+}
 
 export const rateLimiter = rateLimit({
     windowMs: Number(process.env.RATE_LIMIT_WINDOW_MS) || 15 * 60 * 1000,
     max: Number(process.env.RATE_LIMIT_MAX_REQUESTS) || 100,
+    store: buildStore('general'),
     keyGenerator: (req) => {
         const authReq = req as AuthenticatedRequest;
         return authReq.user?.userId || req.ip || 'anonymous';
@@ -21,6 +36,7 @@ export const rateLimiter = rateLimit({
 export const authRateLimiter = rateLimit({
     windowMs: 15 * 60 * 1000,
     max: Number(process.env.AUTH_RATE_LIMIT_MAX) || 50,
+    store: buildStore('auth'),
     keyGenerator: (req) => {
         const authReq = req as AuthenticatedRequest;
         return authReq.user?.userId || req.ip || 'anonymous';
@@ -35,9 +51,44 @@ export const authRateLimiter = rateLimit({
     legacyHeaders: false,
 });
 
+// Strict per-IP login limiter: 5 failed attempts per 15 min, successful logins
+// don't count so legit users staying logged-in/refreshing don't hit it.
+export const loginRateLimiter = rateLimit({
+    windowMs: 15 * 60 * 1000,
+    max: 5,
+    store: buildStore('login'),
+    keyGenerator: (req) => req.ip || 'anonymous',
+    skipSuccessfulRequests: true,
+    message: {
+        error: {
+            code: 'AUTH_RATE_LIMIT_EXCEEDED',
+            message: 'Too many login attempts, please try again later',
+        },
+    },
+    standardHeaders: true,
+    legacyHeaders: false,
+});
+
+// Registration is rarer and abuse-prone; tighter window.
+export const registerRateLimiter = rateLimit({
+    windowMs: 60 * 60 * 1000,
+    max: 3,
+    store: buildStore('register'),
+    keyGenerator: (req) => req.ip || 'anonymous',
+    message: {
+        error: {
+            code: 'AUTH_RATE_LIMIT_EXCEEDED',
+            message: 'Too many registrations, please try again later',
+        },
+    },
+    standardHeaders: true,
+    legacyHeaders: false,
+});
+
 export const aiRateLimiter = rateLimit({
     windowMs: 60 * 1000,
     max: 10,
+    store: buildStore('ai'),
     keyGenerator: (req) => {
         const authReq = req as AuthenticatedRequest;
         return authReq.user?.userId || req.ip || 'anonymous';
@@ -55,6 +106,7 @@ export const aiRateLimiter = rateLimit({
 export const testConnectionLimiter = rateLimit({
     windowMs: 60 * 1000,
     max: 5,
+    store: buildStore('test-connection'),
     keyGenerator: (req) => {
         const authReq = req as AuthenticatedRequest;
         return authReq.user?.userId || req.ip || 'anonymous';

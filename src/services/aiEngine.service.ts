@@ -150,7 +150,7 @@ interface GroupAnalyticsResponse {
 }
 
 
-interface EngagementAnalysisResponse {
+export interface EngagementAnalysisResponse {
     success: boolean;
     lexical_variety: number;
     engagement_type: 'Cognitive' | 'Behavioral' | 'Emotional' | 'unknown';
@@ -162,7 +162,7 @@ interface EngagementAnalysisResponse {
     error?: string;
 }
 
-interface ProcessMiningExportResponse {
+export interface ProcessMiningExportResponse {
     success: boolean;
     file_url: string;
     total_events?: number;
@@ -198,9 +198,10 @@ export class AIEngineService {
         return headers;
     }
 
-    private async resilient<T>(fn: () => Promise<T>, retryable = true): Promise<T> {
-        return aiEngineCircuitBreaker.execute(() =>
-            retryable ? withRetry(fn, 3, isRetryableError) : fn()
+    private async resilient<T>(fn: () => Promise<T>, retryable = true, options: { bypassCircuit?: boolean } = {}): Promise<T> {
+        return aiEngineCircuitBreaker.execute(
+            () => (retryable ? withRetry(fn, 3, isRetryableError) : fn()),
+            { bypassCircuit: options.bypassCircuit },
         );
     }
 
@@ -243,7 +244,8 @@ export class AIEngineService {
                     },
                     HEALTH_TIMEOUT
                 ),
-                false
+                false,
+                { bypassCircuit: true },
             );
 
             if (response.ok) {
@@ -312,7 +314,7 @@ export class AIEngineService {
 
                 const headers: Record<string, string> = {};
                 if (this.secret) {
-                    headers['X-API-Key'] = this.secret;
+                    headers['Authorization'] = `Bearer ${this.secret}`;
                 }
 
                 const response = await this.fetchWithTimeout(`${this.baseUrl}/api/ingest`, {
@@ -401,7 +403,7 @@ export class AIEngineService {
 
                 const batchHeaders: Record<string, string> = {};
                 if (this.secret) {
-                    batchHeaders['X-API-Key'] = this.secret;
+                    batchHeaders['Authorization'] = `Bearer ${this.secret}`;
                 }
 
                 const response = await this.fetchWithTimeout(`${this.baseUrl}/api/ingest/batch`, {
@@ -739,11 +741,15 @@ export class AIEngineService {
 
     async trackActivity(groupId: string, userId?: string): Promise<void> {
         try {
-            await this.fetchWithTimeout(`${this.baseUrl}/api/track-activity`, {
-                method: 'POST',
-                headers: this.getHeaders(),
-                body: JSON.stringify({ group_id: groupId, user_id: userId }),
-            }, 3000);
+            await this.resilient(async () => {
+                const response = await this.fetchWithTimeout(`${this.baseUrl}/api/track-activity`, {
+                    method: 'POST',
+                    headers: this.getHeaders(),
+                    body: JSON.stringify({ group_id: groupId, user_id: userId }),
+                }, 3000);
+                if (!response.ok) throw new Error(`AI Engine responded with ${response.status}`);
+                return response;
+            }, false);
         } catch {
             logger.debug('AI Engine track activity failed (non-critical)');
         }

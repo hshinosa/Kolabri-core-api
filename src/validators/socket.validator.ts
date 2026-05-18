@@ -7,27 +7,35 @@ export const joinRoomSchema = z.object({
     chatSpaceId: z.string().uuid('Invalid chat space ID'),
 });
 
-export const sendMessageSchema = z.object({
-    roomId: z.string().min(1, 'Room ID is required'),
-    content: z.string().max(10000, 'Message too long'),
-    courseId: z.string().min(1, 'Course ID is required'),
-    groupId: z.string().min(1, 'Group ID is required'),
-    replyTo: z.object({
-        messageId: z.string(),
-        senderId: z.string(),
-        senderName: z.string(),
-        content: z.string(),
-    }).optional(),
-    attachments: z.array(z.object({
-        id: z.string(),
-        name: z.string(),
-        type: z.string(),
-        size: z.number(),
-        url: z.string(),
-        previewUrl: z.string().optional(),
-    })).optional(),
-    mentions: z.array(z.string()).optional(),
-});
+export const sendMessageSchema = z
+    .object({
+        roomId: z.string().min(1, 'Room ID is required'),
+        content: z.string().max(10000, 'Message too long').default(''),
+        courseId: z.string().min(1, 'Course ID is required'),
+        groupId: z.string().min(1, 'Group ID is required'),
+        replyTo: z.object({
+            messageId: z.string(),
+            senderId: z.string(),
+            senderName: z.string(),
+            content: z.string(),
+        }).optional(),
+        attachments: z.array(z.object({
+            id: z.string(),
+            name: z.string(),
+            type: z.string(),
+            size: z.number(),
+            url: z.string(),
+            previewUrl: z.string().optional(),
+        })).optional(),
+        mentions: z.array(z.string()).optional(),
+    })
+    .refine(
+        (data) => data.content.trim().length > 0 || (data.attachments && data.attachments.length > 0),
+        {
+            message: 'Message must have content or at least one attachment',
+            path: ['content'],
+        },
+    );
 
 export const typingSchema = z.object({
     roomId: z.string().min(1, 'Room ID is required'),

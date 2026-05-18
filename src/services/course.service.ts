@@ -61,8 +61,8 @@ export class CourseService {
     static async joinCourse(data: JoinCourseInput, studentId: string) {
         // Find course by join code (data.join_code from Laravel)
         const joinCode = data.join_code;
-        const course = await prisma.course.findUnique({
-            where: { joinCode },
+        const course = await prisma.course.findFirst({
+            where: { joinCode, deletedAt: null },
         });
 
         if (!course) {

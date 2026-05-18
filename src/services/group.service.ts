@@ -46,9 +46,8 @@ export class GroupService {
      * Create a new group in a course (lecturer or student can create)
      */
     static async createGroup(courseId: string, data: CreateGroupInput, userId: string, userRole: string) {
-        // Verify access to course
-        const course = await prisma.course.findUnique({
-            where: { id: courseId },
+        const course = await prisma.course.findFirst({
+            where: { id: courseId, deletedAt: null },
         });
 
         if (!course) {

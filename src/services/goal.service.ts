@@ -15,16 +15,16 @@ export class GoalService {
         const chatSpaceId = data.chat_space_id;
         
         // Get chat space with group info
-        const chatSpace = await prisma.chatSpace.findUnique({
-            where: { id: chatSpaceId },
+        const chatSpace = await prisma.chatSpace.findFirst({
+            where: { id: chatSpaceId, deletedAt: null },
             include: {
                 group: {
-                    select: { id: true, name: true },
+                    select: { id: true, name: true, deletedAt: true },
                 },
             },
         });
 
-        if (!chatSpace) {
+        if (!chatSpace || chatSpace.group?.deletedAt) {
             throw ApiError.notFound('Chat space not found');
         }
 
@@ -130,21 +130,20 @@ export class GoalService {
      * Get the goal for a chat space (single shared goal)
      */
     static async getChatSpaceGoals(chatSpaceId: string, userId: string, role: string) {
-        // Get chat space with group and course info
-        const chatSpace = await prisma.chatSpace.findUnique({
-            where: { id: chatSpaceId },
+        const chatSpace = await prisma.chatSpace.findFirst({
+            where: { id: chatSpaceId, deletedAt: null },
             include: {
                 group: {
                     include: {
                         course: {
-                            select: { ownerId: true },
+                            select: { ownerId: true, deletedAt: true },
                         },
                     },
                 },
             },
         });
 
-        if (!chatSpace) {
+        if (!chatSpace || chatSpace.group?.deletedAt || chatSpace.group?.course?.deletedAt) {
             throw ApiError.notFound('Chat space not found');
         }
 
@@ -332,17 +331,16 @@ export class GoalService {
      * Used to check if goals have been set by any group member
      */
     static async getChatSpaceSharedGoal(chatSpaceId: string, userId: string) {
-        // Get chat space with group info
-        const chatSpace = await prisma.chatSpace.findUnique({
-            where: { id: chatSpaceId },
+        const chatSpace = await prisma.chatSpace.findFirst({
+            where: { id: chatSpaceId, deletedAt: null },
             include: {
                 group: {
-                    select: { id: true },
+                    select: { id: true, deletedAt: true },
                 },
             },
         });
 
-        if (!chatSpace) {
+        if (!chatSpace || chatSpace.group?.deletedAt) {
             throw ApiError.notFound('Chat space not found');
         }
 

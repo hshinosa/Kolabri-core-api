@@ -2,7 +2,7 @@ import { beforeEach, describe, expect, it, vi } from 'vitest';
 
 const { prismaMock, mockGroupService, mockValidateGoalContent } = vi.hoisted(() => ({
     prismaMock: {
-        chatSpace: { findUnique: vi.fn() },
+        chatSpace: { findUnique: vi.fn(), findFirst: vi.fn() },
         learningGoal: { findFirst: vi.fn(), create: vi.fn(), findMany: vi.fn(), findUnique: vi.fn() },
     },
     mockGroupService: { isGroupMember: vi.fn() },
@@ -12,6 +12,19 @@ const { prismaMock, mockGroupService, mockValidateGoalContent } = vi.hoisted(() 
 vi.mock('../config/database.js', () => ({ default: prismaMock }));
 vi.mock('./group.service.js', () => ({ GroupService: mockGroupService }));
 vi.mock('../utils/helpers.js', () => ({ validateGoalContent: mockValidateGoalContent }));
+
+vi.mock('./aiEngine.service.js', () => ({
+    aiEngineService: {
+        validateGoal: vi.fn(() => Promise.resolve({
+            success: true,
+            is_valid: true,
+            feedback: undefined,
+            socratic_hint: undefined,
+            missing_criteria: [],
+        })),
+        refineGoal: vi.fn(() => Promise.resolve({ success: true, refined_goal: null })),
+    },
+}));
 
 import { GoalService } from './goal.service.js';
 
@@ -32,7 +45,7 @@ describe('GoalService Integration — Flow 3: Goal Setting + Bloom Taxonomy', ()
     });
 
     it('creates goal with valid Bloom verb', async () => {
-        prismaMock.chatSpace.findUnique.mockResolvedValue(makeChatSpace());
+        prismaMock.chatSpace.findFirst.mockResolvedValue(makeChatSpace());
         mockGroupService.isGroupMember.mockResolvedValue(true);
         prismaMock.learningGoal.findFirst.mockResolvedValue(null);
         mockValidateGoalContent.mockReturnValue({ isValid: true });
@@ -56,7 +69,7 @@ describe('GoalService Integration — Flow 3: Goal Setting + Bloom Taxonomy', ()
     });
 
     it('rejects goal without Bloom verb', async () => {
-        prismaMock.chatSpace.findUnique.mockResolvedValue(makeChatSpace());
+        prismaMock.chatSpace.findFirst.mockResolvedValue(makeChatSpace());
         mockGroupService.isGroupMember.mockResolvedValue(true);
         prismaMock.learningGoal.findFirst.mockResolvedValue(null);
         mockValidateGoalContent.mockReturnValue({
@@ -73,7 +86,7 @@ describe('GoalService Integration — Flow 3: Goal Setting + Bloom Taxonomy', ()
     });
 
     it('returns existing goal when duplicate is submitted', async () => {
-        prismaMock.chatSpace.findUnique.mockResolvedValue(makeChatSpace());
+        prismaMock.chatSpace.findFirst.mockResolvedValue(makeChatSpace());
         mockGroupService.isGroupMember.mockResolvedValue(true);
         prismaMock.learningGoal.findFirst.mockResolvedValue({
             id: 'existing-goal',
@@ -94,7 +107,7 @@ describe('GoalService Integration — Flow 3: Goal Setting + Bloom Taxonomy', ()
     });
 
     it('rejects goal when chat space not found', async () => {
-        prismaMock.chatSpace.findUnique.mockResolvedValue(null);
+        prismaMock.chatSpace.findFirst.mockResolvedValue(null);
 
         await expect(
             GoalService.createGoal({ content: 'test', chat_space_id: 'nonexistent' } as any, 'student-1'),
@@ -102,7 +115,7 @@ describe('GoalService Integration — Flow 3: Goal Setting + Bloom Taxonomy', ()
     });
 
     it('rejects goal when user is not group member', async () => {
-        prismaMock.chatSpace.findUnique.mockResolvedValue(makeChatSpace());
+        prismaMock.chatSpace.findFirst.mockResolvedValue(makeChatSpace());
         mockGroupService.isGroupMember.mockResolvedValue(false);
 
         await expect(
@@ -111,7 +124,7 @@ describe('GoalService Integration — Flow 3: Goal Setting + Bloom Taxonomy', ()
     });
 
     it('returns goals for chat space as lecturer (owner)', async () => {
-        prismaMock.chatSpace.findUnique.mockResolvedValue({
+        prismaMock.chatSpace.findFirst.mockResolvedValue({
             ...makeChatSpace(),
             group: {
                 ...makeChatSpace().group,
@@ -134,7 +147,7 @@ describe('GoalService Integration — Flow 3: Goal Setting + Bloom Taxonomy', ()
     });
 
     it('returns empty array when no goal exists for chat space', async () => {
-        prismaMock.chatSpace.findUnique.mockResolvedValue({
+        prismaMock.chatSpace.findFirst.mockResolvedValue({
             ...makeChatSpace(),
             group: {
                 ...makeChatSpace().group,

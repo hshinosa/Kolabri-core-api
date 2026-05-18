@@ -1,17 +1,35 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
-const { prismaMock, mockGetIO } = vi.hoisted(() => ({
+const { prismaMock, emitterMock } = vi.hoisted(() => ({
     prismaMock: {
-        chatSpace: { findUnique: vi.fn(), update: vi.fn() },
+        chatSpace: { findUnique: vi.fn(), findFirst: vi.fn(), update: vi.fn() },
         reflection: { findFirst: vi.fn(), create: vi.fn() },
         groupMember: { findUnique: vi.fn() },
     },
-    mockGetIO: vi.fn(),
+    emitterMock: { emit: vi.fn() },
 }));
 
 vi.mock('../config/database.js', () => ({ default: prismaMock }));
-vi.mock('../socket/index.js', () => ({ getIO: mockGetIO }));
+vi.mock('../utils/socketEmitter.js', () => ({ getSocketEmitter: () => emitterMock }));
 vi.mock('../utils/logger.js', () => ({ logger: { info: vi.fn(), warn: vi.fn(), error: vi.fn(), debug: vi.fn() } }));
+
+vi.mock('../models/ChatLog.js', () => ({
+    ChatLog: {
+        find: vi.fn(() => ({
+            sort: vi.fn(() => ({
+                limit: vi.fn(() => ({
+                    lean: vi.fn(() => Promise.resolve([])),
+                })),
+            })),
+        })),
+    },
+}));
+
+vi.mock('./aiEngine.service.js', () => ({
+    aiEngineService: {
+        generateSummary: vi.fn(() => Promise.resolve({ success: false, summary: null })),
+    },
+}));
 
 import { ChatSpaceService } from './chatSpace.service.js';
 
@@ -22,11 +40,8 @@ describe('ChatSpaceService Integration - Lifecycle', () => {
 
     it('closes a session for the lecturer who owns the course', async () => {
         const closedAt = new Date('2026-05-03T10:00:00.000Z');
-        const mockEmit = vi.fn();
-        const mockTo = vi.fn().mockReturnValue({ emit: mockEmit });
-        mockGetIO.mockReturnValue({ to: mockTo });
 
-        prismaMock.chatSpace.findUnique.mockResolvedValue({
+        prismaMock.chatSpace.findFirst.mockResolvedValue({
             id: 'chat-1',
             name: 'Group Discussion',
             closedAt: null,
@@ -52,8 +67,7 @@ describe('ChatSpaceService Integration - Lifecycle', () => {
                 closedBy: 'lecturer-1',
             },
         });
-        expect(mockTo).toHaveBeenCalledWith('chat-1');
-        expect(mockEmit).toHaveBeenCalledWith('session_closed', {
+        expect(emitterMock.emit).toHaveBeenCalledWith('chat-1', 'session_closed', {
             chatSpaceId: 'chat-1',
             closedAt: closedAt.toISOString(),
             message: 'Sesi diskusi ini telah ditutup oleh dosen.',
@@ -63,16 +77,14 @@ describe('ChatSpaceService Integration - Lifecycle', () => {
             name: 'Group Discussion',
             closedAt,
             closedBy: 'lecturer-1',
+            summary: null,
         });
     });
 
     it('closes a session for a student group member', async () => {
         const closedAt = new Date('2026-05-03T11:00:00.000Z');
-        const mockEmit = vi.fn();
-        const mockTo = vi.fn().mockReturnValue({ emit: mockEmit });
-        mockGetIO.mockReturnValue({ to: mockTo });
 
-        prismaMock.chatSpace.findUnique.mockResolvedValue({
+        prismaMock.chatSpace.findFirst.mockResolvedValue({
             id: 'chat-2',
             name: 'Peer Session',
             closedAt: null,
@@ -98,7 +110,7 @@ describe('ChatSpaceService Integration - Lifecycle', () => {
                 closedBy: 'student-1',
             },
         });
-        expect(mockEmit).toHaveBeenCalledWith('session_closed', {
+        expect(emitterMock.emit).toHaveBeenCalledWith('chat-2', 'session_closed', {
             chatSpaceId: 'chat-2',
             closedAt: closedAt.toISOString(),
             message: 'Sesi diskusi ini telah ditutup oleh mahasiswa.',
@@ -108,11 +120,12 @@ describe('ChatSpaceService Integration - Lifecycle', () => {
             name: 'Peer Session',
             closedAt,
             closedBy: 'student-1',
+            summary: null,
         });
     });
 
     it('rejects closing a session that is already closed', async () => {
-        prismaMock.chatSpace.findUnique.mockResolvedValue({
+        prismaMock.chatSpace.findFirst.mockResolvedValue({
             id: 'chat-3',
             name: 'Closed Session',
             closedAt: new Date('2026-05-03T09:00:00.000Z'),
@@ -130,7 +143,7 @@ describe('ChatSpaceService Integration - Lifecycle', () => {
     });
 
     it('rejects closing a session when the lecturer does not own the course', async () => {
-        prismaMock.chatSpace.findUnique.mockResolvedValue({
+        prismaMock.chatSpace.findFirst.mockResolvedValue({
             id: 'chat-4',
             name: 'Other Course Session',
             closedAt: null,
@@ -148,7 +161,7 @@ describe('ChatSpaceService Integration - Lifecycle', () => {
     });
 
     it('rejects closing a session when the student is not a group member', async () => {
-        prismaMock.chatSpace.findUnique.mockResolvedValue({
+        prismaMock.chatSpace.findFirst.mockResolvedValue({
             id: 'chat-5',
             name: 'Restricted Session',
             closedAt: null,
@@ -166,7 +179,7 @@ describe('ChatSpaceService Integration - Lifecycle', () => {
     });
 
     it('returns not found when closing a missing chat space', async () => {
-        prismaMock.chatSpace.findUnique.mockResolvedValue(null);
+        prismaMock.chatSpace.findFirst.mockResolvedValue(null);
 
         await expect(ChatSpaceService.closeSession('missing-chat', 'lecturer-1', 'lecturer')).rejects.toMatchObject({
             statusCode: 404,
@@ -175,11 +188,7 @@ describe('ChatSpaceService Integration - Lifecycle', () => {
     });
 
     it('reopens a closed session for the lecturer who owns the course', async () => {
-        const mockEmit = vi.fn();
-        const mockTo = vi.fn().mockReturnValue({ emit: mockEmit });
-        mockGetIO.mockReturnValue({ to: mockTo });
-
-        prismaMock.chatSpace.findUnique.mockResolvedValue({
+        prismaMock.chatSpace.findFirst.mockResolvedValue({
             id: 'chat-6',
             name: 'Reopenable Session',
             closedAt: new Date('2026-05-03T08:00:00.000Z'),
@@ -205,8 +214,7 @@ describe('ChatSpaceService Integration - Lifecycle', () => {
                 closedBy: null,
             },
         });
-        expect(mockTo).toHaveBeenCalledWith('chat-6');
-        expect(mockEmit).toHaveBeenCalledWith('session_reopened', {
+        expect(emitterMock.emit).toHaveBeenCalledWith('chat-6', 'session_reopened', {
             chatSpaceId: 'chat-6',
         });
         expect(result).toEqual({
@@ -225,7 +233,7 @@ describe('ChatSpaceService Integration - Lifecycle', () => {
     });
 
     it('rejects reopening a session that is not closed', async () => {
-        prismaMock.chatSpace.findUnique.mockResolvedValue({
+        prismaMock.chatSpace.findFirst.mockResolvedValue({
             id: 'chat-8',
             name: 'Open Session',
             closedAt: null,
@@ -243,7 +251,7 @@ describe('ChatSpaceService Integration - Lifecycle', () => {
     });
 
     it('returns open session status with no goal and no reflection', async () => {
-        prismaMock.chatSpace.findUnique.mockResolvedValue({
+        prismaMock.chatSpace.findFirst.mockResolvedValue({
             id: 'chat-9',
             name: 'Fresh Session',
             closedAt: null,
@@ -271,7 +279,7 @@ describe('ChatSpaceService Integration - Lifecycle', () => {
 
     it('returns closed session status showing that a student needs reflection', async () => {
         const closedAt = new Date('2026-05-03T14:00:00.000Z');
-        prismaMock.chatSpace.findUnique.mockResolvedValue({
+        prismaMock.chatSpace.findFirst.mockResolvedValue({
             id: 'chat-10',
             name: 'Reflection Needed',
             closedAt,
@@ -299,7 +307,7 @@ describe('ChatSpaceService Integration - Lifecycle', () => {
 
     it('submits a reflection successfully for a closed session and links the goal', async () => {
         const createdAt = new Date('2026-05-03T15:00:00.000Z');
-        prismaMock.chatSpace.findUnique.mockResolvedValue({
+        prismaMock.chatSpace.findFirst.mockResolvedValue({
             id: 'chat-11',
             name: 'Closed Reflection Session',
             closedAt: new Date('2026-05-03T13:00:00.000Z'),
@@ -362,7 +370,7 @@ describe('ChatSpaceService Integration - Lifecycle', () => {
     });
 
     it('rejects reflection submission when the session is not closed', async () => {
-        prismaMock.chatSpace.findUnique.mockResolvedValue({
+        prismaMock.chatSpace.findFirst.mockResolvedValue({
             id: 'chat-12',
             name: 'Open Reflection Session',
             closedAt: null,
@@ -381,7 +389,7 @@ describe('ChatSpaceService Integration - Lifecycle', () => {
     });
 
     it('rejects duplicate reflection submission', async () => {
-        prismaMock.chatSpace.findUnique.mockResolvedValue({
+        prismaMock.chatSpace.findFirst.mockResolvedValue({
             id: 'chat-13',
             name: 'Duplicate Reflection Session',
             closedAt: new Date('2026-05-03T16:00:00.000Z'),
@@ -403,7 +411,7 @@ describe('ChatSpaceService Integration - Lifecycle', () => {
     });
 
     it('rejects reflection submission when the user is not a group member', async () => {
-        prismaMock.chatSpace.findUnique.mockResolvedValue({
+        prismaMock.chatSpace.findFirst.mockResolvedValue({
             id: 'chat-14',
             name: 'Protected Reflection Session',
             closedAt: new Date('2026-05-03T17:00:00.000Z'),

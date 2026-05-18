@@ -72,6 +72,8 @@ describe('AiChatService', () => {
         expect(prismaMock.aiChat.findMany).toHaveBeenCalledWith({
             where: { userId: 'user-1' },
             orderBy: { updatedAt: 'desc' },
+            skip: 0,
+            take: 20,
             include: {
                 messages: {
                     take: 1,

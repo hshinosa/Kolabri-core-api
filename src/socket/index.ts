@@ -1,167 +1,36 @@
 import { Server as HttpServer } from 'node:http';
-import { Server, Socket } from 'socket.io';
-import jwt from 'jsonwebtoken';
+import { Server } from 'socket.io';
 import { logger } from '../utils/logger.js';
-import { JwtPayload } from '../middleware/auth.js';
 import { ChatLog } from '../models/ChatLog.js';
-import type { IAttachment, IReplyTo } from '../models/ChatLog.js';
 import { SilenceEvent } from '../models/SilenceEvent.js';
 import prisma from '../config/database.js';
 import { aiEngineService } from '../services/aiEngine.service.js';
 import { socketRateLimiter } from '../utils/socketRateLimiter.js';
+import { sanitizeMessageContent, sanitizeAttachments } from '../utils/sanitize.js';
+import { setSocketEmitter } from '../utils/socketEmitter.js';
+import { getRedis } from '../config/redis.js';
+import { createAdapter } from '@socket.io/redis-adapter';
+import type { AuthenticatedSocket, ChatHistoryItem } from './types.js';
+import { authMiddleware } from './auth.js';
+import { analyzeEngagement } from './engagement.js';
 import { joinRoomSchema, sendMessageSchema, typingSchema, deleteMessageSchema, emitValidationError } from '../validators/socket.validator.js';
-
-interface ChatHistoryItem {
-    _id: { toString(): string };
-    courseId: string;
-    groupId: string;
-    chatSpaceId: string;
-    senderId: string;
-    senderName: string;
-    senderType: 'student' | 'lecturer' | 'ai' | 'bot' | 'system';
-    content: string;
-    isIntervention: boolean;
-    isDeleted: boolean;
-    replyTo?: IReplyTo;
-    attachments: IAttachment[];
-    mentions: string[];
-    createdAt: Date;
-}
 
 // Store silence timers per room
 const silenceTimers = new Map<string, NodeJS.Timeout>();
-const SILENCE_TIMEOUT_MS = 10 * 60 * 1000; // 10 minutes
+import { SILENCE_TIMEOUT_MS, INTERVENTION_COOLDOWN_MS, MESSAGES_BEFORE_CHECK, incrementMessageCount, shouldRunQualityCheck } from './interventionGate.js';
 
 // Store online users per room
-const roomUsers = new Map<string, Map<string, { odId: string; userName: string; socketId: string }>>();
+const roomUsers = new Map<string, Map<string, { userId: string; userName: string; socketId: string }>>();
 
 // Track last intervention time per room to avoid spamming
 const lastInterventionTime = new Map<string, number>();
-const INTERVENTION_COOLDOWN_MS = 3 * 60 * 1000; // 3 minutes between interventions
-const MESSAGES_BEFORE_CHECK = 5; // Check quality every N messages
 const roomMessageCount = new Map<string, number>();
 
 // Quality thresholds for intervention
-const QUALITY_THRESHOLDS = {
-    LOW_HOT: 20,        // Trigger if HOT% < 20
-    LOW_COGNITIVE: 25,  // Trigger if cognitive engagement < 25%
-    LOW_LEXICAL: 25,    // Trigger if lexical variety < 25%
-};
-
-// HOT (Higher-Order Thinking) detection keywords
-const HOT_KEYWORDS = [
-    'mengapa', 'kenapa', 'bagaimana', 'analisis', 'evaluasi', 'bandingkan',
-    'jelaskan', 'argumentasi', 'kritik', 'sintesis', 'hubungkan', 'simpulkan',
-    'why', 'how', 'analyze', 'evaluate', 'compare', 'explain', 'argue',
-    'menurut saya', 'pendapat saya', 'alasannya', 'karena', 'sebab',
-    'dampak', 'pengaruh', 'akibat', 'solusi', 'alternatif'
-];
-
-// Engagement type keywords
-const COGNITIVE_KEYWORDS = [
-    'mengapa', 'bagaimana', 'analisis', 'evaluasi', 'bandingkan', 'jelaskan',
-    'menurut saya', 'pendapat', 'alasan', 'karena', 'sebab', 'konsep',
-    'teori', 'hipotesis', 'kesimpulan', 'bukti', 'argumen'
-];
-
-const BEHAVIORAL_KEYWORDS = [
-    'saya akan', 'mari kita', 'ayo', 'sudah selesai', 'bisa bantu',
-    'saya coba', 'sudah dikerjakan', 'progress', 'tugas', 'deadline',
-    'submit', 'kirim', 'upload', 'download', 'share', 'bagikan'
-];
-
-const EMOTIONAL_KEYWORDS = [
-    'bagus', 'keren', 'mantap', 'semangat', 'setuju', 'terima kasih',
-    'thanks', 'maaf', 'sorry', 'senang', 'susah', 'sulit', 'mudah',
-    'bingung', 'paham', 'mengerti', 'jelas', 'tidak jelas'
-];
-
-// Helper function to analyze engagement
-function analyzeEngagement(text: string): {
-    engagementType: 'cognitive' | 'behavioral' | 'emotional';
-    isHigherOrder: boolean;
-    lexicalVariety: number;
-    hotIndicators: string[];
-    confidence: number;
-} {
-    const lowerText = text.toLowerCase();
-    const words = lowerText.replace(/[^\w\s]/g, ' ').split(/\s+/).filter(w => w.length > 2);
-    
-    // Calculate lexical variety (Type-Token Ratio)
-    const uniqueWords = new Set(words);
-    const lexicalVariety = words.length > 0 
-        ? Math.round((uniqueWords.size / Math.max(words.length, 1)) * 100)
-        : 0;
-    
-    // Detect HOT indicators
-    const hotIndicators = HOT_KEYWORDS.filter(k => lowerText.includes(k));
-    const isHigherOrder = hotIndicators.length > 0;
-    
-    // Classify engagement type
-    const cognitiveScore = COGNITIVE_KEYWORDS.filter(k => lowerText.includes(k)).length;
-    const behavioralScore = BEHAVIORAL_KEYWORDS.filter(k => lowerText.includes(k)).length;
-    const emotionalScore = EMOTIONAL_KEYWORDS.filter(k => lowerText.includes(k)).length;
-    
-    let engagementType: 'cognitive' | 'behavioral' | 'emotional';
-    if (cognitiveScore >= behavioralScore && cognitiveScore >= emotionalScore) {
-        engagementType = 'cognitive';
-    } else if (behavioralScore >= emotionalScore) {
-        engagementType = 'behavioral';
-    } else {
-        engagementType = 'emotional';
-    }
-    
-    // Calculate confidence based on keyword matches
-    const totalMatches = cognitiveScore + behavioralScore + emotionalScore;
-    const confidence = totalMatches > 0 ? Math.min(0.5 + (totalMatches * 0.1), 1.0) : 0.3;
-    
-    return {
-        engagementType,
-        isHigherOrder,
-        lexicalVariety,
-        hotIndicators,
-        confidence,
-    };
-}
+import { QUALITY_THRESHOLDS, decideQualityIntervention } from './engagement.js';
 
 // Intervention messages pool
-const INTERVENTION_MESSAGES = [
-    "Sepertinya diskusi sudah agak sepi. Ada yang ingin berbagi pendapat atau pertanyaan?",
-    "Tim, sudah beberapa saat tidak ada aktivitas. Apakah ada kesulitan yang bisa saya bantu?",
-    "Bagaimana progress diskusi kalian? Jangan ragu untuk bertanya jika ada yang kurang jelas.",
-    "Halo! Apakah kalian sudah menemukan solusi? Saya siap membantu jika diperlukan.",
-    "Tim, mari kita lanjutkan diskusi. Apa langkah selanjutnya yang ingin kalian ambil?",
-];
-
-// Quality-based intervention messages
-const QUALITY_INTERVENTIONS = {
-    low_hot: [
-        "💡 **Tips Diskusi Berkualitas:** Coba ajukan pertanyaan 'mengapa' dan 'bagaimana' untuk memperdalam pemahaman. Misalnya: 'Mengapa hal ini penting?' atau 'Bagaimana konsep ini bisa diterapkan?'",
-        "🎯 **Tingkatkan Diskusi:** Diskusi yang baik melibatkan analisis dan evaluasi. Coba bandingkan pendapat kalian atau jelaskan alasan di balik ide-ide yang disampaikan.",
-        "🧠 **Berpikir Kritis:** Apa dampak atau konsekuensi dari topik yang sedang dibahas? Coba analisis lebih dalam dengan memberikan argumen dan bukti.",
-        "📊 **Ajak Berpikir Tingkat Tinggi:** Daripada hanya menyatakan fakta, coba evaluasi kelebihan dan kekurangan dari setiap pendapat yang muncul.",
-    ],
-    low_cognitive: [
-        "📚 **Fokus pada Isi:** Sepertinya diskusi lebih banyak koordinasi. Mari kita bahas substansi materi - apa yang sudah kalian pahami tentang topik ini?",
-        "💬 **Perdalam Diskusi:** Bagaimana pemahaman kalian tentang konsep utama? Coba jelaskan dengan kata-kata sendiri.",
-        "🔍 **Eksplorasi Materi:** Ada hubungan menarik antara topik ini dengan konsep lain. Apa yang bisa kalian hubungkan?",
-        "📖 **Diskusi Substansial:** Apa kesimpulan atau insight baru yang sudah kalian dapatkan dari materi ini?",
-    ],
-    low_lexical: [
-        "📝 **Variasi Bahasa:** Coba gunakan istilah-istilah kunci dari materi pembelajaran untuk memperkaya diskusi.",
-        "🔤 **Kembangkan Kosakata:** Saat menjelaskan, gunakan sinonim atau parafrase untuk menunjukkan pemahaman yang lebih dalam.",
-        "✍️ **Ekspresikan Lebih Rinci:** Jelaskan ide kalian dengan lebih detail menggunakan contoh konkret dan istilah akademis.",
-    ],
-    general: [
-        "🌟 **Ayo Semangat!** Diskusi yang aktif membantu pemahaman bersama. Bagikan pendapat atau pertanyaan kalian!",
-        "🤝 **Kolaborasi:** Coba tanggapi pendapat teman dengan memberikan perspektif tambahan atau pertanyaan lanjutan.",
-    ],
-};
-
-interface AuthenticatedSocket extends Socket {
-    user?: JwtPayload;
-    currentRoom?: string; // Track current room for cleanup
-}
+import { INTERVENTION_MESSAGES, QUALITY_INTERVENTIONS, pickRandom } from './interventionMessages.js';
 
 let io: Server;
 
@@ -185,50 +54,26 @@ export function initSocketIO(server: HttpServer): Server {
         transports: ['websocket', 'polling'],
     });
 
-    // Authentication middleware
-    io.use(async (socket: AuthenticatedSocket, next) => {
-        try {
-            const token = socket.handshake.auth.token || socket.handshake.query.token;
-            
-            logger.debug(`Socket auth attempt - token present: ${!!token}`);
-
-            if (!token) {
-                logger.warn('Socket connection rejected: No token provided');
-                return next(new Error('Authentication required'));
-            }
-
-            const secret = process.env.JWT_SECRET;
-            if (!secret) {
-                logger.error('Socket auth failed: JWT_SECRET not configured');
-                return next(new Error('Server configuration error'));
-            }
-
-            const decoded = jwt.verify(token as string, secret) as JwtPayload;
-
-            const user = await prisma.user.findFirst({
-                where: { id: decoded.userId, deletedAt: null },
-                select: { id: true },
-            });
-
-            if (!user) {
-                logger.warn(`Socket auth rejected: User ${decoded.userId} not found or inactive`);
-                return next(new Error('User not found'));
-            }
-
-            socket.user = decoded;
-            
-            logger.debug(`Socket auth success for user: ${decoded.email}`);
-
-            next();
-        } catch (error) {
-            logger.error('Socket auth error:', error);
-            next(new Error('Invalid token'));
-        }
+    setSocketEmitter({
+        emit: (room, event, payload) => {
+            io.to(room).emit(event, payload);
+        },
     });
+
+    const redis = getRedis();
+    if (redis) {
+        const pubClient = redis.duplicate();
+        const subClient = redis.duplicate();
+        io.adapter(createAdapter(pubClient, subClient));
+        logger.info('Socket.IO Redis adapter active');
+    }
+
+    // Authentication middleware
+    io.use(authMiddleware);
 
     // Connection handler
     io.on('connection', (socket: AuthenticatedSocket) => {
-        logger.info(`User connected: ${socket.user?.email} (${socket.id})`);
+        logger.info(`User connected: ${socket.user?.userId} (${socket.id})`);
 
         // Join room (by chatSpace)
         socket.on('join_room', async (data: { courseId: string; groupId: string; chatSpaceId: string }) => {
@@ -365,14 +210,14 @@ export function initSocketIO(server: HttpServer): Server {
                     roomUsers.set(roomId, new Map());
                 }
                 roomUsers.get(roomId)!.set(socket.user.userId, {
-                    odId: socket.user.userId,
+                    userId: socket.user.userId,
                     userName: socket.user.email.split('@')[0],
                     socketId: socket.id,
                 });
 
                 // Send current online users list to the joining user
                 const onlineUsers = Array.from(roomUsers.get(roomId)!.values()).map(u => ({
-                    odId: u.odId,
+                    userId: u.userId,
                     userName: u.userName,
                 }));
                 socket.emit('online_users', { users: onlineUsers });
@@ -383,7 +228,7 @@ export function initSocketIO(server: HttpServer): Server {
                 // Start silence timer if not exists
                 startSilenceTimer(roomId, courseId, groupId, chatSpaceId);
 
-                logger.info(`User ${socket.user.email} joined room ${roomId}`);
+                logger.info(`User ${socket.user.userId} joined room ${roomId}`);
             } catch (error) {
                 logger.error('Join room error:', error);
                 socket.emit('error', { message: 'Failed to join room' });
@@ -426,7 +271,8 @@ export function initSocketIO(server: HttpServer): Server {
             try {
                 const { roomId, content, courseId, groupId, replyTo, attachments, mentions } = msgParsed.data;
 
-                if (!socket.user || (!content.trim() && (!attachments || attachments.length === 0))) {
+                if (!socket.user) {
+                    socket.emit('error', { message: 'Not authenticated' });
                     return;
                 }
 
@@ -435,11 +281,44 @@ export function initSocketIO(server: HttpServer): Server {
 
                 const chatSpaceRecord = await prisma.chatSpace.findFirst({
                     where: { id: chatSpaceId, deletedAt: null },
-                    select: { closedAt: true },
+                    select: {
+                        id: true,
+                        closedAt: true,
+                        groupId: true,
+                        group: { select: { courseId: true, deletedAt: true } },
+                    },
                 });
 
-                if (!chatSpaceRecord) {
+                if (!chatSpaceRecord || chatSpaceRecord.group?.deletedAt) {
                     socket.emit('error', { message: 'Chat space not found' });
+                    return;
+                }
+
+                const authoritativeGroupId = chatSpaceRecord.groupId;
+                const authoritativeCourseId = chatSpaceRecord.group.courseId;
+
+                if (
+                    courseId !== authoritativeCourseId ||
+                    groupId !== authoritativeGroupId
+                ) {
+                    logger.warn(
+                        `send_message payload tampering: client claimed courseId=${courseId} groupId=${groupId} but chatSpace ${chatSpaceId} resolves to courseId=${authoritativeCourseId} groupId=${authoritativeGroupId}`,
+                    );
+                }
+
+                if (!socket.rooms.has(chatSpaceId)) {
+                    socket.emit('error', { message: 'You must join the room before sending messages' });
+                    return;
+                }
+
+                const hasAccess = await verifyGroupAccess(
+                    socket.user.userId,
+                    socket.user.role,
+                    authoritativeGroupId,
+                    authoritativeCourseId,
+                );
+                if (!hasAccess) {
+                    socket.emit('error', { message: 'Access denied to this room' });
                     return;
                 }
 
@@ -463,31 +342,43 @@ export function initSocketIO(server: HttpServer): Server {
                     return;
                 }
 
-                // Save message to MongoDB with chatSpaceId and engagement analysis
-                const engagement = analyzeEngagement(content.trim());
-                
+                let safeContent: string;
+                try {
+                    safeContent = sanitizeMessageContent(content.trim());
+                } catch {
+                    socket.emit('error', { message: 'Message content too large' });
+                    return;
+                }
+                if (safeContent.trim().length === 0 && (!attachments || attachments.length === 0)) {
+                    socket.emit('error', { message: 'Message must have content or at least one attachment' });
+                    return;
+                }
+                const safeAttachments = sanitizeAttachments(attachments);
+
+                const engagement = analyzeEngagement(safeContent);
+
                 const chatLog = new ChatLog({
-                    courseId,
-                    groupId,
+                    courseId: authoritativeCourseId,
+                    groupId: authoritativeGroupId,
                     chatSpaceId,
                     senderId: user.id,
                     senderName: user.name,
                     senderType: user.role as 'student' | 'lecturer',
-                    content: content.trim(),
+                    content: safeContent,
                     isIntervention: false,
                     replyTo: replyTo ? {
                         messageId: replyTo.messageId,
                         senderId: replyTo.senderId,
                         senderName: replyTo.senderName,
-                        content: replyTo.content.substring(0, 100), // Limit reply preview
+                        content: sanitizeMessageContent(replyTo.content).substring(0, 100),
                     } : undefined,
-                    attachments: attachments || [],
+                    attachments: safeAttachments,
                     mentions: mentions || [],
                     engagement,
                 });
                 await chatLog.save();
 
-                aiEngineService.analyzeEngagement(content.trim()).then(async (aiEngagement) => {
+                aiEngineService.analyzeEngagement(safeContent).then(async (aiEngagement) => {
                     if (aiEngagement.success && aiEngagement.engagement_type !== 'unknown') {
                         await ChatLog.findByIdAndUpdate(chatLog._id, {
                             'engagement.lexicalVariety': Math.round(aiEngagement.lexical_variety * 100),
@@ -497,29 +388,26 @@ export function initSocketIO(server: HttpServer): Server {
                     }
                 }).catch(() => {});
 
-                aiEngineService.trackActivity(groupId, user.id).catch(() => {});
+                aiEngineService.trackActivity(authoritativeGroupId, user.id).catch(() => {});
 
-                // Broadcast message to room
                 const message = {
                     id: chatLog._id?.toString(),
                     senderId: user.id,
                     senderName: user.name,
                     senderType: user.role,
-                    content: content.trim(),
+                    content: safeContent,
                     replyTo: chatLog.replyTo,
                     attachments: chatLog.attachments,
                     mentions: chatLog.mentions,
                     createdAt: chatLog.createdAt.toISOString(),
                 };
 
-                io.to(roomId).emit('receive_message', message);
+                io.to(chatSpaceId).emit('receive_message', message);
 
-                // Reset silence timer
-                resetSilenceTimer(roomId, courseId, groupId, chatSpaceId);
+                resetSilenceTimer(chatSpaceId, authoritativeCourseId, authoritativeGroupId, chatSpaceId);
 
-                // Check for @AI mention
-                if (content.toLowerCase().includes('@ai')) {
-                    handleAIQuestion(roomId, courseId, groupId, chatSpaceId, content, user.name, user.id);
+                if (safeContent.toLowerCase().includes('@ai')) {
+                    handleAIQuestion(chatSpaceId, authoritativeCourseId, authoritativeGroupId, chatSpaceId, safeContent, user.id);
                 }
 
                 // Check discussion quality and intervene if needed (async, non-blocking)
@@ -527,7 +415,7 @@ export function initSocketIO(server: HttpServer): Server {
                     logger.error('Quality intervention check failed:', err);
                 });
 
-                logger.debug(`Message in ${roomId} from ${user.name}: ${content.substring(0, 50)}...`);
+                logger.debug(`Message in ${roomId} from user ${user.id}`);
             } catch (error) {
                 logger.error('Send message error:', error);
                 socket.emit('error', { message: 'Failed to send message' });
@@ -557,7 +445,11 @@ export function initSocketIO(server: HttpServer): Server {
                     return;
                 }
 
-                // Find the message
+                if (!socket.rooms.has(roomId)) {
+                    socket.emit('error', { message: 'You must be in the room to delete messages' });
+                    return;
+                }
+
                 const message = await ChatLog.findById(messageId);
 
                 if (!message) {
@@ -565,20 +457,22 @@ export function initSocketIO(server: HttpServer): Server {
                     return;
                 }
 
-                // Check ownership - only allow deleting own messages
+                if (message.chatSpaceId !== roomId) {
+                    socket.emit('error', { message: 'Message does not belong to this room' });
+                    return;
+                }
+
                 if (message.senderId !== socket.user.userId) {
                     socket.emit('error', { message: 'You can only delete your own messages' });
                     return;
                 }
 
-                // Soft delete the message
                 message.isDeleted = true;
                 await message.save();
 
-                // Broadcast deletion to room
                 io.to(roomId).emit('message_deleted', { messageId });
 
-                logger.info(`Message ${messageId} deleted by ${socket.user.email}`);
+                logger.info(`Message ${messageId} deleted by user ${socket.user.userId}`);
             } catch (error) {
                 logger.error('Delete message error:', error);
                 socket.emit('error', { message: 'Failed to delete message' });
@@ -622,7 +516,7 @@ export function initSocketIO(server: HttpServer): Server {
             }
             socket.leave(roomId);
             socket.currentRoom = undefined;
-            logger.info(`User ${socket.user?.email} left room ${roomId}`);
+            logger.info(`User ${socket.user?.userId} left room ${roomId}`);
         });
 
         // Disconnect
@@ -647,11 +541,11 @@ export function initSocketIO(server: HttpServer): Server {
                     }
                 }
             }
-            logger.info(`User disconnected: ${socket.user?.email} (${socket.id})`);
+            logger.info(`User disconnected: ${socket.user?.userId} (${socket.id})`);
         });
     });
 
-    logger.info('✅ Socket.IO initialized');
+    logger.info('Socket.IO initialized');
     return io;
 }
 
@@ -726,7 +620,7 @@ async function triggerIntervention(roomId: string, courseId: string, groupId: st
         await silenceEvent.save();
 
         // Pick random intervention message
-        const message = INTERVENTION_MESSAGES[Math.floor(Math.random() * INTERVENTION_MESSAGES.length)];
+        const message = pickRandom(INTERVENTION_MESSAGES);
 
         // Save bot message
         const chatLog = new ChatLog({
@@ -772,18 +666,10 @@ async function checkAndIntervenForQuality(
     chatSpaceId: string
 ): Promise<void> {
     try {
-        // Increment message count
-        const currentCount = (roomMessageCount.get(roomId) || 0) + 1;
-        roomMessageCount.set(roomId, currentCount);
-
-        // Only check every N messages
-        if (currentCount % MESSAGES_BEFORE_CHECK !== 0) {
-            return;
-        }
-
-        // Check cooldown - don't intervene too frequently
+        const currentCount = incrementMessageCount(roomMessageCount, roomId);
         const lastIntervention = lastInterventionTime.get(roomId) || 0;
-        if (Date.now() - lastIntervention < INTERVENTION_COOLDOWN_MS) {
+
+        if (!shouldRunQualityCheck({ messageCount: currentCount, lastInterventionAt: lastIntervention }, Date.now())) {
             return;
         }
 
@@ -824,19 +710,9 @@ async function checkAndIntervenForQuality(
         const avgLexical = totalLexical / messagesWithEngagement.length;
 
         // Determine intervention type based on metrics
-        let interventionType: 'low_hot' | 'low_cognitive' | 'low_lexical' | 'general' | null = null;
-        let qualityIssue = '';
-
-        if (hotPercentage < QUALITY_THRESHOLDS.LOW_HOT) {
-            interventionType = 'low_hot';
-            qualityIssue = `HOT thinking: ${hotPercentage.toFixed(0)}%`;
-        } else if (cognitiveRatio < QUALITY_THRESHOLDS.LOW_COGNITIVE) {
-            interventionType = 'low_cognitive';
-            qualityIssue = `Cognitive engagement: ${cognitiveRatio.toFixed(0)}%`;
-        } else if (avgLexical < QUALITY_THRESHOLDS.LOW_LEXICAL) {
-            interventionType = 'low_lexical';
-            qualityIssue = `Lexical variety: ${avgLexical.toFixed(0)}%`;
-        }
+        const decision = decideQualityIntervention({ hotPercentage, cognitiveRatio, avgLexical });
+        const interventionType = decision.interventionType;
+        const qualityIssue = decision.qualityIssue;
 
         // No intervention needed if quality is good
         if (!interventionType) {
@@ -868,10 +744,10 @@ async function checkAndIntervenForQuality(
                 );
                 interventionMessage = promptResult.success && promptResult.prompt
                     ? promptResult.prompt
-                    : QUALITY_INTERVENTIONS[interventionType][Math.floor(Math.random() * QUALITY_INTERVENTIONS[interventionType].length)];
+                    : pickRandom(QUALITY_INTERVENTIONS[interventionType]);
             }
         } catch {
-            interventionMessage = QUALITY_INTERVENTIONS[interventionType][Math.floor(Math.random() * QUALITY_INTERVENTIONS[interventionType].length)];
+            interventionMessage = pickRandom(QUALITY_INTERVENTIONS[interventionType]);
         }
 
         // Save intervention message
@@ -931,7 +807,6 @@ async function handleAIQuestion(
     groupId: string,
     chatSpaceId: string,
     question: string,
-    userName: string,
     userId: string
 ): Promise<void> {
     // Show typing indicator

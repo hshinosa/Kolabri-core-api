@@ -23,13 +23,15 @@ export class AiChatService {
         };
     }
 
-    /**
-     * Get all chats for a user
-     */
-    static async getUserChats(userId: string) {
+    static async getUserChats(userId: string, page = 1, pageSize = 20) {
+        const safePage = Math.max(1, Math.floor(page));
+        const safePageSize = Math.max(1, Math.min(100, Math.floor(pageSize)));
+
         const chats = await prisma.aiChat.findMany({
             where: { userId },
             orderBy: { updatedAt: 'desc' },
+            skip: (safePage - 1) * safePageSize,
+            take: safePageSize,
             include: {
                 messages: {
                     take: 1,

@@ -29,7 +29,9 @@ export class AiChatController {
      */
     static async index(req: AuthenticatedRequest, res: Response, next: NextFunction) {
         try {
-            const chats = await AiChatService.getUserChats(req.user!.userId);
+            const page = req.query.page ? Number(req.query.page) : undefined;
+            const pageSize = req.query.pageSize ? Number(req.query.pageSize) : undefined;
+            const chats = await AiChatService.getUserChats(req.user!.userId, page, pageSize);
 
             res.json({
                 data: chats,

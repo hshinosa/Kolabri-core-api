@@ -3,7 +3,7 @@ import { beforeEach, describe, expect, it, vi } from 'vitest';
 const { prismaMock, randomBytesMock } = vi.hoisted(() => ({
     prismaMock: {
         group: { findUnique: vi.fn(), findFirst: vi.fn(), create: vi.fn(), createMany: vi.fn(), delete: vi.fn(), update: vi.fn(), findMany: vi.fn() },
-        course: { findUnique: vi.fn() },
+        course: { findUnique: vi.fn(), findFirst: vi.fn() },
         courseStudent: { findUnique: vi.fn(), findMany: vi.fn() },
         groupMember: { findUnique: vi.fn(), findFirst: vi.fn(), create: vi.fn(), createMany: vi.fn() },
         chatSpace: { create: vi.fn(), findUnique: vi.fn() },
@@ -49,7 +49,7 @@ describe('GroupService', () => {
     });
 
     it('creates a lecturer-managed group with enrolled members', async () => {
-        prismaMock.course.findUnique.mockResolvedValue({ id: 'course-1', ownerId: 'lecturer-1' });
+        prismaMock.course.findFirst.mockResolvedValue({ id: 'course-1', ownerId: 'lecturer-1' });
         prismaMock.group.findUnique.mockResolvedValueOnce(null);
         prismaMock.$transaction.mockImplementation(async (callback) => {
             const tx = {
@@ -97,7 +97,7 @@ describe('GroupService', () => {
     });
 
     it('creates a student-managed group and adds the creator as first member', async () => {
-        prismaMock.course.findUnique.mockResolvedValue({ id: 'course-1', ownerId: 'lecturer-1' });
+        prismaMock.course.findFirst.mockResolvedValue({ id: 'course-1', ownerId: 'lecturer-1' });
         prismaMock.courseStudent.findUnique.mockResolvedValue({ courseId: 'course-1', userId: 'student-1' });
         prismaMock.group.findUnique.mockResolvedValueOnce(null);
         prismaMock.$transaction.mockImplementation(async (callback) => {
@@ -131,7 +131,7 @@ describe('GroupService', () => {
     });
 
     it('rejects group creation for students who are not enrolled', async () => {
-        prismaMock.course.findUnique.mockResolvedValue({ id: 'course-1', ownerId: 'lecturer-1' });
+        prismaMock.course.findFirst.mockResolvedValue({ id: 'course-1', ownerId: 'lecturer-1' });
         prismaMock.courseStudent.findUnique.mockResolvedValue(null);
 
         await expect(GroupService.createGroup('course-1', { name: 'Group 1' }, 'student-1', 'student')).rejects.toMatchObject({

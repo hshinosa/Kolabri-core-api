@@ -21,32 +21,32 @@ enum UserRole {
 }
 
 model User {
-  id            String   @id @default(uuid())
-  email         String   @unique
-  password      String
-  name          String
-  role          UserRole @default(student)
-  googleId      String?  @unique @map("google_id")
-  avatarUrl     String?  @map("avatar_url")
-  isActive      Boolean  @default(true) @map("is_active")
-  createdAt     DateTime @default(now()) @map("created_at")
-  updatedAt     DateTime @updatedAt @map("updated_at")
-  deletedAt     DateTime? @map("deleted_at")
+  id        String    @id @default(uuid())
+  email     String    @unique
+  password  String
+  name      String
+  role      UserRole  @default(student)
+  googleId  String?   @unique @map("google_id")
+  avatarUrl String?   @map("avatar_url")
+  isActive  Boolean   @default(true) @map("is_active")
+  createdAt DateTime  @default(now()) @map("created_at")
+  updatedAt DateTime  @updatedAt @map("updated_at")
+  deletedAt DateTime? @map("deleted_at")
 
   // Relations
-  ownedCourses    Course[]        @relation("CourseOwner")
-  archivedCourses Course[]        @relation("ArchivedCourses")
+  ownedCourses     Course[]            @relation("CourseOwner")
+  archivedCourses  Course[]            @relation("ArchivedCourses")
   createdTemplates CourseTemplate[]
-  enrolledCourses CourseStudent[]
-  groupMembers    GroupMember[]
-  learningGoals   LearningGoal[]
-  reflections     Reflection[]
-  knowledgeBases  KnowledgeBase[]
-  chatMessages    ChatMessage[]
-  aiChats         AiChat[]
-  aiUsages        AiUsage[]
-  aiComparisons   AiModelComparison[]
-  auditLogs       AuditLog[]
+  enrolledCourses  CourseStudent[]
+  groupMembers     GroupMember[]
+  learningGoals    LearningGoal[]
+  reflections      Reflection[]
+  knowledgeBases   KnowledgeBase[]
+  chatMessages     ChatMessage[]
+  aiChats          AiChat[]
+  aiUsages         AiUsage[]
+  aiComparisons    AiModelComparison[]
+  auditLogs        AuditLog[]
 
   @@index([role])
   @@index([isActive])
@@ -61,17 +61,17 @@ model User {
 // ============================================
 
 model Course {
-  id          String   @id @default(uuid())
-  code        String   @unique
+  id          String    @id @default(uuid())
+  code        String    @unique
   name        String
   description String?
-  joinCode    String   @unique @map("join_code")
-  isActive    Boolean  @default(true) @map("is_active")
-  isArchived  Boolean  @default(false) @map("is_archived")
+  joinCode    String    @unique @map("join_code")
+  isActive    Boolean   @default(true) @map("is_active")
+  isArchived  Boolean   @default(false) @map("is_archived")
   archivedAt  DateTime? @map("archived_at")
   deletedAt   DateTime? @map("deleted_at")
-  createdAt   DateTime @default(now()) @map("created_at")
-  updatedAt   DateTime @updatedAt @map("updated_at")
+  createdAt   DateTime  @default(now()) @map("created_at")
+  updatedAt   DateTime  @updatedAt @map("updated_at")
 
   // Owner (Lecturer)
   ownerId String @map("owner_id")
@@ -97,15 +97,15 @@ model Course {
 }
 
 model CourseTemplate {
-  id                    String   @id @default(uuid())
-  name                  String
-  description           String?
-  namePattern           String   @map("name_pattern")
-  descriptionTemplate   String?  @map("description_template")
-  defaultGroups         Json     @map("default_groups")
-  createdById           String   @map("created_by_id")
-  createdAt             DateTime @default(now()) @map("created_at")
-  updatedAt             DateTime @updatedAt @map("updated_at")
+  id                  String   @id @default(uuid())
+  name                String
+  description         String?
+  namePattern         String   @map("name_pattern")
+  descriptionTemplate String?  @map("description_template")
+  defaultGroups       Json     @map("default_groups")
+  createdById         String   @map("created_by_id")
+  createdAt           DateTime @default(now()) @map("created_at")
+  updatedAt           DateTime @updatedAt @map("updated_at")
 
   createdBy User @relation(fields: [createdById], references: [id], onDelete: Cascade)
 
@@ -135,13 +135,13 @@ model CourseStudent {
 // ============================================
 
 model Group {
-  id        String   @id @default(uuid())
+  id        String    @id @default(uuid())
   name      String
-  joinCode  String   @unique @map("join_code")
-  isActive  Boolean  @default(true) @map("is_active")
+  joinCode  String    @unique @map("join_code")
+  isActive  Boolean   @default(true) @map("is_active")
   deletedAt DateTime? @map("deleted_at")
-  createdAt DateTime @default(now()) @map("created_at")
-  updatedAt DateTime @updatedAt @map("updated_at")
+  createdAt DateTime  @default(now()) @map("created_at")
+  updatedAt DateTime  @updatedAt @map("updated_at")
 
   // Creator (can be lecturer or student)
   createdBy String @map("created_by")
@@ -154,6 +154,7 @@ model Group {
 
   @@index([courseId])
   @@index([deletedAt])
+  @@index([courseId, deletedAt])
   @@map("groups")
 }
 
@@ -185,36 +186,37 @@ model ChatSpace {
   createdAt   DateTime  @default(now()) @map("created_at")
   updatedAt   DateTime  @updatedAt @map("updated_at")
   deletedAt   DateTime? @map("deleted_at")
-  
+
   // Session closure
-  closedAt    DateTime? @map("closed_at")
-  closedBy    String?   @map("closed_by")
+  closedAt DateTime? @map("closed_at")
+  closedBy String?   @map("closed_by")
 
   // Creator
   createdBy String @map("created_by")
 
   // Relations
-  groupId     String        @map("group_id")
-  group       Group         @relation(fields: [groupId], references: [id], onDelete: Cascade)
+  groupId     String         @map("group_id")
+  group       Group          @relation(fields: [groupId], references: [id], onDelete: Cascade)
   messages    ChatMessage[]
   goals       LearningGoal[]
   reflections Reflection[]
 
   @@index([groupId])
   @@index([deletedAt])
+  @@index([groupId, deletedAt])
   @@map("chat_spaces")
 }
 
 model ChatMessage {
-  id            String   @id @default(uuid())
-  content       String
-  senderType    String   @map("sender_type") // 'user' | 'ai' | 'bot'
-  isIntervention Boolean @default(false) @map("is_intervention")
-  createdAt     DateTime @default(now()) @map("created_at")
-  
+  id             String   @id @default(uuid())
+  content        String
+  senderType     String   @map("sender_type") // 'user' | 'ai' | 'bot'
+  isIntervention Boolean  @default(false) @map("is_intervention")
+  createdAt      DateTime @default(now()) @map("created_at")
+
   // Reply to another message
-  replyToId String?      @map("reply_to_id")
-  replyTo   ChatMessage? @relation("MessageReplies", fields: [replyToId], references: [id], onDelete: SetNull)
+  replyToId String?       @map("reply_to_id")
+  replyTo   ChatMessage?  @relation("MessageReplies", fields: [replyToId], references: [id], onDelete: SetNull)
   replies   ChatMessage[] @relation("MessageReplies")
 
   // Relations
@@ -225,6 +227,7 @@ model ChatMessage {
 
   @@index([chatSpaceId])
   @@index([senderId])
+  @@index([chatSpaceId, createdAt])
   @@map("chat_messages")
 }
 
@@ -246,6 +249,9 @@ model LearningGoal {
   user        User         @relation(fields: [userId], references: [id], onDelete: Cascade)
   reflections Reflection[]
 
+  @@index([chatSpaceId])
+  @@index([userId])
+  @@index([chatSpaceId, userId])
   @@map("learning_goals")
 }
 
@@ -257,13 +263,17 @@ model Reflection {
   updatedAt DateTime @updatedAt @map("updated_at")
 
   // Relations
-  goalId      String?    @map("goal_id")
+  goalId      String?       @map("goal_id")
   goal        LearningGoal? @relation(fields: [goalId], references: [id], onDelete: SetNull)
-  userId      String     @map("user_id")
-  user        User       @relation(fields: [userId], references: [id], onDelete: Cascade)
-  chatSpaceId String?    @map("chat_space_id")
-  chatSpace   ChatSpace? @relation(fields: [chatSpaceId], references: [id], onDelete: SetNull)
+  userId      String        @map("user_id")
+  user        User          @relation(fields: [userId], references: [id], onDelete: Cascade)
+  chatSpaceId String?       @map("chat_space_id")
+  chatSpace   ChatSpace?    @relation(fields: [chatSpaceId], references: [id], onDelete: SetNull)
 
+  @@index([userId])
+  @@index([goalId])
+  @@index([chatSpaceId, userId])
+  @@index([userId, createdAt])
   @@map("reflections")
 }
 
@@ -314,8 +324,8 @@ model AiChat {
   updatedAt DateTime @updatedAt @map("updated_at")
 
   // Relations
-  userId   String         @map("user_id")
-  user     User           @relation(fields: [userId], references: [id], onDelete: Cascade)
+  userId   String          @map("user_id")
+  user     User            @relation(fields: [userId], references: [id], onDelete: Cascade)
   messages AiChatMessage[]
 
   @@index([userId])
@@ -324,7 +334,7 @@ model AiChat {
 
 model AiChatMessage {
   id        String   @id @default(uuid())
-  role      String   // 'user' | 'assistant'
+  role      String // 'user' | 'assistant'
   content   String
   createdAt DateTime @default(now()) @map("created_at")
 
@@ -333,6 +343,7 @@ model AiChatMessage {
   chat   AiChat @relation(fields: [chatId], references: [id], onDelete: Cascade)
 
   @@index([chatId])
+  @@index([chatId, createdAt])
   @@map("ai_chat_messages")
 }
 
@@ -341,18 +352,18 @@ model AiChatMessage {
 // ============================================
 
 model AiProvider {
-  id          String   @id @default(uuid())
-  name        String   @unique // "openai", "anthr0pic", "google", etc.
-  displayName String   @map("display_name") // "0penAI", "", "Google Gemini"
-  apiKey      String   @map("api_key") // Encrypted API key
-  baseUrl     String?  @map("base_url") // Optional custom base URL
-  isActive    Boolean  @default(false) @map("is_active")
-  fallbackOrder Int    @default(0) @map("fallback_order")
-  config      Json?    // Additional config (model list, parameters, etc.)
-  createdAt   DateTime @default(now()) @map("created_at")
-  updatedAt   DateTime @updatedAt @map("updated_at")
+  id            String   @id @default(uuid())
+  name          String   @unique // "openai", "anthr0pic", "google", etc.
+  displayName   String   @map("display_name") // "0penAI", "", "Google Gemini"
+  apiKey        String   @map("api_key") // Encrypted API key
+  baseUrl       String?  @map("base_url") // Optional custom base URL
+  isActive      Boolean  @default(false) @map("is_active")
+  fallbackOrder Int      @default(0) @map("fallback_order")
+  config        Json? // Additional config (model list, parameters, etc.)
+  createdAt     DateTime @default(now()) @map("created_at")
+  updatedAt     DateTime @updatedAt @map("updated_at")
 
-  usages      AiUsage[]
+  usages            AiUsage[]
   comparisonResults AiModelComparisonResult[]
 
   @@index([isActive, fallbackOrder])
@@ -373,8 +384,8 @@ model AiUsage {
   latencyMs        Int      @map("latency_ms")
   createdAt        DateTime @default(now()) @map("created_at")
 
-  user     User       @relation(fields: [userId], references: [id], onDelete: Cascade)
-  course   Course?    @relation(fields: [courseId], references: [id], onDelete: SetNull)
+  user        User        @relation(fields: [userId], references: [id], onDelete: Cascade)
+  course      Course?     @relation(fields: [courseId], references: [id], onDelete: SetNull)
   providerRef AiProvider? @relation(fields: [providerId], references: [id], onDelete: SetNull)
 
   @@index([userId, createdAt])
@@ -389,7 +400,7 @@ model AiModelComparison {
   createdBy String   @map("created_by")
   createdAt DateTime @default(now()) @map("created_at")
 
-  creator User @relation(fields: [createdBy], references: [id], onDelete: Cascade)
+  creator User                      @relation(fields: [createdBy], references: [id], onDelete: Cascade)
   results AiModelComparisonResult[]
 
   @@index([createdBy, createdAt])
@@ -397,18 +408,18 @@ model AiModelComparison {
 }
 
 model AiModelComparisonResult {
-  id            String   @id @default(uuid())
-  comparisonId  String   @map("comparison_id")
-  provider      String
-  providerId    String?  @map("provider_id")
-  model         String
-  response      String
-  promptTokens  Int      @map("prompt_tokens")
-  completionTokens Int   @map("completion_tokens")
-  totalTokens   Int      @map("total_tokens")
-  estimatedCost Float    @map("estimated_cost")
-  latencyMs     Int      @map("latency_ms")
-  createdAt     DateTime @default(now()) @map("created_at")
+  id               String   @id @default(uuid())
+  comparisonId     String   @map("comparison_id")
+  provider         String
+  providerId       String?  @map("provider_id")
+  model            String
+  response         String
+  promptTokens     Int      @map("prompt_tokens")
+  completionTokens Int      @map("completion_tokens")
+  totalTokens      Int      @map("total_tokens")
+  estimatedCost    Float    @map("estimated_cost")
+  latencyMs        Int      @map("latency_ms")
+  createdAt        DateTime @default(now()) @map("created_at")
 
   comparison  AiModelComparison @relation(fields: [comparisonId], references: [id], onDelete: Cascade)
   providerRef AiProvider?       @relation(fields: [providerId], references: [id], onDelete: SetNull)

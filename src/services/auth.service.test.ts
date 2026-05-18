@@ -106,7 +106,7 @@ describe('AuthService', () => {
         const result = await AuthService.logout(refreshToken);
 
         expect(result).toEqual({ message: 'Logged out successfully' });
-        expect(AuthService.isTokenBlacklisted(refreshToken)).toBe(true);
+        expect(await AuthService.isTokenBlacklisted(refreshToken)).toBe(true);
     });
 
     it('rejects revoked refresh tokens before verification', async () => {

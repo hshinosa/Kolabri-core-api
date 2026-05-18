@@ -1,14 +1,54 @@
 import bcrypt from 'bcrypt';
+import { createHash } from 'node:crypto';
 import jwt from 'jsonwebtoken';
 import prisma from '../config/database.js';
 import { ApiError } from '../middleware/errorHandler.js';
 import { RegisterInput, LoginInput } from '../validators/auth.validator.js';
 import { JwtPayload } from '../middleware/auth.js';
+import { getRedis } from '../config/redis.js';
 
 const SALT_ROUNDS = 10;
 
-// In-memory token blacklist (for revoked tokens)
-const tokenBlacklist = new Set<string>();
+// Process-local fallback for revoked tokens when Redis is unavailable.
+const inMemoryBlacklist = new Set<string>();
+
+function hashToken(token: string): string {
+    return createHash('sha256').update(token).digest('hex');
+}
+
+async function revokeToken(token: string, ttlSeconds: number): Promise<void> {
+    const hash = hashToken(token);
+    const redis = getRedis();
+    if (redis) {
+        const ttl = Math.max(1, Math.floor(ttlSeconds));
+        await redis.set(`bl:${hash}`, '1', 'EX', ttl);
+        return;
+    }
+    inMemoryBlacklist.add(hash);
+    setTimeout(() => inMemoryBlacklist.delete(hash), Math.max(1000, ttlSeconds * 1000)).unref();
+}
+
+async function isRevoked(token: string): Promise<boolean> {
+    const hash = hashToken(token);
+    const redis = getRedis();
+    if (redis) {
+        return (await redis.exists(`bl:${hash}`)) === 1;
+    }
+    return inMemoryBlacklist.has(hash);
+}
+
+function getRefreshTokenTtlSeconds(refreshToken: string): number {
+    try {
+        const decoded = jwt.decode(refreshToken) as { exp?: number } | null;
+        if (decoded?.exp) {
+            const remaining = decoded.exp - Math.floor(Date.now() / 1000);
+            return remaining > 0 ? remaining : 60;
+        }
+    } catch {
+        // fall through
+    }
+    return 60 * 60 * 24 * 7;
+}
 
 export interface RefreshTokenPayload {
     userId: string;
@@ -184,8 +224,7 @@ export class AuthService {
             throw ApiError.internal('JWT secret not configured');
         }
 
-        // Check if token is blacklisted
-        if (tokenBlacklist.has(refreshToken)) {
+        if (await isRevoked(refreshToken)) {
             throw ApiError.unauthorized('Token has been revoked');
         }
 
@@ -230,18 +269,15 @@ export class AuthService {
      * Logout and revoke refresh token
      */
     static async logout(refreshToken: string) {
-        // Add token to blacklist
-        tokenBlacklist.add(refreshToken);
+        const ttl = getRefreshTokenTtlSeconds(refreshToken);
+        await revokeToken(refreshToken, ttl);
 
         return {
             message: 'Logged out successfully',
         };
     }
 
-    /**
-     * Check if token is blacklisted
-     */
-    static isTokenBlacklisted(token: string): boolean {
-        return tokenBlacklist.has(token);
+    static async isTokenBlacklisted(token: string): Promise<boolean> {
+        return isRevoked(token);
     }
 }

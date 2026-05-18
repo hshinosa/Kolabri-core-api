@@ -34,7 +34,7 @@ export async function verifyToken(req: AuthenticatedRequest, _res: Response, nex
         const cached = userActiveCache.get(decoded.userId);
         if (cached === null) {
             const user = await prisma.user.findFirst({
-                where: { id: decoded.userId, deletedAt: null },
+                where: { id: decoded.userId, deletedAt: null, isActive: true },
                 select: { id: true },
             });
             if (!user) {

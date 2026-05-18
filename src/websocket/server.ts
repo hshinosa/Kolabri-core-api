@@ -44,7 +44,7 @@ export function setupWebSocket(server: HttpServer) {
 
         ws.user = user;
         ws.isAlive = true;
-        logger.info(`Admin WebSocket connected: ${user.email}`);
+        logger.info(`Admin WebSocket connected: ${user.userId}`);
 
         ws.on('pong', () => {
             ws.isAlive = true;
@@ -63,7 +63,7 @@ export function setupWebSocket(server: HttpServer) {
         });
 
         ws.on('close', () => {
-            logger.info(`Admin WebSocket disconnected: ${user.email}`);
+            logger.info(`Admin WebSocket disconnected: ${user.userId}`);
         });
 
         ws.send(JSON.stringify({ event: 'system:connected', data: { userId: user.userId } }));

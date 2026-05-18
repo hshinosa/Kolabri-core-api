@@ -2,7 +2,7 @@ import { beforeEach, describe, expect, it, vi } from 'vitest';
 
 const { prismaMock, isGroupMemberMock, validateGoalContentMock } = vi.hoisted(() => ({
     prismaMock: {
-        chatSpace: { findUnique: vi.fn() },
+        chatSpace: { findUnique: vi.fn(), findFirst: vi.fn() },
         learningGoal: { findFirst: vi.fn(), findMany: vi.fn(), findUnique: vi.fn(), create: vi.fn() },
     },
     isGroupMemberMock: vi.fn(),
@@ -23,6 +23,19 @@ vi.mock('./group.service.js', () => ({
     },
 }));
 
+vi.mock('./aiEngine.service.js', () => ({
+    aiEngineService: {
+        validateGoal: vi.fn(() => Promise.resolve({
+            success: true,
+            is_valid: true,
+            feedback: undefined,
+            socratic_hint: undefined,
+            missing_criteria: [],
+        })),
+        refineGoal: vi.fn(() => Promise.resolve({ success: true, refined_goal: null })),
+    },
+}));
+
 import { GoalService } from './goal.service.js';
 
 describe('GoalService', () => {
@@ -31,7 +44,7 @@ describe('GoalService', () => {
     });
 
     it('creates a shared goal for a chat space when validation passes', async () => {
-        prismaMock.chatSpace.findUnique.mockResolvedValue({
+        prismaMock.chatSpace.findFirst.mockResolvedValue({
             id: 'chat-1',
             groupId: 'group-1',
             group: { id: 'group-1', name: 'Group 1' },
@@ -78,7 +91,7 @@ describe('GoalService', () => {
     });
 
     it('returns the existing shared goal instead of creating a duplicate', async () => {
-        prismaMock.chatSpace.findUnique.mockResolvedValue({ id: 'chat-1', groupId: 'group-1' });
+        prismaMock.chatSpace.findFirst.mockResolvedValue({ id: 'chat-1', groupId: 'group-1' });
         isGroupMemberMock.mockResolvedValue(true);
         prismaMock.learningGoal.findFirst.mockResolvedValue({
             id: 'goal-1',
@@ -96,7 +109,7 @@ describe('GoalService', () => {
     });
 
     it('rejects goal creation for unknown chat spaces', async () => {
-        prismaMock.chatSpace.findUnique.mockResolvedValue(null);
+        prismaMock.chatSpace.findFirst.mockResolvedValue(null);
 
         await expect(
             GoalService.createGoal({ chat_space_id: 'chat-1', content: 'Menganalisis topik pembelajaran bersama-sama.' }, 'user-1')
@@ -107,7 +120,7 @@ describe('GoalService', () => {
     });
 
     it('rejects goal creation when the user is not a group member', async () => {
-        prismaMock.chatSpace.findUnique.mockResolvedValue({ id: 'chat-1', groupId: 'group-1' });
+        prismaMock.chatSpace.findFirst.mockResolvedValue({ id: 'chat-1', groupId: 'group-1' });
         isGroupMemberMock.mockResolvedValue(false);
 
         await expect(
@@ -119,7 +132,7 @@ describe('GoalService', () => {
     });
 
     it('rejects goal creation when SMART/Bloom validation fails', async () => {
-        prismaMock.chatSpace.findUnique.mockResolvedValue({ id: 'chat-1', groupId: 'group-1' });
+        prismaMock.chatSpace.findFirst.mockResolvedValue({ id: 'chat-1', groupId: 'group-1' });
         isGroupMemberMock.mockResolvedValue(true);
         prismaMock.learningGoal.findFirst.mockResolvedValue(null);
         validateGoalContentMock.mockReturnValue({
@@ -136,7 +149,7 @@ describe('GoalService', () => {
     });
 
     it('returns empty goals for a chat space with no shared goal', async () => {
-        prismaMock.chatSpace.findUnique.mockResolvedValue({
+        prismaMock.chatSpace.findFirst.mockResolvedValue({
             id: 'chat-1',
             groupId: 'group-1',
             group: { course: { ownerId: 'lecturer-1' } },
@@ -150,7 +163,7 @@ describe('GoalService', () => {
     });
 
     it('returns shared chat space goals for lecturers who own the course', async () => {
-        prismaMock.chatSpace.findUnique.mockResolvedValue({
+        prismaMock.chatSpace.findFirst.mockResolvedValue({
             id: 'chat-1',
             groupId: 'group-1',
             group: { course: { ownerId: 'lecturer-1' } },
@@ -179,7 +192,7 @@ describe('GoalService', () => {
     });
 
     it('rejects lecturers who do not own the course when viewing chat space goals', async () => {
-        prismaMock.chatSpace.findUnique.mockResolvedValue({
+        prismaMock.chatSpace.findFirst.mockResolvedValue({
             id: 'chat-1',
             groupId: 'group-1',
             group: { course: { ownerId: 'lecturer-1' } },
@@ -342,7 +355,7 @@ describe('GoalService', () => {
     });
 
     it('returns shared goal metadata only to group members', async () => {
-        prismaMock.chatSpace.findUnique.mockResolvedValue({ id: 'chat-1', groupId: 'group-1', group: { id: 'group-1' } });
+        prismaMock.chatSpace.findFirst.mockResolvedValue({ id: 'chat-1', groupId: 'group-1', group: { id: 'group-1' } });
         isGroupMemberMock.mockResolvedValue(true);
         prismaMock.learningGoal.findFirst.mockResolvedValue({
             id: 'goal-1',
@@ -358,7 +371,7 @@ describe('GoalService', () => {
     });
 
     it('rejects shared goal access for non-members', async () => {
-        prismaMock.chatSpace.findUnique.mockResolvedValue({ id: 'chat-1', groupId: 'group-1', group: { id: 'group-1' } });
+        prismaMock.chatSpace.findFirst.mockResolvedValue({ id: 'chat-1', groupId: 'group-1', group: { id: 'group-1' } });
         isGroupMemberMock.mockResolvedValue(false);
 
         await expect(GoalService.getChatSpaceSharedGoal('chat-1', 'user-2')).rejects.toMatchObject({

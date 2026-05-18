@@ -6,11 +6,10 @@ export async function connectMongoDB(): Promise<void> {
 
     try {
         await mongoose.connect(mongoUrl);
-        logger.info('✅ Connected to MongoDB');
+        logger.info('Connected to MongoDB');
     } catch (error) {
-        logger.error('❌ MongoDB connection error:', error);
-        // Don't throw - MongoDB is optional for MVP, chat logs will be skipped
-        logger.warn('⚠️ Continuing without MongoDB - chat logs will not be persisted');
+        logger.error('MongoDB connection error:', error);
+        throw error;
     }
 }
 
