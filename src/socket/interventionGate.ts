@@ -19,3 +19,25 @@ export function incrementMessageCount(map: Map<string, number>, roomId: string):
     map.set(roomId, next);
     return next;
 }
+
+import { getRedis } from '../config/redis.js';
+
+const SILENCE_LOCK_PREFIX = 'silence-lock:';
+const SILENCE_LOCK_TTL_MS = INTERVENTION_COOLDOWN_MS;
+
+export async function tryAcquireSilenceLock(roomId: string): Promise<boolean> {
+    const redis = getRedis();
+    if (!redis) return true;
+    try {
+        const result = await redis.set(
+            `${SILENCE_LOCK_PREFIX}${roomId}`,
+            '1',
+            'PX',
+            SILENCE_LOCK_TTL_MS,
+            'NX',
+        );
+        return result === 'OK';
+    } catch {
+        return true;
+    }
+}

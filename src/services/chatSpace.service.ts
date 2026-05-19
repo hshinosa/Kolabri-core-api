@@ -82,6 +82,7 @@ export class ChatSpaceService {
         }
 
         let summary: string | null = null;
+        let summaryGeneratedAt: Date | null = null;
         try {
             const recentMessages = await ChatLog.find({
                 chatSpaceId,
@@ -98,7 +99,14 @@ export class ChatSpaceService {
                     })),
                     chatSpaceId
                 );
-                summary = summaryResult.success ? summaryResult.summary : null;
+                if (summaryResult.success && summaryResult.summary) {
+                    summary = summaryResult.summary;
+                    summaryGeneratedAt = new Date();
+                    await prisma.chatSpace.update({
+                        where: { id: chatSpaceId },
+                        data: { summary, summaryGeneratedAt },
+                    });
+                }
             }
         } catch {
             logger.debug('summary_generation_failed');
@@ -110,6 +118,7 @@ export class ChatSpaceService {
             closedAt: updatedChatSpace.closedAt,
             closedBy: updatedChatSpace.closedBy,
             summary,
+            summaryGeneratedAt,
         };
     }
 
@@ -332,6 +341,43 @@ export class ChatSpaceService {
             goal: reflection.goal,
             createdBy: reflection.user,
             createdAt: reflection.createdAt,
+        };
+    }
+
+    static async getSummary(chatSpaceId: string, userId: string, userRole: string) {
+        const chatSpace = await prisma.chatSpace.findFirst({
+            where: { id: chatSpaceId, deletedAt: null },
+            select: {
+                id: true,
+                summary: true,
+                summaryGeneratedAt: true,
+                group: {
+                    select: {
+                        course: { select: { ownerId: true } },
+                        members: { select: { userId: true } },
+                    },
+                },
+            },
+        });
+
+        if (!chatSpace) {
+            throw ApiError.notFound('Chat space not found');
+        }
+
+        if (userRole === 'student') {
+            const isMember = chatSpace.group.members.some((m) => m.userId === userId);
+            if (!isMember) {
+                throw ApiError.forbidden('You are not a member of this group');
+            }
+        } else if (userRole === 'lecturer') {
+            if (chatSpace.group.course.ownerId !== userId) {
+                throw ApiError.forbidden('You do not own this course');
+            }
+        }
+
+        return {
+            summary: chatSpace.summary,
+            generatedAt: chatSpace.summaryGeneratedAt,
         };
     }
 }

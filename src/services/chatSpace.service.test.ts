@@ -86,6 +86,7 @@ describe('ChatSpaceService', () => {
             closedAt,
             closedBy: 'student-1',
             summary: null,
+            summaryGeneratedAt: null,
         });
     });
 

@@ -78,6 +78,7 @@ describe('ChatSpaceService Integration - Lifecycle', () => {
             closedAt,
             closedBy: 'lecturer-1',
             summary: null,
+            summaryGeneratedAt: null,
         });
     });
 
@@ -121,6 +122,7 @@ describe('ChatSpaceService Integration - Lifecycle', () => {
             closedAt,
             closedBy: 'student-1',
             summary: null,
+            summaryGeneratedAt: null,
         });
     });
 

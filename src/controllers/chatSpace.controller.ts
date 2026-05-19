@@ -91,4 +91,20 @@ export class ChatSpaceController {
             next(error);
         }
     }
+
+    static async getSummary(req: AuthenticatedRequest, res: Response, next: NextFunction) {
+        try {
+            const result = await ChatSpaceService.getSummary(
+                req.params.id,
+                req.user!.userId,
+                req.user!.role
+            );
+            res.json({
+                summary: result.summary,
+                generatedAt: result.generatedAt,
+            });
+        } catch (error) {
+            next(error);
+        }
+    }
 }

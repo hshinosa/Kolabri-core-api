@@ -1,5 +1,17 @@
 -- Performance indexes for hot-path queries
 
+-- Backfill missing deleted_at columns (drift remediation: schema.prisma had soft-delete
+-- fields but earlier migrations didn't create the columns)
+ALTER TABLE "users" ADD COLUMN IF NOT EXISTS "deleted_at" TIMESTAMP(3);
+ALTER TABLE "courses" ADD COLUMN IF NOT EXISTS "deleted_at" TIMESTAMP(3);
+ALTER TABLE "courses" ADD COLUMN IF NOT EXISTS "is_archived" BOOLEAN NOT NULL DEFAULT false;
+ALTER TABLE "courses" ADD COLUMN IF NOT EXISTS "archived_at" TIMESTAMP(3);
+ALTER TABLE "courses" ADD COLUMN IF NOT EXISTS "archived_by_id" TEXT;
+ALTER TABLE "groups" ADD COLUMN IF NOT EXISTS "deleted_at" TIMESTAMP(3);
+ALTER TABLE "groups" ADD COLUMN IF NOT EXISTS "is_active" BOOLEAN NOT NULL DEFAULT true;
+ALTER TABLE "chat_spaces" ADD COLUMN IF NOT EXISTS "deleted_at" TIMESTAMP(3);
+ALTER TABLE "knowledge_bases" ADD COLUMN IF NOT EXISTS "deleted_at" TIMESTAMP(3);
+
 -- Group: filter active groups per course
 CREATE INDEX "groups_course_id_deleted_at_idx" ON "groups"("course_id", "deleted_at");
 

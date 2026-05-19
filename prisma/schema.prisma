@@ -190,6 +190,8 @@ model ChatSpace {
   // Session closure
   closedAt DateTime? @map("closed_at")
   closedBy String?   @map("closed_by")
+  summary  String?   @db.Text @map("summary")
+  summaryGeneratedAt DateTime? @map("summary_generated_at")
 
   // Creator
   createdBy String @map("created_by")

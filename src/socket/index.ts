@@ -17,10 +17,10 @@ import { joinRoomSchema, sendMessageSchema, typingSchema, deleteMessageSchema, e
 
 // Store silence timers per room
 const silenceTimers = new Map<string, NodeJS.Timeout>();
-import { SILENCE_TIMEOUT_MS, INTERVENTION_COOLDOWN_MS, MESSAGES_BEFORE_CHECK, incrementMessageCount, shouldRunQualityCheck } from './interventionGate.js';
-
-// Store online users per room
-const roomUsers = new Map<string, Map<string, { userId: string; userName: string; socketId: string }>>();
+import { SILENCE_TIMEOUT_MS, INTERVENTION_COOLDOWN_MS, MESSAGES_BEFORE_CHECK, incrementMessageCount, shouldRunQualityCheck, tryAcquireSilenceLock } from './interventionGate.js';
+import { registerPresence, trackUserInRoom, listUsersInRoom } from './presence.js';
+import { registerDeleteMessage } from './messages.js';
+import { runSilenceIntervention } from './interventions.js';
 
 // Track last intervention time per room to avoid spamming
 const lastInterventionTime = new Map<string, number>();
@@ -205,22 +205,13 @@ export function initSocketIO(server: HttpServer): Server {
                     userName: socket.user.email.split('@')[0],
                 });
 
-                // Track user in room
-                if (!roomUsers.has(roomId)) {
-                    roomUsers.set(roomId, new Map());
-                }
-                roomUsers.get(roomId)!.set(socket.user.userId, {
+                await trackUserInRoom(roomId, {
                     userId: socket.user.userId,
                     userName: socket.user.email.split('@')[0],
                     socketId: socket.id,
                 });
 
-                // Send current online users list to the joining user
-                const onlineUsers = Array.from(roomUsers.get(roomId)!.values()).map(u => ({
-                    userId: u.userId,
-                    userName: u.userName,
-                }));
-                socket.emit('online_users', { users: onlineUsers });
+                socket.emit('online_users', { users: await listUsersInRoom(roomId) });
 
                 // Send room joined confirmation
                 socket.emit('room_joined', { roomId, courseId, groupId, chatSpaceId });
@@ -423,126 +414,9 @@ export function initSocketIO(server: HttpServer): Server {
         });
 
         // Delete message (only own messages)
-        socket.on('delete_message', async (data: { roomId: string; messageId: string }) => {
-            try {
-                if (!socketRateLimiter.isAllowed(socket.id, 'delete_message')) {
-                    const violations = socketRateLimiter.recordViolation(socket.id);
-                    socket.emit('rate_limit_exceeded', { event: 'delete_message', retryAfter: socketRateLimiter.getRetryAfter(socket.id, 'delete_message') });
-                    if (violations >= socketRateLimiter.disconnectThreshold) socket.disconnect(true);
-                    return;
-                }
+        registerDeleteMessage(io, socket);
 
-                const parsed = deleteMessageSchema.safeParse(data);
-                if (!parsed.success) {
-                    emitValidationError(socket, 'delete_message', parsed.error.issues);
-                    return;
-                }
-
-                const { roomId, messageId } = parsed.data;
-
-                if (!socket.user) {
-                    socket.emit('error', { message: 'Not authenticated' });
-                    return;
-                }
-
-                if (!socket.rooms.has(roomId)) {
-                    socket.emit('error', { message: 'You must be in the room to delete messages' });
-                    return;
-                }
-
-                const message = await ChatLog.findById(messageId);
-
-                if (!message) {
-                    socket.emit('error', { message: 'Message not found' });
-                    return;
-                }
-
-                if (message.chatSpaceId !== roomId) {
-                    socket.emit('error', { message: 'Message does not belong to this room' });
-                    return;
-                }
-
-                if (message.senderId !== socket.user.userId) {
-                    socket.emit('error', { message: 'You can only delete your own messages' });
-                    return;
-                }
-
-                message.isDeleted = true;
-                await message.save();
-
-                io.to(roomId).emit('message_deleted', { messageId });
-
-                logger.info(`Message ${messageId} deleted by user ${socket.user.userId}`);
-            } catch (error) {
-                logger.error('Delete message error:', error);
-                socket.emit('error', { message: 'Failed to delete message' });
-            }
-        });
-
-        // Typing indicator
-        socket.on('typing', (data: { roomId: string; isTyping: boolean }) => {
-            if (!socketRateLimiter.isAllowed(socket.id, 'typing')) return;
-            const typingParsed = typingSchema.safeParse(data);
-            if (!typingParsed.success) return;
-            if (!socket.user) return;
-
-            socket.to(data.roomId).emit('user_typing', {
-                userId: socket.user.userId,
-                userName: socket.user.email.split('@')[0],
-                isTyping: data.isTyping,
-            });
-        });
-
-        // Leave room
-        socket.on('leave_room', (roomId: string) => {
-            // Clear typing indicator when leaving
-            if (socket.user) {
-                socket.to(roomId).emit('user_typing', {
-                    userId: socket.user.userId,
-                    userName: socket.user.email.split('@')[0],
-                    isTyping: false,
-                });
-
-                // Remove user from room tracking
-                if (roomUsers.has(roomId)) {
-                    roomUsers.get(roomId)!.delete(socket.user.userId);
-                    // Notify others that user left
-                    socket.to(roomId).emit('user_left', { userId: socket.user.userId });
-                    // Clean up empty room
-                    if (roomUsers.get(roomId)!.size === 0) {
-                        roomUsers.delete(roomId);
-                    }
-                }
-            }
-            socket.leave(roomId);
-            socket.currentRoom = undefined;
-            logger.info(`User ${socket.user?.userId} left room ${roomId}`);
-        });
-
-        // Disconnect
-        socket.on('disconnect', () => {
-            socketRateLimiter.cleanup(socket.id);
-            // Clear typing indicator and remove from room tracking
-            if (socket.user && socket.currentRoom) {
-                socket.to(socket.currentRoom).emit('user_typing', {
-                    userId: socket.user.userId,
-                    userName: socket.user.email.split('@')[0],
-                    isTyping: false,
-                });
-
-                // Remove user from room tracking
-                if (roomUsers.has(socket.currentRoom)) {
-                    roomUsers.get(socket.currentRoom)!.delete(socket.user.userId);
-                    // Notify others that user left
-                    socket.to(socket.currentRoom).emit('user_left', { userId: socket.user.userId });
-                    // Clean up empty room
-                    if (roomUsers.get(socket.currentRoom)!.size === 0) {
-                        roomUsers.delete(socket.currentRoom);
-                    }
-                }
-            }
-            logger.info(`User disconnected: ${socket.user?.userId} (${socket.id})`);
-        });
+        registerPresence(io, socket);
     });
 
     logger.info('Socket.IO initialized');
@@ -608,51 +482,17 @@ function resetSilenceTimer(roomId: string, courseId: string, groupId: string, ch
  * Trigger bot intervention after silence
  */
 async function triggerIntervention(roomId: string, courseId: string, groupId: string, chatSpaceId: string): Promise<void> {
-    try {
-        // Log silence event
-        const silenceEvent = new SilenceEvent({
-            courseId,
-            groupId,
-            chatSpaceId,
-            silenceDuration: SILENCE_TIMEOUT_MS / 1000,
-            interventionSent: true,
-        });
-        await silenceEvent.save();
-
-        // Pick random intervention message
-        const message = pickRandom(INTERVENTION_MESSAGES);
-
-        // Save bot message
-        const chatLog = new ChatLog({
-            courseId,
-            groupId,
-            chatSpaceId,
-            senderId: 'bot',
-            senderName: 'CoRegula Bot',
-            senderType: 'bot',
-            content: message,
-            isIntervention: true,
-        });
-        await chatLog.save();
-
-        // Broadcast to room
-        io.to(roomId).emit('receive_message', {
-            id: chatLog._id?.toString(),
-            senderId: 'bot',
-            senderName: 'CoRegula Bot',
-            senderType: 'bot',
-            content: message,
-            isIntervention: true,
-            createdAt: chatLog.createdAt.toISOString(),
-        });
-
-        // Remove timer (don't restart until human responds)
-        silenceTimers.delete(roomId);
-
-        logger.info(`Intervention sent to room ${roomId}`);
-    } catch (error) {
-        logger.error('Intervention error:', error);
-    }
+    await runSilenceIntervention(
+        { roomId, courseId, groupId, chatSpaceId },
+        {
+            emit: (room, event, payload) => {
+                io.to(room).emit(event, payload);
+            },
+            onSent: (room) => {
+                silenceTimers.delete(room);
+            },
+        },
+    );
 }
 
 /**
@@ -748,6 +588,12 @@ async function checkAndIntervenForQuality(
             }
         } catch {
             interventionMessage = pickRandom(QUALITY_INTERVENTIONS[interventionType]);
+        }
+
+        const lockAcquired = await tryAcquireSilenceLock(roomId);
+        if (!lockAcquired) {
+            logger.debug(`Quality intervention skipped for ${roomId} (lock held by another instance)`);
+            return;
         }
 
         // Save intervention message
