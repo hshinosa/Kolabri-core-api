@@ -88,6 +88,10 @@ Socket.IO handles group chat. Events:
 
 WebSocket server at `/ws` pushes admin notifications.
 
+## Error handling
+
+All API endpoints return consistent error responses. See [API Error Response Format](./docs/API_ERROR_RESPONSES.md) for details.
+
 ## Testing
 
 ```bash

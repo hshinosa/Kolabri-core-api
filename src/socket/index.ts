@@ -3,6 +3,7 @@ import { Server } from 'socket.io';
 import { logger } from '../utils/logger.js';
 import { ChatLog } from '../models/ChatLog.js';
 import { SilenceEvent } from '../models/SilenceEvent.js';
+import mongoose from 'mongoose';
 import prisma from '../config/database.js';
 import { aiEngineService } from '../services/aiEngine.service.js';
 import { socketRateLimiter } from '../utils/socketRateLimiter.js';
@@ -13,7 +14,7 @@ import { createAdapter } from '@socket.io/redis-adapter';
 import type { AuthenticatedSocket, ChatHistoryItem } from './types.js';
 import { authMiddleware } from './auth.js';
 import { analyzeEngagement } from './engagement.js';
-import { joinRoomSchema, sendMessageSchema, typingSchema, deleteMessageSchema, emitValidationError } from '../validators/socket.validator.js';
+import { joinRoomSchema, sendMessageSchema, typingSchema, deleteMessageSchema, loadMoreMessagesSchema, emitValidationError } from '../validators/socket.validator.js';
 
 // Store silence timers per room
 const silenceTimers = new Map<string, NodeJS.Timeout>();
@@ -41,6 +42,9 @@ export function initSocketIO(server: HttpServer): Server {
         'http://127.0.0.1:8080',
         'http://localhost:8000',
         'http://127.0.0.1:8000',
+        'http://localhost:5173',
+        'http://127.0.0.1:5173',
+        'http://[::1]:5173',
     ];
 
     io = new Server(server, {
@@ -51,7 +55,7 @@ export function initSocketIO(server: HttpServer): Server {
         },
         pingTimeout: 60000,
         pingInterval: 25000,
-        transports: ['websocket', 'polling'],
+        transports: ['polling', 'websocket'],
     });
 
     setSocketEmitter({
@@ -92,7 +96,7 @@ export function initSocketIO(server: HttpServer): Server {
                 const { courseId, groupId, chatSpaceId } = joinParsed.data;
 
                 if (!socket.user) {
-                    socket.emit('error', { message: 'Not authenticated' });
+                    socket.emit('server_error', { message: 'Not authenticated' });
                     return;
                 }
 
@@ -100,7 +104,7 @@ export function initSocketIO(server: HttpServer): Server {
                 const hasAccess = await verifyGroupAccess(socket.user.userId, socket.user.role, groupId, courseId);
 
                 if (!hasAccess) {
-                    socket.emit('error', { message: 'Access denied to this group' });
+                    socket.emit('server_error', { message: 'Access denied to this group' });
                     return;
                 }
 
@@ -110,7 +114,7 @@ export function initSocketIO(server: HttpServer): Server {
                 });
 
                 if (!chatSpace) {
-                    socket.emit('error', { message: 'Chat space not found' });
+                    socket.emit('server_error', { message: 'Chat space not found' });
                     return;
                 }
 
@@ -222,7 +226,7 @@ export function initSocketIO(server: HttpServer): Server {
                 logger.info(`User ${socket.user.userId} joined room ${roomId}`);
             } catch (error) {
                 logger.error('Join room error:', error);
-                socket.emit('error', { message: 'Failed to join room' });
+                socket.emit('server_error', { message: 'Failed to join room' });
             }
         });
 
@@ -263,7 +267,7 @@ export function initSocketIO(server: HttpServer): Server {
                 const { roomId, content, courseId, groupId, replyTo, attachments, mentions } = msgParsed.data;
 
                 if (!socket.user) {
-                    socket.emit('error', { message: 'Not authenticated' });
+                    socket.emit('server_error', { message: 'Not authenticated' });
                     return;
                 }
 
@@ -281,7 +285,7 @@ export function initSocketIO(server: HttpServer): Server {
                 });
 
                 if (!chatSpaceRecord || chatSpaceRecord.group?.deletedAt) {
-                    socket.emit('error', { message: 'Chat space not found' });
+                    socket.emit('server_error', { message: 'Chat space not found' });
                     return;
                 }
 
@@ -298,7 +302,7 @@ export function initSocketIO(server: HttpServer): Server {
                 }
 
                 if (!socket.rooms.has(chatSpaceId)) {
-                    socket.emit('error', { message: 'You must join the room before sending messages' });
+                    socket.emit('server_error', { message: 'You must join the room before sending messages' });
                     return;
                 }
 
@@ -309,7 +313,7 @@ export function initSocketIO(server: HttpServer): Server {
                     authoritativeCourseId,
                 );
                 if (!hasAccess) {
-                    socket.emit('error', { message: 'Access denied to this room' });
+                    socket.emit('server_error', { message: 'Access denied to this room' });
                     return;
                 }
 
@@ -329,7 +333,7 @@ export function initSocketIO(server: HttpServer): Server {
                 });
 
                 if (!user) {
-                    socket.emit('error', { message: 'User not found' });
+                    socket.emit('server_error', { message: 'User not found' });
                     return;
                 }
 
@@ -337,11 +341,11 @@ export function initSocketIO(server: HttpServer): Server {
                 try {
                     safeContent = sanitizeMessageContent(content.trim());
                 } catch {
-                    socket.emit('error', { message: 'Message content too large' });
+                    socket.emit('server_error', { message: 'Message content too large' });
                     return;
                 }
                 if (safeContent.trim().length === 0 && (!attachments || attachments.length === 0)) {
-                    socket.emit('error', { message: 'Message must have content or at least one attachment' });
+                    socket.emit('server_error', { message: 'Message must have content or at least one attachment' });
                     return;
                 }
                 const safeAttachments = sanitizeAttachments(attachments);
@@ -409,7 +413,109 @@ export function initSocketIO(server: HttpServer): Server {
                 logger.debug(`Message in ${roomId} from user ${user.id}`);
             } catch (error) {
                 logger.error('Send message error:', error);
-                socket.emit('error', { message: 'Failed to send message' });
+                socket.emit('server_error', { message: 'Failed to send message' });
+            }
+        });
+
+        socket.on('load_more_messages', async (data: {
+            chatSpaceId: string;
+            beforeMessageId: string;
+            limit?: number;
+        }) => {
+            if (!socketRateLimiter.isAllowed(socket.id, 'load_more_messages')) {
+                const violations = socketRateLimiter.recordViolation(socket.id);
+                socket.emit('rate_limit_exceeded', {
+                    event: 'load_more_messages',
+                    retryAfter: socketRateLimiter.getRetryAfter(socket.id, 'load_more_messages'),
+                    message: 'Too many history requests. Please slow down.',
+                });
+                if (violations >= socketRateLimiter.disconnectThreshold) socket.disconnect(true);
+                return;
+            }
+
+            const loadMoreParsed = loadMoreMessagesSchema.safeParse(data);
+            if (!loadMoreParsed.success) {
+                emitValidationError(socket, 'load_more_messages', loadMoreParsed.error.issues);
+                return;
+            }
+
+            try {
+                const { chatSpaceId, beforeMessageId, limit } = loadMoreParsed.data;
+
+                if (!socket.user) {
+                    socket.emit('server_error', { message: 'Not authenticated' });
+                    return;
+                }
+
+                const chatSpaceRecord = await prisma.chatSpace.findFirst({
+                    where: { id: chatSpaceId, deletedAt: null },
+                    select: {
+                        id: true,
+                        groupId: true,
+                        group: { select: { courseId: true, deletedAt: true } },
+                    },
+                });
+
+                if (!chatSpaceRecord || chatSpaceRecord.group?.deletedAt) {
+                    socket.emit('server_error', { message: 'Chat space not found' });
+                    return;
+                }
+
+                const hasAccess = await verifyGroupAccess(
+                    socket.user.userId,
+                    socket.user.role,
+                    chatSpaceRecord.groupId,
+                    chatSpaceRecord.group.courseId,
+                );
+
+                if (!hasAccess) {
+                    socket.emit('server_error', { message: 'Access denied to this group' });
+                    return;
+                }
+
+                const beforeObjectId = new mongoose.Types.ObjectId(beforeMessageId);
+                const pageSize = limit ?? 50;
+                const fetchSize = pageSize + 1;
+
+                const historyPage = await ChatLog.find({
+                    chatSpaceId,
+                    isDeleted: { $ne: true },
+                    _id: { $lt: beforeObjectId },
+                })
+                    .sort({ _id: -1 })
+                    .limit(fetchSize)
+                    .lean<ChatHistoryItem[]>();
+
+                const hasMore = historyPage.length > pageSize;
+                const pageMessages = historyPage.slice(0, pageSize).reverse();
+
+                const messages = pageMessages.map((msg) => ({
+                    id: msg._id?.toString(),
+                    senderId: msg.senderId,
+                    senderName: msg.senderName,
+                    senderType: msg.senderType,
+                    content: msg.content,
+                    isIntervention: msg.isIntervention,
+                    replyTo: msg.replyTo
+                        ? {
+                              messageId: msg.replyTo.messageId,
+                              senderId: msg.replyTo.senderId,
+                              senderName: msg.replyTo.senderName,
+                              content: msg.replyTo.content,
+                          }
+                        : undefined,
+                    attachments: msg.attachments || [],
+                    mentions: msg.mentions || [],
+                    createdAt: msg.createdAt.toISOString(),
+                }));
+
+                socket.emit('chat_history_page', {
+                    messages,
+                    hasMore,
+                });
+            } catch (error) {
+                logger.error('Load more messages error:', error);
+                socket.emit('server_error', { message: 'Failed to load more messages' });
             }
         });
 

@@ -235,12 +235,11 @@ export class GroupController {
             const chatSpaces = await GroupService.getChatSpaces(
                 groupId,
                 req.user!.userId,
-                req.user!.role
+                req.user!.role,
+                req.query as any
             );
 
-            res.json({
-                data: chatSpaces,
-            });
+            res.json(chatSpaces);
         } catch (error) {
             next(error);
         }

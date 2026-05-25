@@ -70,7 +70,7 @@ export const testAiProviderConnectionSchema = z.object({
 });
 
 export const updateFallbackOrderSchema = z.object({
-    providerIds: z.array(z.string().uuid('Invalid provider id')).min(1, 'At least one provider is required'),
+    providerIds: z.array(z.string().uuid('Invalid provider id')).min(1, 'At least one provider is required').max(100, 'Maximum 100 providers allowed'),
 });
 
 export type ListAiProvidersQuery = z.infer<typeof listAiProvidersQuerySchema>;

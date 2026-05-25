@@ -103,6 +103,24 @@ export const aiRateLimiter = rateLimit({
     legacyHeaders: false,
 });
 
+export const previewRateLimiter = rateLimit({
+    windowMs: 5 * 60 * 1000,
+    max: Number(process.env.PREVIEW_RATE_LIMIT_MAX) || 10,
+    store: buildStore('preview'),
+    keyGenerator: (req) => {
+        const authReq = req as AuthenticatedRequest;
+        return authReq.user?.userId || req.ip || 'anonymous';
+    },
+    message: {
+        error: {
+            code: 'PREVIEW_RATE_LIMIT_EXCEEDED',
+            message: 'Too many preview requests. Please wait before testing again.',
+        },
+    },
+    standardHeaders: true,
+    legacyHeaders: false,
+});
+
 export const testConnectionLimiter = rateLimit({
     windowMs: 60 * 1000,
     max: 5,

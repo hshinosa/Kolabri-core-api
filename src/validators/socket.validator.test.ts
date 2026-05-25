@@ -1,5 +1,5 @@
 import { describe, expect, it, vi } from 'vitest';
-import { sendMessageSchema, emitValidationError } from './socket.validator.js';
+import { sendMessageSchema, loadMoreMessagesSchema, emitValidationError } from './socket.validator.js';
 
 describe('sendMessageSchema', () => {
     const baseValid = {
@@ -48,6 +48,40 @@ describe('sendMessageSchema', () => {
             ...baseValid,
             content: 'a'.repeat(10001),
         });
+        expect(result.success).toBe(false);
+    });
+});
+
+describe('loadMoreMessagesSchema', () => {
+    it('accepts valid payload and applies default limit', () => {
+        const result = loadMoreMessagesSchema.safeParse({
+            chatSpaceId: '3dcaea8b-5fd1-44c5-b547-70e3e6f5d3e1',
+            beforeMessageId: '507f1f77bcf86cd799439011',
+        });
+
+        expect(result.success).toBe(true);
+        if (result.success) {
+            expect(result.data.limit).toBe(50);
+        }
+    });
+
+    it('rejects invalid beforeMessageId format', () => {
+        const result = loadMoreMessagesSchema.safeParse({
+            chatSpaceId: '3dcaea8b-5fd1-44c5-b547-70e3e6f5d3e1',
+            beforeMessageId: 'not-an-object-id',
+            limit: 10,
+        });
+
+        expect(result.success).toBe(false);
+    });
+
+    it('rejects limit over maximum', () => {
+        const result = loadMoreMessagesSchema.safeParse({
+            chatSpaceId: '3dcaea8b-5fd1-44c5-b547-70e3e6f5d3e1',
+            beforeMessageId: '507f1f77bcf86cd799439011',
+            limit: 101,
+        });
+
         expect(result.success).toBe(false);
     });
 });

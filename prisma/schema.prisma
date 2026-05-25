@@ -21,17 +21,20 @@ enum UserRole {
 }
 
 model User {
-  id        String    @id @default(uuid())
-  email     String    @unique
-  password  String
-  name      String
-  role      UserRole  @default(student)
-  googleId  String?   @unique @map("google_id")
-  avatarUrl String?   @map("avatar_url")
-  isActive  Boolean   @default(true) @map("is_active")
-  createdAt DateTime  @default(now()) @map("created_at")
-  updatedAt DateTime  @updatedAt @map("updated_at")
-  deletedAt DateTime? @map("deleted_at")
+  id                   String    @id @default(uuid())
+  email                String    @unique
+  password             String
+  name                 String
+  role                 UserRole  @default(student)
+  googleId             String?   @unique @map("google_id")
+  avatarUrl            String?   @map("avatar_url")
+  isActive             Boolean   @default(true) @map("is_active")
+  emailVerifiedAt      DateTime? @map("email_verified_at")
+  themePreference      String?   @default("system") @map("theme_preference") // "light" | "dark" | "system"
+  languagePreference   String?   @default("id") @map("language_preference") // "id" | "en"
+  createdAt            DateTime  @default(now()) @map("created_at")
+  updatedAt            DateTime  @updatedAt @map("updated_at")
+  deletedAt            DateTime? @map("deleted_at")
 
   // Relations
   ownedCourses     Course[]            @relation("CourseOwner")
@@ -46,7 +49,10 @@ model User {
   aiChats          AiChat[]
   aiUsages         AiUsage[]
   aiComparisons    AiModelComparison[]
+  aiAbTests        AiAbTest[]
+  aiAbTestResults  AiAbTestResult[]
   auditLogs        AuditLog[]
+  notifications    Notification[]
 
   @@index([role])
   @@index([isActive])
@@ -61,17 +67,19 @@ model User {
 // ============================================
 
 model Course {
-  id          String    @id @default(uuid())
-  code        String    @unique
-  name        String
-  description String?
-  joinCode    String    @unique @map("join_code")
-  isActive    Boolean   @default(true) @map("is_active")
-  isArchived  Boolean   @default(false) @map("is_archived")
-  archivedAt  DateTime? @map("archived_at")
-  deletedAt   DateTime? @map("deleted_at")
-  createdAt   DateTime  @default(now()) @map("created_at")
-  updatedAt   DateTime  @updatedAt @map("updated_at")
+  id           String    @id @default(uuid())
+  code         String    @unique
+  name         String
+  description  String?
+  joinCode     String    @unique @map("join_code")
+  semester     String?   // "Ganjil" | "Genap"
+  academicYear String?   @map("academic_year") // e.g. "2024/2025"
+  isActive     Boolean   @default(true) @map("is_active")
+  isArchived   Boolean   @default(false) @map("is_archived")
+  archivedAt   DateTime? @map("archived_at")
+  deletedAt    DateTime? @map("deleted_at")
+  createdAt    DateTime  @default(now()) @map("created_at")
+  updatedAt    DateTime  @updatedAt @map("updated_at")
 
   // Owner (Lecturer)
   ownerId String @map("owner_id")
@@ -85,6 +93,7 @@ model Course {
   groups         Group[]
   knowledgeBases KnowledgeBase[]
   aiUsages       AiUsage[]
+  aiAbTests      AiAbTest[]
 
   @@index([ownerId])
   @@index([code])
@@ -187,6 +196,9 @@ model ChatSpace {
   updatedAt   DateTime  @updatedAt @map("updated_at")
   deletedAt   DateTime? @map("deleted_at")
 
+  // Classification
+  type     String?   @map("type")     // 'Akademik' | 'Proyek' | 'Umum'
+
   // Session closure
   closedAt DateTime? @map("closed_at")
   closedBy String?   @map("closed_by")
@@ -206,6 +218,7 @@ model ChatSpace {
   @@index([groupId])
   @@index([deletedAt])
   @@index([groupId, deletedAt])
+  @@index([groupId, type])
   @@map("chat_spaces")
 }
 
@@ -431,9 +444,56 @@ model AiModelComparisonResult {
   @@map("ai_model_comparison_results")
 }
 
-// ============================================
-// AUDIT LOGS (Admin Actions)
-// ============================================
+enum AbTestStatus {
+  draft
+  active
+  paused
+  completed
+}
+
+model AiAbTest {
+  id          String       @id @default(uuid())
+  name        String
+  description String?
+  courseId     String      @map("course_id")
+  createdBy   String      @map("created_by")
+  status      AbTestStatus @default(draft)
+  variantA    Json         @map("variant_a")
+  variantB    Json         @map("variant_b")
+  createdAt   DateTime     @default(now()) @map("created_at")
+  updatedAt   DateTime     @updatedAt @map("updated_at")
+
+  creator User            @relation(fields: [createdBy], references: [id], onDelete: Cascade)
+  course  Course          @relation(fields: [courseId], references: [id], onDelete: Cascade)
+  results AiAbTestResult[]
+
+  @@index([createdBy, status])
+  @@index([courseId])
+  @@index([createdAt])
+  @@map("ai_ab_tests")
+}
+
+model AiAbTestResult {
+  id               String   @id @default(uuid())
+  testId           String   @map("test_id")
+  userId           String   @map("user_id")
+  variant          String
+  promptTokens     Int      @default(0) @map("prompt_tokens")
+  completionTokens Int      @default(0) @map("completion_tokens")
+  totalTokens      Int      @default(0) @map("total_tokens")
+  estimatedCost    Float    @default(0) @map("estimated_cost")
+  latencyMs        Int      @default(0) @map("latency_ms")
+  assignedAt       DateTime @default(now()) @map("assigned_at")
+
+  test   AiAbTest @relation(fields: [testId], references: [id], onDelete: Cascade)
+  user   User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([testId, userId])
+  @@index([testId])
+  @@index([userId])
+  @@index([testId, variant])
+  @@map("ai_ab_test_results")
+}
 
 model AuditLog {
   id         String   @id @default(uuid())
@@ -451,4 +511,63 @@ model AuditLog {
   @@index([userId])
   @@index([createdAt])
   @@map("audit_logs")
+}
+
+// ============================================
+// PASSWORD RESET & EMAIL VERIFICATION
+// ============================================
+
+model PasswordResetToken {
+  id        String   @id @default(uuid())
+  email     String
+  token     String   @unique
+  expiresAt DateTime @map("expires_at")
+  createdAt DateTime @default(now()) @map("created_at")
+
+  @@index([email])
+  @@index([token])
+  @@index([expiresAt])
+  @@map("password_reset_tokens")
+}
+
+model EmailVerificationToken {
+  id        String   @id @default(uuid())
+  email     String
+  token     String   @unique
+  expiresAt DateTime @map("expires_at")
+  createdAt DateTime @default(now()) @map("created_at")
+
+  @@index([email])
+  @@index([token])
+  @@index([expiresAt])
+  @@map("email_verification_tokens")
+}
+
+// ============================================
+// NOTIFICATIONS
+// ============================================
+
+enum NotificationType {
+  info
+  success
+  warning
+  error
+}
+
+model Notification {
+  id        String           @id @default(uuid())
+  userId    String           @map("user_id")
+  type      NotificationType @default(info)
+  title     String
+  message   String
+  isRead    Boolean          @default(false) @map("is_read")
+  readAt    DateTime?        @map("read_at")
+  createdAt DateTime         @default(now()) @map("created_at")
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId])
+  @@index([isRead])
+  @@index([createdAt])
+  @@map("notifications")
 }

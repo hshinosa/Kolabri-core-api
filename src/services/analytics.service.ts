@@ -47,7 +47,7 @@ export class AnalyticsService {
                 engagementExamples: chatAnalytics.engagementExamples,
                 hotPercentage: chatAnalytics.qualityBreakdown.hotPercentage,
                 qualityBreakdown: {
-                    lexical_variety: chatAnalytics.qualityBreakdown.lexicalVariety / 100,
+                    lexical_variety: chatAnalytics.qualityBreakdown.lexicalVariety,
                     hot_percentage: chatAnalytics.qualityBreakdown.hotPercentage,
                     participation: chatAnalytics.participantCount,
                     lexical_score: chatAnalytics.qualityBreakdown.lexicalVariety,
@@ -267,5 +267,185 @@ export class AnalyticsService {
             groupName: group.name,
             participants: activity.participants,
         };
+    }
+
+    static async getRecentActivity(userId: string, limit: number = 5) {
+        const courses = await prisma.course.findMany({
+            where: { ownerId: userId, deletedAt: null },
+            select: { id: true, name: true },
+        });
+
+        const courseIds = courses.map(c => c.id);
+        const courseMap = new Map(courses.map(c => [c.id, c.name]));
+
+        if (courseIds.length === 0) return [];
+
+        const groups = await prisma.group.findMany({
+            where: { courseId: { in: courseIds }, deletedAt: null },
+            select: { id: true, name: true, courseId: true },
+        });
+
+        const groupIds = groups.map(g => g.id);
+        const groupMap = new Map(groups.map(g => [g.id, { name: g.name, courseId: g.courseId }]));
+
+        if (groupIds.length === 0) return [];
+
+        const recentLogs = await ChatLog.find({
+            groupId: { $in: groupIds },
+            isDeleted: { $ne: true },
+            senderType: { $in: ['student', 'lecturer'] },
+        })
+            .sort({ createdAt: -1 })
+            .limit(limit)
+            .select({
+                _id: 1,
+                senderName: 1,
+                senderType: 1,
+                content: 1,
+                createdAt: 1,
+                groupId: 1,
+            });
+
+        return recentLogs.map(log => {
+            const group = groupMap.get(log.groupId);
+            return {
+                id: log._id.toString(),
+                senderName: log.senderName,
+                senderType: log.senderType,
+                content: log.content.substring(0, 150),
+                createdAt: log.createdAt,
+                groupName: group?.name || 'Unknown',
+                courseName: group ? courseMap.get(group.courseId) || 'Unknown' : 'Unknown',
+            };
+        });
+    }
+
+    static async getDashboardCharts(userId: string) {
+        const courses = await prisma.course.findMany({
+            where: { ownerId: userId, deletedAt: null },
+            include: {
+                _count: { select: { groups: true, students: true } },
+            },
+        });
+
+        const courseIds = courses.map(c => c.id);
+
+        const classDistribution = courses.map(c => ({
+            name: c.name,
+            code: c.code,
+            groupCount: c._count.groups,
+            studentCount: c._count.students,
+        }));
+
+        const qualityTrends = await Promise.all(
+            courses.map(async (course) => {
+                const groups = await prisma.group.findMany({
+                    where: { courseId: course.id, deletedAt: null },
+                    select: { id: true },
+                });
+                const groupIds = groups.map(g => g.id);
+
+                if (groupIds.length === 0) {
+                    return { courseName: course.name, courseCode: course.code, data: [] };
+                }
+
+                const weeklyData = await ChatLog.aggregate([
+                    {
+                        $match: {
+                            groupId: { $in: groupIds },
+                            isDeleted: { $ne: true },
+                            createdAt: { $gte: new Date(Date.now() - 30 * 24 * 60 * 60 * 1000) },
+                        },
+                    },
+                    {
+                        $group: {
+                            _id: {
+                                week: { $week: '$createdAt' },
+                                year: { $year: '$createdAt' },
+                            },
+                            avgLexical: { $avg: { $ifNull: ['$engagement.lexicalVariety', 0] } },
+                            messageCount: { $sum: 1 },
+                            hotCount: {
+                                $sum: { $cond: [{ $ifNull: ['$engagement.isHigherOrder', false] }, 1, 0] },
+                            },
+                        },
+                    },
+                    { $sort: { '_id.year': 1, '_id.week': 1 } },
+                ]);
+
+                const data = weeklyData.map((w) => ({
+                    week: `Minggu ${w._id.week}`,
+                    messageCount: w.messageCount,
+                    lexicalVariety: Math.round(w.avgLexical),
+                    hotPercentage: w.messageCount > 0 ? Math.round((w.hotCount / w.messageCount) * 100) : 0,
+                }));
+
+                return { courseName: course.name, courseCode: course.code, data };
+            })
+        );
+
+        return { classDistribution, qualityTrends };
+    }
+
+    static async getAnalyticsOverview(userId: string) {
+        const courses = await prisma.course.findMany({
+            where: { ownerId: userId, deletedAt: null },
+            include: {
+                _count: { select: { students: true, groups: true } },
+                groups: {
+                    where: { deletedAt: null },
+                    select: { id: true },
+                },
+            },
+        });
+
+        const sevenDaysAgo = new Date(Date.now() - 7 * 24 * 60 * 60 * 1000);
+
+        const result = await Promise.all(
+            courses.map(async (course) => {
+                const groupIds = course.groups.map((g) => g.id);
+
+                const groupAnalytics = await Promise.all(
+                    groupIds.map(async (groupId) => {
+                        const analytics = await chatAnalyticsService.getGroupAnalytics(groupId);
+                        return {
+                            qualityScore: analytics.qualityScore,
+                            messageCount: analytics.messageCount,
+                        };
+                    })
+                );
+
+                const groupsWithData = groupAnalytics.filter((g) => g.messageCount > 0);
+                const avgQualityScore = groupsWithData.length > 0
+                    ? Math.round(groupsWithData.reduce((sum, g) => sum + g.qualityScore, 0) / groupsWithData.length)
+                    : null;
+
+                const hasLowQuality = groupAnalytics.some((g) => g.messageCount > 0 && g.qualityScore < 50);
+
+                const lastLog = await ChatLog.findOne({
+                    groupId: { $in: groupIds },
+                    isDeleted: { $ne: true },
+                    senderType: { $in: ['student', 'lecturer'] },
+                })
+                    .sort({ createdAt: -1 })
+                    .select({ createdAt: 1 });
+
+                const lastActivity = lastLog?.createdAt ?? null;
+                const isInactive = !lastActivity || new Date(lastActivity) < sevenDaysAgo;
+
+                return {
+                    courseId: course.id,
+                    courseName: course.name,
+                    courseCode: course.code,
+                    studentsCount: course._count.students,
+                    groupsCount: course._count.groups,
+                    avgQualityScore,
+                    needsAttention: hasLowQuality || isInactive,
+                    lastActivity,
+                };
+            })
+        );
+
+        return { success: true, courses: result };
     }
 }

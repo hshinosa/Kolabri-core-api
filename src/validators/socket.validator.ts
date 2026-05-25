@@ -26,8 +26,8 @@ export const sendMessageSchema = z
             size: z.number(),
             url: z.string(),
             previewUrl: z.string().optional(),
-        })).optional(),
-        mentions: z.array(z.string()).optional(),
+        })).max(10, 'Maximum 10 attachments allowed').optional(),
+        mentions: z.array(z.string()).max(50, 'Maximum 50 mentions allowed').optional(),
     })
     .refine(
         (data) => data.content.trim().length > 0 || (data.attachments && data.attachments.length > 0),
@@ -45,6 +45,14 @@ export const typingSchema = z.object({
 export const deleteMessageSchema = z.object({
     messageId: z.string().min(1, 'Message ID is required'),
     roomId: z.string().min(1, 'Room ID is required'),
+});
+
+export const loadMoreMessagesSchema = z.object({
+    chatSpaceId: z.string().uuid('Invalid chat space ID'),
+    beforeMessageId: z
+        .string()
+        .regex(/^[a-fA-F0-9]{24}$/, 'Invalid message ID'),
+    limit: z.number().int().min(1).max(100).optional().default(50),
 });
 
 export function emitValidationError(

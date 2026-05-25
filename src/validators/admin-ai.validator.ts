@@ -15,7 +15,7 @@ export const usageReportParamsSchema = z.object({
 
 export const aiCompareSchema = z.object({
     prompt: z.string().trim().min(1).max(10000),
-    models: z.array(z.string().min(1)).min(1),
+    models: z.array(z.string().min(1)).min(1).max(10, 'Maximum 10 models allowed'),
 });
 
 export type UsageStatsQuery = z.infer<typeof usageStatsQuerySchema>;

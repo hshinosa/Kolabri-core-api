@@ -50,7 +50,7 @@ export const updateCourseSchema = z
     });
 
 export const bulkCourseSelectionSchema = z.object({
-    courseIds: z.array(z.string().uuid('Invalid course id')).min(1, 'Select at least one course'),
+    courseIds: z.array(z.string().uuid('Invalid course id')).min(1, 'Select at least one course').max(1000, 'Maximum 1000 courses allowed'),
 });
 
 export type ListCoursesQuery = z.infer<typeof listCoursesQuerySchema>;

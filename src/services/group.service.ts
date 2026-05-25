@@ -80,12 +80,9 @@ export class GroupService {
             attempts++;
         }
 
-        // Extract memberIds from snake_case input (optional)
         const memberIds = data.member_ids || [];
 
-        // Create group with transaction
         const group = await prisma.$transaction(async (tx) => {
-            // Create the group
             const newGroup = await tx.group.create({
                 data: {
                     name: data.name,
@@ -95,7 +92,6 @@ export class GroupService {
                 },
             });
 
-            // Add creator as first member if student
             if (userRole === 'student') {
                 await tx.groupMember.create({
                     data: {
@@ -633,18 +629,24 @@ export class GroupService {
         };
     }
 
-    /**
-     * Get chat spaces for a group
-     */
-    static async getChatSpaces(groupId: string, userId: string, userRole: string) {
+    static async getChatSpaces(
+        groupId: string,
+        userId: string,
+        userRole: string,
+        query?: {
+            q?: string;
+            type?: string | string[];
+            status?: string | string[];
+            sort?: string;
+            page?: number | string;
+            per_page?: number | string;
+        }
+    ) {
         const group = await prisma.group.findUnique({
             where: { id: groupId },
             include: {
                 course: true,
                 members: true,
-                chatSpaces: {
-                    orderBy: [{ isDefault: 'desc' }, { createdAt: 'asc' }],
-                },
             },
         });
 
@@ -652,7 +654,6 @@ export class GroupService {
             throw ApiError.notFound('Group not found');
         }
 
-        // Check permission
         if (userRole === 'lecturer') {
             if (group.course.ownerId !== userId) {
                 throw ApiError.forbidden('You do not own this course');
@@ -664,12 +665,112 @@ export class GroupService {
             }
         }
 
-        return group.chatSpaces.map((cs) => ({
+        const where: any = {
+            groupId,
+            deletedAt: null,
+        };
+
+        if (query?.q) {
+            where.OR = [
+                { name: { contains: query.q, mode: 'insensitive' } },
+                { description: { contains: query.q, mode: 'insensitive' } },
+            ];
+        }
+
+        if (query?.type) {
+            const types = Array.isArray(query.type) ? query.type : [query.type];
+            if (types.length > 0) {
+                where.type = { in: types };
+            }
+        }
+
+        if (query?.status) {
+            const statuses = Array.isArray(query.status) ? query.status : [query.status];
+            const hasAktif = statuses.includes('Aktif');
+            const hasTidakAktif = statuses.includes('Tidak aktif');
+
+            if (hasAktif && !hasTidakAktif) {
+                where.closedAt = null;
+            } else if (!hasAktif && hasTidakAktif) {
+                where.closedAt = { not: null };
+            }
+        }
+
+        const sort = query?.sort || 'terbaru';
+        let orderBy: any;
+
+        switch (sort) {
+            case 'alfabet':
+                orderBy = [{ isDefault: 'desc' }, { name: 'asc' }];
+                break;
+            case 'paling-aktif':
+                orderBy = [{ isDefault: 'desc' }, { createdAt: 'desc' }];
+                break;
+            case 'terbaru':
+            default:
+                orderBy = [{ isDefault: 'desc' }, { createdAt: 'desc' }];
+                break;
+        }
+
+        const page = Math.max(1, parseInt(String(query?.page || '1'), 10) || 1);
+        const perPage = Math.min(50, Math.max(1, parseInt(String(query?.per_page || '12'), 10) || 12));
+        const skip = (page - 1) * perPage;
+
+        const total = await prisma.chatSpace.count({ where });
+
+        const chatSpaces = await prisma.chatSpace.findMany({
+            where,
+            orderBy,
+            skip,
+            take: perPage,
+            include: {
+                messages: {
+                    orderBy: { createdAt: 'desc' },
+                    take: 1,
+                    include: {
+                        sender: {
+                            select: { name: true },
+                        },
+                    },
+                },
+            },
+        });
+
+        let sortedSpaces = chatSpaces;
+        if (sort === 'paling-aktif') {
+            sortedSpaces = [...chatSpaces].sort((a, b) => {
+                const dateA = a.messages[0]?.createdAt?.getTime() || 0;
+                const dateB = b.messages[0]?.createdAt?.getTime() || 0;
+                if (dateA !== dateB) return dateB - dateA;
+                if (a.isDefault !== b.isDefault) return a.isDefault ? -1 : 1;
+                return (b.createdAt?.getTime() || 0) - (a.createdAt?.getTime() || 0);
+            });
+        }
+
+        const data = sortedSpaces.map((cs) => ({
             id: cs.id,
             name: cs.name,
             description: cs.description,
             isDefault: cs.isDefault,
+            isClosed: !!cs.closedAt,
+            closedAt: cs.closedAt,
+            createdAt: cs.createdAt,
+            type: cs.type,
+            status: cs.closedAt ? 'Tidak aktif' : 'Aktif',
+            lastMessage: cs.messages[0]?.content?.substring(0, 100) || null,
+            lastMessageAt: cs.messages[0]?.createdAt || null,
+            lastMessageSender: cs.messages[0]?.sender?.name || null,
         }));
+
+        return {
+            data,
+            pagination: {
+                total,
+                per_page: perPage,
+                current_page: page,
+                last_page: Math.ceil(total / perPage),
+            },
+        };
     }
 
     /**

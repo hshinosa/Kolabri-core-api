@@ -11,7 +11,11 @@ async function main() {
 
     const lecturer = await prisma.user.upsert({
         where: { email: 'lecturer@kolabri.edu' },
-        update: {},
+        update: {
+            password: hashedPassword,
+            name: 'Dr. Ahmad Lecturer',
+            role: UserRole.lecturer,
+        },
         create: {
             email: 'lecturer@kolabri.edu',
             password: hashedPassword,
@@ -33,7 +37,11 @@ async function main() {
     for (const email of studentEmails) {
         const student = await prisma.user.upsert({
             where: { email },
-            update: {},
+            update: {
+                password: hashedPassword,
+                name: `Student ${email.split('@')[0]}`,
+                role: UserRole.student,
+            },
             create: {
                 email,
                 password: hashedPassword,
@@ -86,7 +94,9 @@ async function main() {
         create: {
             id: 'demo-group-1',
             name: 'Team Alpha',
+            joinCode: 'GROUP-ALPHA',
             courseId: course.id,
+            createdBy: lecturer.id,
         },
     });
 
@@ -111,6 +121,22 @@ async function main() {
 
     console.log('✅ Added', students.length, 'members to group');
 
+    // Create default ChatSpace for the group
+    const chatSpace = await prisma.chatSpace.upsert({
+        where: { id: 'demo-chatspace-1' },
+        update: {},
+        create: {
+            id: 'demo-chatspace-1',
+            name: 'General Discussion',
+            description: 'Default discussion space for Team Alpha',
+            isDefault: true,
+            groupId: group.id,
+            createdBy: lecturer.id,
+        },
+    });
+
+    console.log('✅ Created chat space:', chatSpace.name);
+
     console.log('');
     console.log('🎉 Seeding completed!');
     console.log('');
@@ -118,6 +144,7 @@ async function main() {
     console.log('  Lecturer: lecturer@kolabri.edu / password123');
     console.log('  Student:  student1@kolabri.edu / password123');
     console.log('  Course Join Code: HCI2024');
+    console.log('  Group Join Code:  GROUP-ALPHA');
 }
 
 main()

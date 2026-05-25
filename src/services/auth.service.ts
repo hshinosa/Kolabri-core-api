@@ -71,10 +71,8 @@ export class AuthService {
             throw ApiError.conflict('Email already registered');
         }
 
-        // Hash password
         const hashedPassword = await bcrypt.hash(data.password, SALT_ROUNDS);
 
-        // Create user
         const user = await prisma.user.create({
             data: {
                 name: data.name,

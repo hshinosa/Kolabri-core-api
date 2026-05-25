@@ -47,11 +47,11 @@ export const resetPasswordSchema = z.object({
 });
 
 export const bulkDeleteUsersSchema = z.object({
-    userIds: z.array(z.string().uuid('Invalid user id')).min(1, 'Select at least one user'),
+    userIds: z.array(z.string().uuid('Invalid user id')).min(1, 'Select at least one user').max(1000, 'Maximum 1000 users allowed'),
 });
 
 export const bulkRoleChangeSchema = z.object({
-    userIds: z.array(z.string().uuid('Invalid user id')).min(1, 'Select at least one user'),
+    userIds: z.array(z.string().uuid('Invalid user id')).min(1, 'Select at least one user').max(1000, 'Maximum 1000 users allowed'),
     role: z.enum(['student', 'lecturer', 'admin']),
 });
 

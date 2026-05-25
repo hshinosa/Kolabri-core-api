@@ -9,14 +9,30 @@
 import { Router } from 'express';
 import { AnalyticsController } from '../controllers/analytics.controller.js';
 import { verifyToken, requireLecturer } from '../middleware/auth.js';
+import { validateBody } from '../validators/validate.js';
+import { z } from 'zod';
 
 const router = Router();
+
+// Validation schemas
+const analyzeTextSchema = z.object({
+    text: z.string().min(1, 'Text is required').max(10000, 'Text must be less than 10000 characters'),
+});
 
 // All routes require authentication
 router.use(verifyToken);
 
 // Lecturer-only routes
 router.use(requireLecturer);
+
+/**
+ * GET /analytics/activity/recent
+ * Get recent activity across all lecturer's courses
+ */
+router.get('/activity/recent', AnalyticsController.getRecentActivity);
+
+router.get('/dashboard-charts', AnalyticsController.getDashboardCharts);
+router.get('/overview', AnalyticsController.getAnalyticsOverview);
 
 /**
  * GET /analytics/course/:courseId
@@ -46,7 +62,7 @@ router.get('/chat-space/:chatSpaceId', AnalyticsController.getChatSpaceAnalytics
  * POST /analytics/analyze
  * Analyze a text for engagement metrics
  */
-router.post('/analyze', AnalyticsController.analyzeText);
+router.post('/analyze', validateBody(analyzeTextSchema), AnalyticsController.analyzeText);
 
 /**
  * GET /analytics/export/:courseId

@@ -84,4 +84,35 @@ export class AnalyticsController {
             next(error);
         }
     }
+
+    static async getRecentActivity(req: Request, res: Response, next: NextFunction) {
+        try {
+            const limit = parseInt(req.query.limit as string) || 5;
+            const result = await AnalyticsService.getRecentActivity(
+                req.user!.userId,
+                limit
+            );
+            res.json({ data: result });
+        } catch (error) {
+            next(error);
+        }
+    }
+
+    static async getDashboardCharts(req: Request, res: Response, next: NextFunction) {
+        try {
+            const result = await AnalyticsService.getDashboardCharts(req.user!.userId);
+            res.json({ data: result });
+        } catch (error) {
+            next(error);
+        }
+    }
+
+    static async getAnalyticsOverview(req: Request, res: Response, next: NextFunction) {
+        try {
+            const result = await AnalyticsService.getAnalyticsOverview(req.user!.userId);
+            res.json(result);
+        } catch (error) {
+            next(error);
+        }
+    }
 }

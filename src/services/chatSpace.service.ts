@@ -300,8 +300,7 @@ export class ChatSpaceService {
         // Get user's goal for this chat space if exists
         const goalId = chatSpace.goals.length > 0 ? chatSpace.goals[0].id : undefined;
 
-        // eslint-disable-next-line @typescript-eslint/no-explicit-any
-        const reflection = await (prisma.reflection.create as any)({
+        const reflection = await prisma.reflection.create({
             data: {
                 content,
                 type: 'session',

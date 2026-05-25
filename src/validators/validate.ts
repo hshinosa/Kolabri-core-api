@@ -36,7 +36,7 @@ export function validateParams<T>(schema: ZodSchema<T>) {
     };
 }
 
-export function validateQuery<T>(schema: ZodSchema<T>) {
+export function validateQuery<T>(schema: ZodSchema<T, any, any>) {
     return (req: Request, _res: Response, next: NextFunction): void => {
         try {
             req.query = schema.parse(req.query) as Record<string, string>;

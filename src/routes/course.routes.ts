@@ -6,8 +6,14 @@ import { verifyToken, requireLecturer, requireStudent } from '../middleware/auth
 import { validateBody } from '../validators/validate.js';
 import { createCourseSchema, joinCourseSchema } from '../validators/course.validator.js';
 import { createGroupSchema, addMembersSchema } from '../validators/group.validator.js';
+import { z } from 'zod';
 
 const router = Router();
+
+const uploadBatchOptionsSchema = z.object({
+    extract_images: z.string().optional().default('true'),
+    perform_ocr: z.string().optional().default('true'),
+});
 
 // Configure multer for single file uploads (PDF only - legacy)
 const uploadSingle = multer({
@@ -76,6 +82,7 @@ router.get('/', CourseController.index); // Alias for /my
 
 // Course by ID routes
 router.get('/:id', CourseController.show);
+router.put('/:id', requireLecturer, CourseController.update);
 router.get('/:id/my-group', requireStudent, CourseController.getMyGroup);
 router.get('/:id/my-goal', requireStudent, CourseController.getMyGoal);
 
@@ -89,7 +96,7 @@ router.post('/:id/groups/:groupId/members', requireLecturer, validateBody(addMem
 
 // Knowledge base
 router.post('/:id/knowledge-base', requireLecturer, upload.single('file'), CourseController.uploadKnowledgeBase);
-router.post('/:id/knowledge-base/batch', requireLecturer, uploadBatchHandler, CourseController.uploadKnowledgeBaseBatch);
+router.post('/:id/knowledge-base/batch', requireLecturer, uploadBatchHandler, validateBody(uploadBatchOptionsSchema), CourseController.uploadKnowledgeBaseBatch);
 router.get('/:id/knowledge-base', CourseController.getKnowledgeBase);
 
 export default router;

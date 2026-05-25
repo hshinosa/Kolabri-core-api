@@ -35,7 +35,6 @@ export class ReflectionService {
             throw ApiError.forbidden('You are not a member of this group');
         }
 
-        // Create reflection
         const reflection = await prisma.reflection.create({
             data: {
                 content: data.content,

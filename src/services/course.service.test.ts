@@ -175,6 +175,7 @@ describe('CourseService', () => {
                 name: 'Intro AI',
                 description: 'Basics',
                 joinCode: 'JOIN01',
+                owner: { id: 'lecturer-1', name: 'Dr. AI' },
                 createdAt: new Date('2026-05-01T00:00:00.000Z'),
                 _count: { students: 10, groups: 3 },
             },
@@ -189,8 +190,9 @@ describe('CourseService', () => {
                 name: 'Intro AI',
                 description: 'Basics',
                 joinCode: 'JOIN01',
-                studentsCount: 10,
-                groupsCount: 3,
+                owner: { id: 'lecturer-1', name: 'Dr. AI' },
+                students_count: 10,
+                groups_count: 3,
                 createdAt: new Date('2026-05-01T00:00:00.000Z'),
             },
         ]);
@@ -236,7 +238,7 @@ describe('CourseService', () => {
                 description: 'Basics',
                 ownerName: 'Dr. AI',
                 owner: { id: 'lecturer-1', name: 'Dr. AI' },
-                studentsCount: 10,
+                students_count: 10,
                 enrolledAt: new Date('2026-05-01T00:00:00.000Z'),
             },
         ]);

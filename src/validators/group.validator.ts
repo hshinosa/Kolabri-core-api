@@ -8,13 +8,15 @@ export const createGroupSchema = z.object({
         .trim(),
     member_ids: z
         .array(z.string().uuid('Invalid member ID'))
+        .max(1000, 'Maximum 1000 members allowed')
         .optional(),
 });
 
 export const addMembersSchema = z.object({
     member_ids: z
         .array(z.string().uuid('Invalid member ID'))
-        .min(1, 'At least one member is required'),
+        .min(1, 'At least one member is required')
+        .max(1000, 'Maximum 1000 members allowed'),
 });
 
 export type CreateGroupInput = z.infer<typeof createGroupSchema>;

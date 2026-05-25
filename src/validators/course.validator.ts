@@ -13,6 +13,11 @@ export const createCourseSchema = z.object({
         .max(255, 'Course name must be less than 255 characters')
         .trim(),
     description: z.string().max(1000, 'Description must be less than 1000 characters').optional(),
+    semester: z.enum(['Ganjil', 'Genap']).optional(),
+    academic_year: z
+        .string()
+        .regex(/^\d{4}\/\d{4}$/, 'Academic year format: YYYY/YYYY')
+        .optional(),
 });
 
 export const joinCourseSchema = z.object({

@@ -260,19 +260,20 @@ describe('GroupController', () => {
     });
 
     it('returns all chat spaces in a group', async () => {
-        const chatSpaces = [{ id: 'chat-1' }];
+        const chatSpaces = { data: [{ id: 'chat-1' }], pagination: { total: 1, per_page: 12, current_page: 1, last_page: 1 } };
         mockGroupService.getChatSpaces.mockResolvedValue(chatSpaces);
         const req = mockReq({
             params: { id: 'group-1' },
             user: { userId: 'student-1', role: 'student' } as Request['user'],
+            query: {},
         });
         const res = mockRes();
         const next = mockNext();
 
         await GroupController.getChatSpaces(req as Request, res as Response, next);
 
-        expect(mockGroupService.getChatSpaces).toHaveBeenCalledWith('group-1', 'student-1', 'student');
-        expect(res.json).toHaveBeenCalledWith({ data: chatSpaces });
+        expect(mockGroupService.getChatSpaces).toHaveBeenCalledWith('group-1', 'student-1', 'student', {});
+        expect(res.json).toHaveBeenCalledWith(chatSpaces);
     });
 
     it('returns a chat space by id', async () => {

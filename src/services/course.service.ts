@@ -42,6 +42,8 @@ export class CourseService {
                 name: data.name,
                 description: data.description,
                 joinCode,
+                semester: data.semester,
+                academicYear: data.academic_year,
                 ownerId: lecturerId,
             },
             include: {
@@ -120,10 +122,14 @@ export class CourseService {
             const courses = await prisma.course.findMany({
                 where: { ownerId: userId, isArchived: false, deletedAt: null },
                 include: {
+                    owner: {
+                        select: { id: true, name: true, email: true },
+                    },
                     _count: {
                         select: {
                             students: true,
                             groups: true,
+                            aiUsages: true,
                         },
                     },
                 },
@@ -136,8 +142,12 @@ export class CourseService {
                 name: course.name,
                 description: course.description,
                 joinCode: course.joinCode,
-                studentsCount: course._count.students,
-                groupsCount: course._count.groups,
+                semester: course.semester,
+                academic_year: course.academicYear,
+                owner: course.owner,
+                students_count: course._count.students,
+                groups_count: course._count.groups,
+                engagement_count: course._count.aiUsages,
                 createdAt: course.createdAt,
             }));
         } else {
@@ -167,7 +177,7 @@ export class CourseService {
                 description: enrollment.course.description,
                 ownerName: enrollment.course.owner.name,
                 owner: enrollment.course.owner,
-                studentsCount: enrollment.course._count.students,
+                students_count: enrollment.course._count.students,
                 enrolledAt: enrollment.enrolledAt,
             }));
         }
@@ -329,6 +339,47 @@ export class CourseService {
 
         cache.invalidatePattern(`courses:${lecturerId}:`);
         return { success: true };
+    }
+
+    /**
+     * Update a course (lecturer only, must own course).
+     * Supports partial updates: name, description, semester, academicYear, status.
+     */
+    static async updateCourse(courseId: string, lecturerId: string, data: Record<string, unknown>) {
+        const course = await prisma.course.findFirst({
+            where: { id: courseId, ownerId: lecturerId, deletedAt: null },
+        });
+
+        if (!course) {
+            throw ApiError.notFound('Course not found or access denied');
+        }
+
+        const updateData: Record<string, unknown> = {};
+
+        if (data.name !== undefined) updateData.name = data.name;
+        if (data.description !== undefined) updateData.description = data.description;
+        if (data.semester !== undefined) updateData.semester = data.semester;
+        if (data.academic_year !== undefined) updateData.academicYear = data.academic_year;
+
+        if (data.status === 'selesai') {
+            updateData.isActive = false;
+            updateData.isArchived = true;
+            updateData.archivedAt = new Date();
+            updateData.archivedById = lecturerId;
+        } else if (data.status === 'aktif') {
+            updateData.isActive = true;
+            updateData.isArchived = false;
+            updateData.archivedAt = null;
+            updateData.archivedById = null;
+        }
+
+        const updated = await prisma.course.update({
+            where: { id: courseId },
+            data: updateData,
+        });
+
+        cache.invalidatePattern(`courses:${lecturerId}:`);
+        return updated;
     }
 
     static async getCourseStudents(courseId: string, userId: string) {

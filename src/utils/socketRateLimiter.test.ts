@@ -62,4 +62,12 @@ describe('SocketRateLimiter', () => {
             expect(limiter.isAllowed('socket-1', 'unknown_event')).toBe(true);
         }
     });
+
+    it('blocks load_more_messages after 20 requests within 60s', () => {
+        for (let i = 0; i < 20; i++) {
+            expect(limiter.isAllowed('socket-1', 'load_more_messages')).toBe(true);
+        }
+
+        expect(limiter.isAllowed('socket-1', 'load_more_messages')).toBe(false);
+    });
 });

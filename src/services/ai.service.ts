@@ -27,19 +27,43 @@ type ProviderRepository = {
     listActiveProvidersByFallbackOrder(): Promise<ProviderRecord[]>;
 };
 
-const aiProviderDelegate = (prisma as unknown as {
-    ['aiProvider']: {
-        findFirst: (args: unknown) => Promise<ProviderRecord | null>;
-        findUnique: (args: unknown) => Promise<ProviderRecord | null>;
-        findMany: (args: unknown) => Promise<ProviderRecord[]>;
-    };
-})['aiProvider'];
+const defaultProviderRepository: ProviderRepository = {
+    async getActiveProvider() {
+        return prisma.aiProvider.findFirst({
+            where: { isActive: true },
+            orderBy: [{ fallbackOrder: 'asc' }, { updatedAt: 'desc' }],
+        }) as Promise<ProviderRecord | null>;
+    },
+    async getProviderByName(providerName: string) {
+        return prisma.aiProvider.findUnique({ where: { name: providerName } }) as Promise<ProviderRecord | null>;
+    },
+    async listActiveProvidersByFallbackOrder() {
+        return prisma.aiProvider.findMany({
+            where: { isActive: true },
+            orderBy: [{ fallbackOrder: 'asc' }, { updatedAt: 'asc' }],
+        }) as Promise<ProviderRecord[]>;
+    },
+};
 
-const aiModelComparisonDelegate = (prisma as unknown as {
-    ['aiModelComparison']: {
-        create: (args: unknown) => Promise<{ id: string }>;
-    };
-})['aiModelComparison'];
+const providerRepository: ProviderRepository = {
+    async getActiveProvider() {
+        return prisma.aiProvider.findFirst({
+            where: { isActive: true },
+            orderBy: { fallbackOrder: 'asc' },
+        }) as Promise<ProviderRecord | null>;
+    },
+    async getProviderByName(providerName: string) {
+        return prisma.aiProvider.findUnique({
+            where: { name: providerName },
+        }) as Promise<ProviderRecord | null>;
+    },
+    async listActiveProvidersByFallbackOrder() {
+        return prisma.aiProvider.findMany({
+            where: { isActive: true },
+            orderBy: { fallbackOrder: 'asc' },
+        }) as Promise<ProviderRecord[]>;
+    },
+};
 
 type ComparisonStore = {
     saveComparison(data: {
@@ -87,29 +111,12 @@ type SendResult = AIProviderResponse & {
     provider: string;
     providerId: string | null;
     estimatedCost: number;
-};
-
-const defaultProviderRepository: ProviderRepository = {
-    async getActiveProvider() {
-        return aiProviderDelegate.findFirst({
-            where: { isActive: true },
-            orderBy: [{ fallbackOrder: 'asc' }, { updatedAt: 'desc' }],
-        });
-    },
-    async getProviderByName(providerName: string) {
-        return aiProviderDelegate.findUnique({ where: { name: providerName } });
-    },
-    async listActiveProvidersByFallbackOrder() {
-        return aiProviderDelegate.findMany({
-            where: { isActive: true },
-            orderBy: [{ fallbackOrder: 'asc' }, { updatedAt: 'asc' }],
-        });
-    },
+    response: string;
 };
 
 const defaultComparisonStore: ComparisonStore = {
     async saveComparison(data) {
-        const comparison = await aiModelComparisonDelegate.create({
+        return prisma.aiModelComparison.create({
             data: {
                 prompt: data.prompt,
                 createdBy: data.createdBy,
@@ -127,9 +134,8 @@ const defaultComparisonStore: ComparisonStore = {
                     })),
                 },
             },
-        });
-
-        return { id: comparison.id };
+            select: { id: true },
+        }) as Promise<{ id: string }>;
     },
 };
 
@@ -150,7 +156,7 @@ export class AIService {
         this.retryOptions = dependencies.retryOptions ?? { attempts: 3, baseDelayMs: 300 };
     }
 
-    getProviderAdapter(providerName: string, apiKey: string, provider?: ProviderRecord) {
+    getProviderAdapter(providerName: string, apiKey: string, provider?: ProviderRecord): AIProviderAdapter {
         return this.adapterFactory(providerName, apiKey, provider);
     }
 
@@ -164,7 +170,7 @@ export class AIService {
         return this.sendWithProvider(prompt, provider, context);
     }
 
-    async sendWithFallback(prompt: string, primaryProvider: string, fallbackProviders: string[], context: SendContext) {
+    async sendWithFallback(prompt: string, primaryProvider: string, fallbackProviders: string[], context: SendContext): Promise<SendResult> {
         try {
             return await this.send(prompt, primaryProvider, context);
         } catch (error) {
@@ -182,7 +188,7 @@ export class AIService {
         }
     }
 
-    async sendWithConfiguredFallback(prompt: string, context: SendContext) {
+    async sendWithConfiguredFallback(prompt: string, context: SendContext): Promise<SendResult> {
         const providers = await this.providerRepository.listActiveProvidersByFallbackOrder();
 
         if (providers.length === 0) {
@@ -199,7 +205,17 @@ export class AIService {
         );
     }
 
-    async compareModels(input: { prompt: string; models: string[]; createdBy: string }) {
+    async compareModels(input: { prompt: string; models: string[]; createdBy: string }): Promise<{
+        comparisonId: string;
+        results: Array<{
+            provider: string;
+            model: string;
+            response: string;
+            tokens: number;
+            cost: number;
+            latencyMs: number;
+        }>;
+    }> {
         const results: SendResult[] = [];
 
         for (const entry of input.models) {
@@ -276,6 +292,7 @@ export class AIService {
             provider: provider.name,
             providerId: provider.id,
             estimatedCost,
+            response: response.content,
         };
     }
 

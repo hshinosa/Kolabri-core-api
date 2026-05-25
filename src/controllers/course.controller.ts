@@ -81,6 +81,27 @@ export class CourseController {
     }
 
     /**
+     * PUT /api/courses/:id
+     * Update course (lecturer only, must own course)
+     */
+    static async update(req: AuthenticatedRequest, res: Response, next: NextFunction) {
+        try {
+            const course = await CourseService.updateCourse(
+                req.params.id,
+                req.user!.userId,
+                req.body
+            );
+
+            res.json({
+                data: course,
+                meta: { message: 'Course updated successfully' },
+            });
+        } catch (error) {
+            next(error);
+        }
+    }
+
+    /**
      * GET /api/courses/:id/students
      * Get enrolled students (lecturer only)
      */
