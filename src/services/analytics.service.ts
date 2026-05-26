@@ -119,6 +119,7 @@ export class AnalyticsService {
                 groupsNeedingAttention,
             },
             groups: groupAnalytics,
+            trends: [],
         };
     }
 
