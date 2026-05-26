@@ -23,55 +23,25 @@ const analyzeTextSchema = z.object({
 // All routes require authentication
 router.use(verifyToken);
 
-// Student stats endpoint (before requireLecturer middleware)
+// Student stats endpoint (accessible by students)
 router.get('/student/stats', StudentAnalyticsController.getStudentStats);
 
-// Lecturer-only routes
-router.use(requireLecturer);
+// Lecturer-only routes below
+router.get('/activity/recent', requireLecturer, AnalyticsController.getRecentActivity);
 
-/**
- * GET /analytics/activity/recent
- * Get recent activity across all lecturer's courses
- */
-router.get('/activity/recent', AnalyticsController.getRecentActivity);
+router.get('/dashboard-charts', requireLecturer, AnalyticsController.getDashboardCharts);
+router.get('/overview', requireLecturer, AnalyticsController.getAnalyticsOverview);
 
-router.get('/dashboard-charts', AnalyticsController.getDashboardCharts);
-router.get('/overview', AnalyticsController.getAnalyticsOverview);
+router.get('/course/:courseId', requireLecturer, AnalyticsController.getCourseAnalytics);
 
-/**
- * GET /analytics/course/:courseId
- * Get analytics overview for all groups in a course
- */
-router.get('/course/:courseId', AnalyticsController.getCourseAnalytics);
+router.get('/group/:groupId', requireLecturer, AnalyticsController.getGroupAnalytics);
 
-/**
- * GET /analytics/group/:groupId
- * Get detailed analytics for a specific group
- */
-router.get('/group/:groupId', AnalyticsController.getGroupAnalytics);
+router.get('/group/:groupId/status', requireLecturer, AnalyticsController.getGroupQualityStatus);
 
-/**
- * GET /analytics/group/:groupId/status
- * Get real-time quality status for live monitoring
- */
-router.get('/group/:groupId/status', AnalyticsController.getGroupQualityStatus);
+router.get('/chat-space/:chatSpaceId', requireLecturer, AnalyticsController.getChatSpaceAnalytics);
 
-/**
- * GET /analytics/chat-space/:chatSpaceId
- * Get analytics for a specific chat space/session
- */
-router.get('/chat-space/:chatSpaceId', AnalyticsController.getChatSpaceAnalytics);
+router.post('/analyze', requireLecturer, validateBody(analyzeTextSchema), AnalyticsController.analyzeText);
 
-/**
- * POST /analytics/analyze
- * Analyze a text for engagement metrics
- */
-router.post('/analyze', validateBody(analyzeTextSchema), AnalyticsController.analyzeText);
-
-/**
- * GET /analytics/export/:courseId
- * Export process mining data for a course
- */
-router.get('/export/:courseId', AnalyticsController.exportProcessMining);
+router.get('/export/:courseId', requireLecturer, AnalyticsController.exportProcessMining);
 
 export default router;
