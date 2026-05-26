@@ -8,6 +8,7 @@
 
 import { Router } from 'express';
 import { AnalyticsController } from '../controllers/analytics.controller.js';
+import { StudentAnalyticsController } from '../controllers/student-analytics.controller.js';
 import { verifyToken, requireLecturer } from '../middleware/auth.js';
 import { validateBody } from '../validators/validate.js';
 import { z } from 'zod';
@@ -21,6 +22,9 @@ const analyzeTextSchema = z.object({
 
 // All routes require authentication
 router.use(verifyToken);
+
+// Student stats endpoint (before requireLecturer middleware)
+router.get('/student/stats', StudentAnalyticsController.getStudentStats);
 
 // Lecturer-only routes
 router.use(requireLecturer);

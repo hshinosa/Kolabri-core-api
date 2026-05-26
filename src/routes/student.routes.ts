@@ -7,5 +7,6 @@ const router = Router();
 router.use(verifyToken);
 
 router.get('/analytics', StudentAnalyticsController.getStudentAnalytics);
+router.get('/stats', StudentAnalyticsController.getStudentStats);
 
 export default router;
