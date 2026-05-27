@@ -13,10 +13,20 @@ export function encrypt(text: string): string {
 }
 
 export function decrypt(text: string): string {
-    const key = Buffer.from(ENCRYPTION_KEY.padEnd(32, '0').slice(0, 32));
+    if (!text) return text;
+
     const parts = text.split(':');
-    const iv = Buffer.from(parts.shift()!, 'hex');
-    const encrypted = parts.join(':');
+
+    // Check if text matches encrypted format: hex_iv:hex_ciphertext
+    // Encrypted values have exactly 2 parts separated by ':', first part is 32 hex chars (16 bytes IV)
+    if (parts.length !== 2 || parts[0].length !== 32 || !/^[0-9a-f]+$/i.test(parts[0])) {
+        // Not encrypted — return as-is (plain-text key)
+        return text;
+    }
+
+    const key = Buffer.from(ENCRYPTION_KEY.padEnd(32, '0').slice(0, 32));
+    const iv = Buffer.from(parts[0], 'hex');
+    const encrypted = parts[1];
     const decipher = crypto.createDecipheriv('aes-256-cbc', key, iv);
     let decrypted = decipher.update(encrypted, 'hex', 'utf8');
     decrypted += decipher.final('utf8');
