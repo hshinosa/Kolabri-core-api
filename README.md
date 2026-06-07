@@ -46,6 +46,33 @@ npx prisma db push
 npx prisma generate
 ```
 
+## Demo seed / analytics populate
+
+Use the analytics populate flow for TA demo data and lecturer dashboards. This is the canonical demo seed because it fills both PostgreSQL dashboard data and MongoDB `ChatLog` graph data.
+
+```bash
+npm run db:populate
+npm run db:verify-populate
+```
+
+What it populates:
+- PostgreSQL: users, lecturers, students, courses, groups, group members, chat spaces, chat messages, learning goals, reflections, AI usage, notifications.
+- MongoDB: `chatlogs` used by analytics line graphs (`lexicalVariety`, HOT percentage, engagement trend data).
+
+Demo credentials:
+```txt
+budi.santoso@univ.ac.id / password123
+siti.rahayu@univ.ac.id / password123
+andi.pratama@student.ac.id / password123
+```
+
+For a destructive reset + populate + verify:
+```bash
+npm run db:reset:populate
+```
+
+Avoid `npm run db:seed` for analytics/dashboard demos. It uses the older blueprint dataset and does not include the Budi analytics dataset.
+
 Run:
 ```bash
 npm run dev

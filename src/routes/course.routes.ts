@@ -88,6 +88,7 @@ router.get('/:id/my-goal', requireStudent, CourseController.getMyGoal);
 
 // Course students (lecturer and enrolled students can access)
 router.get('/:id/students', CourseController.getStudents);
+router.get('/:id/messages', CourseController.getMessages);
 
 // Course groups (lecturer and students can create/view)
 router.get('/:id/groups', GroupController.getCourseGroups);

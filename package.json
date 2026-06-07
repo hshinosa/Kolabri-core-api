@@ -15,6 +15,9 @@
     "db:migrate": "prisma migrate dev",
     "db:push": "prisma db push",
     "db:seed": "tsx prisma/seed.ts",
+    "db:populate": "tsx prisma/scripts/populate-analytics-data.ts && tsx prisma/scripts/populate-chatlogs.ts",
+    "db:verify-populate": "tsx prisma/scripts/verify-populate-data.ts",
+    "db:reset:populate": "prisma migrate reset --force --skip-seed && prisma db push && tsx prisma/scripts/populate-analytics-data.ts && tsx prisma/scripts/populate-chatlogs.ts && tsx prisma/scripts/verify-populate-data.ts",
     "db:studio": "prisma studio",
     "test": "vitest",
     "test:run": "vitest run"

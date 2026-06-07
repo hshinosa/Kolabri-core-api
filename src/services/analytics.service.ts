@@ -108,6 +108,7 @@ export class AnalyticsService {
             ? groupsWithData.reduce((sum, g) => sum + g.qualityScore, 0) / groupsWithData.length
             : null;
         const groupsNeedingAttention = groupAnalytics.filter((g) => g.needsAttention && g.messageCount > 0).length;
+        const trends = await this.getCourseTrends(courseId);
 
         return {
             success: true,
@@ -119,7 +120,52 @@ export class AnalyticsService {
                 groupsNeedingAttention,
             },
             groups: groupAnalytics,
-            trends: [],
+            trends,
+        };
+    }
+
+    private static async getCourseTrends(courseId: string) {
+        const rows = await ChatLog.aggregate([
+            {
+                $match: {
+                    courseId,
+                    isDeleted: { $ne: true },
+                    createdAt: { $gte: new Date(Date.now() - 30 * 24 * 60 * 60 * 1000) },
+                },
+            },
+            {
+                $group: {
+                    _id: {
+                        year: { $year: '$createdAt' },
+                        month: { $month: '$createdAt' },
+                        day: { $dayOfMonth: '$createdAt' },
+                    },
+                    avgLexical: { $avg: { $ifNull: ['$engagement.lexicalVariety', 0] } },
+                    messageCount: { $sum: 1 },
+                    hotCount: { $sum: { $cond: [{ $ifNull: ['$engagement.isHigherOrder', false] }, 1, 0] } },
+                    activeSenders: { $addToSet: '$senderId' },
+                },
+            },
+            { $sort: { '_id.year': 1, '_id.month': 1, '_id.day': 1 } },
+        ]);
+
+        const points = rows.map((row) => {
+            const date = `${row._id.year}-${String(row._id.month).padStart(2, '0')}-${String(row._id.day).padStart(2, '0')}`;
+            const hotPercentage = row.messageCount > 0 ? (row.hotCount / row.messageCount) * 100 : 0;
+            const activeSenderCount = Array.isArray(row.activeSenders) ? row.activeSenders.length : 0;
+
+            return {
+                date,
+                engagement: Math.round(((row.avgLexical ?? 0) + hotPercentage) / 2),
+                completion: Math.min(100, Math.round(row.messageCount * 5)),
+                attendance: Math.min(100, Math.round(activeSenderCount * 20)),
+            };
+        });
+
+        return {
+            engagement: points.map(({ date, engagement }) => ({ date, value: engagement })),
+            completion: points.map(({ date, completion }) => ({ date, value: completion })),
+            attendance: points.map(({ date, attendance }) => ({ date, value: attendance })),
         };
     }
 

@@ -4,6 +4,7 @@ import { KnowledgeBaseService } from '../services/knowledgeBase.service.js';
 import { GroupService } from '../services/group.service.js';
 import { GoalService } from '../services/goal.service.js';
 import { AuthenticatedRequest } from '../middleware/auth.js';
+import { ChatLog } from '../models/ChatLog.js';
 
 export class CourseController {
     /**
@@ -19,6 +20,40 @@ export class CourseController {
                 meta: {
                     message: 'Course created successfully',
                 },
+            });
+        } catch (error) {
+            next(error);
+        }
+    }
+
+    /**
+     * GET /api/courses/:id/messages
+     * Get course chat messages from MongoDB ChatLog for lecturer activity views.
+     */
+    static async getMessages(req: AuthenticatedRequest, res: Response, next: NextFunction) {
+        try {
+            const limit = Math.min(Number(req.query.limit ?? 1000), 10000);
+            const messages = await ChatLog.find({
+                courseId: req.params.id,
+                isDeleted: { $ne: true },
+            })
+                .sort({ createdAt: -1 })
+                .limit(limit)
+                .lean();
+
+            res.json({
+                data: messages.map((message) => ({
+                    id: String(message._id),
+                    course_id: message.courseId,
+                    group_id: message.groupId,
+                    chat_space_id: message.chatSpaceId,
+                    sender_id: message.senderId,
+                    sender_name: message.senderName,
+                    sender_type: message.senderType === 'student' ? 'user' : message.senderType,
+                    content: message.content,
+                    is_intervention: message.isIntervention,
+                    created_at: message.createdAt,
+                })),
             });
         } catch (error) {
             next(error);

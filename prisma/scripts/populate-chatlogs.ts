@@ -5,7 +5,7 @@ import { PrismaClient } from '@prisma/client';
 
 const prisma = new PrismaClient();
 
-const MONGO_URI = process.env.DATABASE_URL_MONGODB || 'mongodb://localhost:27017/kolabri';
+const MONGO_URI = process.env.DATABASE_URL_MONGODB || process.env.MONGODB_URL || 'mongodb://localhost:27017/kolabri';
 
 const COURSE_MESSAGES: Record<string, Array<{ content: string; engagementType: string; isHigherOrder: boolean; hotIndicators: string[] }>> = {
   'IF201': [

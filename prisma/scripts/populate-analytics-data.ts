@@ -1,6 +1,6 @@
 /** Usage: cd Kolabri-core-api && npx tsx prisma/scripts/populate-analytics-data.ts */
 
-import { PrismaClient, UserRole } from '@prisma/client';
+import { NotificationType, PrismaClient, UserRole, type User } from '@prisma/client';
 import bcrypt from 'bcrypt';
 
 const prisma = new PrismaClient();
@@ -9,6 +9,7 @@ const NOW = new Date();
 const ONE_WEEK_AGO = new Date(NOW.getTime() - 7 * 24 * 60 * 60 * 1000);
 
 type ActivityLevel = 'high' | 'medium' | 'low' | 'silent';
+type StudentWithEngagement = User & { engagement: ActivityLevel };
 
 interface CourseContent {
   code: string;
@@ -578,7 +579,7 @@ const COURSES: CourseContent[] = [
   },
 ];
 
-const STUDENTS = [
+const STUDENTS: { email: string; name: string; engagement: ActivityLevel }[] = [
   { email: 'andi.pratama@student.ac.id', name: 'Andi Pratama', engagement: 'high' },
   { email: 'dewi.kusuma@student.ac.id', name: 'Dewi Kusuma', engagement: 'high' },
   { email: 'rudi.hartono@student.ac.id', name: 'Rudi Hartono', engagement: 'medium' },
@@ -710,6 +711,7 @@ async function main() {
   console.log('🌱 Starting enhanced analytics data population...\n');
 
   console.log('🧹 Cleaning existing data...');
+  await prisma.notification.deleteMany();
   await prisma.aiUsage.deleteMany();
   await prisma.reflection.deleteMany();
   await prisma.learningGoal.deleteMany();
@@ -734,7 +736,7 @@ async function main() {
     console.log(`  ✅ Lecturer: ${lecturer.name}`);
   }
 
-  const students = [];
+  const students: StudentWithEngagement[] = [];
   for (const data of STUDENTS) {
     const student = await prisma.user.create({
       data: { email: data.email, password: hashedPassword, name: data.name, role: UserRole.student },
@@ -784,7 +786,7 @@ async function main() {
         data: { name: groupName, joinCode: `GRP-${courseContent.code}-${g + 1}`, courseId: course.id, createdBy: owner.id },
       });
 
-      const groupMembers: typeof students = [];
+      const groupMembers: StudentWithEngagement[] = [];
       if (highEngagement.length > 0) groupMembers.push(highEngagement.shift()!);
       if (mediumEngagement.length > 0) groupMembers.push(mediumEngagement.shift()!);
       if (lowEngagement.length > 0 && Math.random() > 0.5) groupMembers.push(lowEngagement.shift()!);
@@ -811,7 +813,8 @@ async function main() {
       });
 
       const activityLevel: ActivityLevel = g === 0 ? 'high' : g === 1 ? 'medium' : g === 2 ? 'low' : 'silent';
-      const messagesPerDay = activityLevel === 'high' ? randomInt(10, 20) : activityLevel === 'medium' ? randomInt(5, 12) : activityLevel === 'low' ? randomInt(1, 5) : randomInt(0, 2);
+      const messagesPerDay = activityLevel === 'high' ? randomInt(10, 20) : activityLevel === 'medium' ? randomInt(5, 12) : activityLevel === 'low' ? randomInt(1, 5) : randomInt(1, 2);
+      let groupMessageCount = 0;
 
       for (let day = 0; day < 7; day++) {
         const dayDate = new Date(ONE_WEEK_AGO);
@@ -842,6 +845,7 @@ async function main() {
               },
             });
             totalMessages++;
+            groupMessageCount++;
           }
         }
 
@@ -866,47 +870,58 @@ async function main() {
               },
             });
             totalMessages++;
+            groupMessageCount++;
           }
         }
       }
 
-      for (const member of groupMembers) {
-        if (Math.random() < 0.6) {
-          await prisma.learningGoal.create({
-            data: {
-              content: randomElement(courseContent.goals),
-              isValidated: Math.random() > 0.4,
-              chatSpaceId: chatSpace.id,
-              userId: member.id,
-              createdAt: randomDate(ONE_WEEK_AGO, NOW),
-            },
-          });
-          totalGoals++;
-        }
+      if (groupMessageCount === 0) {
+        await prisma.chatMessage.create({
+          data: {
+            content: `Mulai diskusi ${courseContent.name}: apa bagian materi yang paling perlu kita pahami bersama?`,
+            senderType: 'user',
+            isIntervention: false,
+            chatSpaceId: chatSpace.id,
+            senderId: groupMembers[0].id,
+            createdAt: randomDate(ONE_WEEK_AGO, NOW),
+          },
+        });
+        totalMessages++;
       }
 
       for (const member of groupMembers) {
-        if (Math.random() < 0.7) {
-          const goals = await prisma.learningGoal.findMany({ where: { chatSpaceId: chatSpace.id, userId: member.id } });
-          await prisma.reflection.create({
-            data: {
-              content: randomElement(courseContent.reflections),
-              type: Math.random() > 0.7 ? 'weekly' : 'session',
-              goalId: goals.length > 0 ? goals[0].id : null,
-              userId: member.id,
-              chatSpaceId: chatSpace.id,
-              createdAt: randomDate(ONE_WEEK_AGO, NOW),
-            },
-          });
-          totalReflections++;
-        }
+        await prisma.learningGoal.create({
+          data: {
+            content: randomElement(courseContent.goals),
+            isValidated: Math.random() > 0.4,
+            chatSpaceId: chatSpace.id,
+            userId: member.id,
+            createdAt: randomDate(ONE_WEEK_AGO, NOW),
+          },
+        });
+        totalGoals++;
+      }
+
+      for (const member of groupMembers) {
+        const goals = await prisma.learningGoal.findMany({ where: { chatSpaceId: chatSpace.id, userId: member.id } });
+        await prisma.reflection.create({
+          data: {
+            content: randomElement(courseContent.reflections),
+            type: Math.random() > 0.7 ? 'weekly' : 'session',
+            goalId: goals.length > 0 ? goals[0].id : null,
+            userId: member.id,
+            chatSpaceId: chatSpace.id,
+            createdAt: randomDate(ONE_WEEK_AGO, NOW),
+          },
+        });
+        totalReflections++;
       }
 
       console.log(`    ✅ ${groupName} (${groupMembers.length} members, ${activityLevel})`);
     }
 
     for (const student of enrolledStudents) {
-      const usageCount = student.engagement === 'high' ? randomInt(8, 15) : student.engagement === 'medium' ? randomInt(4, 8) : student.engagement === 'low' ? randomInt(1, 4) : randomInt(0, 2);
+      const usageCount = student.engagement === 'high' ? randomInt(8, 15) : student.engagement === 'medium' ? randomInt(4, 8) : student.engagement === 'low' ? randomInt(1, 4) : randomInt(1, 2);
 
       for (let u = 0; u < usageCount; u++) {
         const provider = randomElement(['openai', 'anthropic', 'google']);
@@ -931,6 +946,37 @@ async function main() {
         totalAiUsage++;
       }
     }
+  }
+  console.log('');
+
+  console.log('🔔 Creating lecturer notifications...');
+  for (const lecturer of lecturers) {
+    await prisma.notification.createMany({
+      data: [
+        {
+          userId: lecturer.id,
+          type: NotificationType.info,
+          title: 'Aktivitas kelas meningkat',
+          message: 'Beberapa grup menunjukkan peningkatan diskusi dalam 7 hari terakhir.',
+          createdAt: randomDate(ONE_WEEK_AGO, NOW),
+        },
+        {
+          userId: lecturer.id,
+          type: NotificationType.warning,
+          title: 'Mahasiswa perlu perhatian',
+          message: 'Ada mahasiswa dengan partisipasi rendah yang perlu ditindaklanjuti.',
+          createdAt: randomDate(ONE_WEEK_AGO, NOW),
+        },
+        {
+          userId: lecturer.id,
+          type: NotificationType.success,
+          title: 'Refleksi belajar terkumpul',
+          message: 'Refleksi mingguan mahasiswa sudah tersedia untuk dianalisis.',
+          createdAt: randomDate(ONE_WEEK_AGO, NOW),
+        },
+      ],
+    });
+    console.log(`  ✅ Notifications: ${lecturer.name}`);
   }
   console.log('');
 
