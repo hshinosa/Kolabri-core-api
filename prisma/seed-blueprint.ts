@@ -296,13 +296,13 @@ export function createDemoBlueprint(): DemoBlueprint {
     ];
 
     const groups: DemoGroup[] = [
-        { key: 'group-hci-alpha', courseKey: 'course-hci', name: 'Team Alpha', joinCode: 'GROUP-ALPHA', createdByKey: 'lecturer-ahmad', memberKeys: ['student-alya', 'student-bagas'] },
-        { key: 'group-hci-beta', courseKey: 'course-hci', name: 'Team Beta', joinCode: 'GROUP-BETA', createdByKey: 'lecturer-ahmad', memberKeys: ['student-citra', 'student-dimas'] },
-        { key: 'group-se-gamma', courseKey: 'course-se', name: 'Sprint Gamma', joinCode: 'SPRINT-GAMMA', createdByKey: 'lecturer-sari', memberKeys: ['student-eka', 'student-fajar'] },
-        { key: 'group-se-delta', courseKey: 'course-se', name: 'Sprint Delta', joinCode: 'SPRINT-DELTA', createdByKey: 'lecturer-sari', memberKeys: ['student-gita', 'student-hana'] },
-        { key: 'group-dm-insight', courseKey: 'course-dm', name: 'Insight Hunters', joinCode: 'INSIGHT-DM', createdByKey: 'lecturer-bima', memberKeys: ['student-bagas', 'student-citra'] },
-        { key: 'group-dm-lab', courseKey: 'course-dm', name: 'Lab Miners', joinCode: 'LAB-MINERS', createdByKey: 'lecturer-bima', memberKeys: ['student-ivan', 'student-hana'] },
-        { key: 'group-pm-lite', courseKey: 'course-pm', name: 'Project Starters', joinCode: 'STARTER-PM', createdByKey: 'lecturer-ahmad', memberKeys: ['student-alya', 'student-fajar', 'student-ivan'] },
+{ key: 'group-hci-alpha', courseKey: 'course-hci', name: 'Team Alpha', joinCode: 'GROUP-ALPHA', createdByKey: 'student-alya', memberKeys: ['student-alya', 'student-bagas'] },
+{ key: 'group-hci-beta', courseKey: 'course-hci', name: 'Team Beta', joinCode: 'GROUP-BETA', createdByKey: 'student-citra', memberKeys: ['student-citra', 'student-dimas'] },
+{ key: 'group-se-gamma', courseKey: 'course-se', name: 'Sprint Gamma', joinCode: 'SPRINT-GAMMA', createdByKey: 'student-eka', memberKeys: ['student-eka', 'student-fajar'] },
+{ key: 'group-se-delta', courseKey: 'course-se', name: 'Sprint Delta', joinCode: 'SPRINT-DELTA', createdByKey: 'student-gita', memberKeys: ['student-gita', 'student-hana'] },
+{ key: 'group-dm-insight', courseKey: 'course-dm', name: 'Insight Hunters', joinCode: 'INSIGHT-DM', createdByKey: 'student-bagas', memberKeys: ['student-bagas', 'student-citra'] },
+{ key: 'group-dm-lab', courseKey: 'course-dm', name: 'Lab Miners', joinCode: 'LAB-MINERS', createdByKey: 'student-ivan', memberKeys: ['student-ivan', 'student-hana'] },
+{ key: 'group-pm-lite', courseKey: 'course-pm', name: 'Project Starters', joinCode: 'STARTER-PM', createdByKey: 'student-alya', memberKeys: ['student-alya', 'student-fajar', 'student-ivan'] },
     ];
 
     const chatSpaces: DemoChatSpace[] = [
@@ -410,9 +410,9 @@ export function createDemoBlueprint(): DemoBlueprint {
     ];
 
     const aiProviders: DemoAiProvider[] = [
-        { key: 'provider-openai', name: 'openai', displayName: 'OpenAI GPT', apiKey: 'demo-openai-key', isActive: true, fallbackOrder: 1, config: { models: ['gpt-4o-mini', 'gpt-4.1-mini'], temperature: 0.4 } },
-        { key: 'provider-anthropic', name: 'anthropic', displayName: 'Anthropic Claude', apiKey: 'demo-anthropic-key', isActive: true, fallbackOrder: 2, config: { models: ['claude-3-5-sonnet'], temperature: 0.3 } },
-        { key: 'provider-google', name: 'google', displayName: 'Google Gemini', apiKey: 'demo-google-key', isActive: false, fallbackOrder: 3, config: { models: ['gemini-1.5-pro'], temperature: 0.5 } },
+        { key: 'provider-openai', name: 'openai', displayName: 'OpenAI GPT', apiKey: 'demo-openai-key', isActive: false, fallbackOrder: 2, config: { models: ['gpt-4o-mini', 'gpt-4.1-mini'], temperature: 0.4 } },
+        { key: 'provider-anthropic', name: 'anthropic', displayName: 'Anthropic Claude', apiKey: 'demo-anthropic-key', isActive: false, fallbackOrder: 3, config: { models: ['claude-3-5-sonnet'], temperature: 0.3 } },
+        { key: 'provider-google', name: 'google', displayName: 'Google Gemini', apiKey: 'demo-google-key', isActive: false, fallbackOrder: 4, config: { models: ['gemini-1.5-pro'], temperature: 0.5 } },
     ];
 
     const aiUsages: DemoAiUsage[] = [

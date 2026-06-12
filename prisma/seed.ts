@@ -235,6 +235,40 @@ async function main() {
         providerIds.set(provider.key, created.id);
     }
 
+    // Local AI provider for dev (user-specified: localhost:20128, dummy key, model opencode/deepseek-v4-flash-free).
+    // Upsert ensures the 'openai' name (used by OpenAIAdapter + custom baseUrl) points to local LLM.
+    // This makes AI chat (create + stream) succeed without real keys or broken fallback.
+    // Run standalone via `npx tsx prisma/seed-ai-provider.ts` for quick fix without full demo reseed.
+    // (Separate from blueprint demo providers which are inactive.)
+    await prisma.aiProvider.upsert({
+        where: { name: 'openai' },
+        update: {
+            displayName: 'Local DeepSeek (20128)',
+            apiKey: 'sk-local',
+            baseUrl: 'http://localhost:20128/v1',
+            isActive: true,
+            fallbackOrder: 1,
+            config: {
+                defaultModel: 'opencode/deepseek-v4-flash-free',
+                temperature: 0.7,
+                maxTokens: 2048,
+            },
+        },
+        create: {
+            name: 'openai',
+            displayName: 'Local DeepSeek (20128)',
+            apiKey: 'sk-local',
+            baseUrl: 'http://localhost:20128/v1',
+            isActive: true,
+            fallbackOrder: 1,
+            config: {
+                defaultModel: 'opencode/deepseek-v4-flash-free',
+                temperature: 0.7,
+                maxTokens: 2048,
+            },
+        },
+    });
+
     for (const [index, chat] of blueprint.aiChats.entries()) {
         const createdChat = await prisma.aiChat.create({
             data: {
