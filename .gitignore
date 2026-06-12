@@ -31,3 +31,9 @@ uploads/
 # Prisma
 prisma/*.db
 prisma/*.db-journal
+
+# Production environment
+.env.production
+
+# Generated export files
+exports/
