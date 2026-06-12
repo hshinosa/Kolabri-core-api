@@ -11,6 +11,7 @@ export const chartPeriodSchema = z.object({
 
 export const statsDateRangeSchema = z
     .object({
+        period: z.enum(['7d', '30d', '90d', '1y']).optional(),
         startDate: z.string().datetime({ offset: true }).or(z.string().date()).optional(),
         endDate: z.string().datetime({ offset: true }).or(z.string().date()).optional(),
     })

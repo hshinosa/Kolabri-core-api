@@ -6,6 +6,7 @@ export const auditLogQuerySchema = z
     .object({
         action: z.string().trim().min(1).optional(),
         entityType: z.string().trim().min(1).optional(),
+        entityId: z.string().trim().min(1).optional(),
         userId: z.string().uuid('Invalid user id').optional(),
         startDate: dateStringSchema,
         endDate: dateStringSchema,

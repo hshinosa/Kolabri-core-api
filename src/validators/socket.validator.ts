@@ -10,6 +10,7 @@ export const joinRoomSchema = z.object({
 export const sendMessageSchema = z
     .object({
         roomId: z.string().min(1, 'Room ID is required'),
+        clientId: z.string().min(1).optional(),
         content: z.string().max(10000, 'Message too long').default(''),
         courseId: z.string().min(1, 'Course ID is required'),
         groupId: z.string().min(1, 'Group ID is required'),
