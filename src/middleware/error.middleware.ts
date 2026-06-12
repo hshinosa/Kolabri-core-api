@@ -137,19 +137,38 @@ export function errorHandler(
     const response: {
         status: number;
         message: string;
+        error: { code: string; message: string };
         errors?: Array<{ field: string; message: string }>;
         requestId?: string;
     } = {
         status: statusCode,
         message: clientMessage,
+        error: { code, message: clientMessage },
     };
 
-    // Add validation errors if present
     if (err.details && typeof err.details === 'object') {
         const errors: Array<{ field: string; message: string }> = [];
-        for (const [field, message] of Object.entries(err.details)) {
-            if (typeof message === 'string') {
-                errors.push({ field, message });
+        if (Array.isArray(err.details)) {
+            for (const item of err.details) {
+                if (
+                    item &&
+                    typeof item === 'object' &&
+                    'field' in item &&
+                    'message' in item &&
+                    typeof (item as { field: unknown }).field === 'string' &&
+                    typeof (item as { message: unknown }).message === 'string'
+                ) {
+                    errors.push({
+                        field: (item as { field: string }).field,
+                        message: (item as { message: string }).message,
+                    });
+                }
+            }
+        } else {
+            for (const [field, message] of Object.entries(err.details)) {
+                if (typeof message === 'string') {
+                    errors.push({ field, message });
+                }
             }
         }
         if (errors.length > 0) {

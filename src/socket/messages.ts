@@ -53,7 +53,7 @@ export function registerDeleteMessage(io: Server, socket: AuthenticatedSocket): 
                 return;
             }
 
-            message.isDeleted = true;
+            message.deletedAt = new Date();
             await message.save();
 
             io.to(roomId).emit('message_deleted', { messageId });

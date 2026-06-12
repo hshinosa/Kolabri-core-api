@@ -27,6 +27,11 @@ const inviteMembersSchema = z.object({
 const createChatSpaceSchema = z.object({
     name: z.string().min(1).max(50).trim(),
     description: z.string().max(200).nullish(),
+    week_id: z.string().uuid('Invalid week ID').optional(),
+});
+
+const updateChatSpaceWeekSchema = z.object({
+    week_id: z.string().uuid('Invalid week ID'),
 });
 
 // All routes require authentication
@@ -39,12 +44,24 @@ router.get('/course/:courseId', GroupController.index);
 router.get('/my/:courseId', GroupController.getMyGroup);
 router.get('/:id', GroupController.show);
 router.delete('/:id', GroupController.delete);
+router.post('/:id/leave', requireStudent, GroupController.leave);
+router.delete('/:id/members/:memberId', GroupController.removeMember);
 
 // Group member management
 router.post('/:id/invite', validateBody(inviteMembersSchema), GroupController.inviteMembers);
 
 // Chat spaces
 router.get('/chat-spaces/:chatSpaceId', GroupController.getChatSpaceById);
+router.patch(
+    '/chat-spaces/:chatSpaceId/week',
+    validateBody(updateChatSpaceWeekSchema),
+    GroupController.updateChatSpaceWeek
+);
+router.post(
+    '/chat-spaces/:chatSpaceId/pre-read/complete',
+    requireStudent,
+    GroupController.completePreRead
+);
 router.get('/:id/chat-spaces', GroupController.getChatSpaces);
 router.post('/:id/chat-spaces', validateBody(createChatSpaceSchema), GroupController.createChatSpace);
 

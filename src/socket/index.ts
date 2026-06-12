@@ -5,12 +5,16 @@ import { ChatLog } from '../models/ChatLog.js';
 import { SilenceEvent } from '../models/SilenceEvent.js';
 import mongoose from 'mongoose';
 import prisma from '../config/database.js';
-import { aiEngineService } from '../services/aiEngine.service.js';
+import { aiEngineService, type CitationPayload } from '../services/aiEngine.service.js';
+import { WeekContextService } from '../services/weekContext.service.js';
+import { filterCitationsForSession, allowedMaterialsForCourseMaxWeek } from '../utils/citationFilter.js';
+import { DiscussionDirectionService } from '../services/discussion-direction.service.js';
 import { socketRateLimiter } from '../utils/socketRateLimiter.js';
 import { sanitizeMessageContent, sanitizeAttachments } from '../utils/sanitize.js';
 import { setSocketEmitter } from '../utils/socketEmitter.js';
 import { getRedis } from '../config/redis.js';
 import { createAdapter } from '@socket.io/redis-adapter';
+import { invalidateDashboardCache } from '../services/dashboard.service.js';
 import type { AuthenticatedSocket, ChatHistoryItem } from './types.js';
 import { authMiddleware } from './auth.js';
 import { analyzeEngagement } from './engagement.js';
@@ -22,10 +26,17 @@ import { SILENCE_TIMEOUT_MS, INTERVENTION_COOLDOWN_MS, MESSAGES_BEFORE_CHECK, in
 import { registerPresence, trackUserInRoom, listUsersInRoom } from './presence.js';
 import { registerDeleteMessage } from './messages.js';
 import { runSilenceIntervention } from './interventions.js';
+import { isStagedEscalationEnabled, findOrCreateState, advanceStage, shouldNotifyLecturer, markNotificationSent } from '../services/escalation.service.js';
 
 // Track last intervention time per room to avoid spamming
 const lastInterventionTime = new Map<string, number>();
 const roomMessageCount = new Map<string, number>();
+
+// Track pending message classifications per chatSpace for batch processing
+const pendingClassifications = new Map<string, {
+    timer: NodeJS.Timeout | null;
+    messages: Array<{ id: string; content: string }>;
+}>();
 
 // Quality thresholds for intervention
 import { QUALITY_THRESHOLDS, decideQualityIntervention } from './engagement.js';
@@ -34,6 +45,49 @@ import { QUALITY_THRESHOLDS, decideQualityIntervention } from './engagement.js';
 import { INTERVENTION_MESSAGES, QUALITY_INTERVENTIONS, pickRandom } from './interventionMessages.js';
 
 let io: Server;
+
+async function processBatchClassification(chatSpaceId: string): Promise<void> {
+    const pending = pendingClassifications.get(chatSpaceId);
+    if (!pending || pending.messages.length === 0) {
+        return;
+    }
+
+    try {
+        const chatSpace = await prisma.chatSpace.findUnique({
+            where: { id: chatSpaceId },
+            select: {
+                goals: {
+                    orderBy: { createdAt: 'desc' },
+                    take: 1,
+                    select: { content: true },
+                },
+            },
+        });
+
+        const goalText = chatSpace?.goals?.[0]?.content?.trim();
+        if (!goalText) {
+            pendingClassifications.delete(chatSpaceId);
+            return;
+        }
+
+        const classifications = await DiscussionDirectionService.classifyMessages(
+            pending.messages,
+            goalText
+        );
+
+        const updatePromises = classifications.map(({ messageId, isRelevant }) =>
+            ChatLog.findByIdAndUpdate(messageId, { isRelevant })
+        );
+        await Promise.all(updatePromises);
+
+        io.to(chatSpaceId).emit('message_classified', { classifications });
+
+        pendingClassifications.delete(chatSpaceId);
+    } catch (error) {
+        logger.error('Batch classification error:', error);
+        pendingClassifications.delete(chatSpaceId);
+    }
+}
 
 export function initSocketIO(server: HttpServer): Server {
     const allowedOrigins = [
@@ -124,9 +178,9 @@ export function initSocketIO(server: HttpServer): Server {
                 socket.currentRoom = roomId; // Track for disconnect cleanup
 
                 // Load chat history from MongoDB for this specific chat space
-                const chatHistory = await ChatLog.find({ 
+                const chatHistory = await ChatLog.find({
                     chatSpaceId,
-                    isDeleted: { $ne: true }
+                    deletedAt: null
                 })
                     .sort({ createdAt: 1 })
                     .limit(100)
@@ -175,7 +229,7 @@ export function initSocketIO(server: HttpServer): Server {
                         senderType: 'system' as const,
                         content: welcomeContent,
                         isIntervention: false,
-                        isDeleted: false,
+                        deletedAt: undefined,
                         attachments: [],
                         mentions: [],
                         createdAt: welcomeMessage.createdAt,
@@ -198,6 +252,13 @@ export function initSocketIO(server: HttpServer): Server {
                     } : undefined,
                     attachments: msg.attachments || [],
                     mentions: msg.mentions || [],
+                    guardrailOutcome: msg.guardrailOutcome ?? undefined,
+                    guardrailReason: msg.guardrailReason ?? undefined,
+                    interventionType: msg.interventionType ?? undefined,
+                    interventionReason: msg.interventionReason ?? undefined,
+                    scaffoldingLevel: msg.scaffoldingLevel ?? undefined,
+                    isRelevant: msg.isRelevant ?? undefined,
+                    citations: msg.citations?.length ? msg.citations : undefined,
                     createdAt: msg.createdAt.toISOString(),
                 }));
 
@@ -220,6 +281,8 @@ export function initSocketIO(server: HttpServer): Server {
                 // Send room joined confirmation
                 socket.emit('room_joined', { roomId, courseId, groupId, chatSpaceId });
 
+                invalidateDashboardCache();
+
                 // Start silence timer if not exists
                 startSilenceTimer(roomId, courseId, groupId, chatSpaceId);
 
@@ -233,6 +296,7 @@ export function initSocketIO(server: HttpServer): Server {
         // Send message (with optional reply, attachments, and mentions)
         socket.on('send_message', async (data: { 
             roomId: string; 
+            clientId?: string;
             content: string;
             courseId: string;
             groupId: string;
@@ -264,7 +328,7 @@ export function initSocketIO(server: HttpServer): Server {
                 return;
             }
             try {
-                const { roomId, content, courseId, groupId, replyTo, attachments, mentions } = msgParsed.data;
+                const { roomId, clientId, content, courseId, groupId, replyTo, attachments, mentions } = msgParsed.data;
 
                 if (!socket.user) {
                     socket.emit('server_error', { message: 'Not authenticated' });
@@ -373,6 +437,27 @@ export function initSocketIO(server: HttpServer): Server {
                 });
                 await chatLog.save();
 
+                const messageId = chatLog._id?.toString();
+                if (messageId) {
+                    let pending = pendingClassifications.get(chatSpaceId);
+                    if (!pending) {
+                        pending = { timer: null, messages: [] };
+                        pendingClassifications.set(chatSpaceId, pending);
+                    }
+
+                    pending.messages.push({ id: messageId, content: safeContent });
+
+                    if (pending.timer) {
+                        clearTimeout(pending.timer);
+                    }
+
+                    pending.timer = setTimeout(() => {
+                        processBatchClassification(chatSpaceId).catch((err) => {
+                            logger.error('Batch classification failed:', err);
+                        });
+                    }, 5000);
+                }
+
                 aiEngineService.analyzeEngagement(safeContent).then(async (aiEngagement) => {
                     if (aiEngagement.success && aiEngagement.engagement_type !== 'unknown') {
                         await ChatLog.findByIdAndUpdate(chatLog._id, {
@@ -387,6 +472,7 @@ export function initSocketIO(server: HttpServer): Server {
 
                 const message = {
                     id: chatLog._id?.toString(),
+                    clientId,
                     senderId: user.id,
                     senderName: user.name,
                     senderType: user.role,
@@ -394,12 +480,36 @@ export function initSocketIO(server: HttpServer): Server {
                     replyTo: chatLog.replyTo,
                     attachments: chatLog.attachments,
                     mentions: chatLog.mentions,
+                    isRelevant: chatLog.isRelevant ?? undefined,
                     createdAt: chatLog.createdAt.toISOString(),
                 };
 
                 io.to(chatSpaceId).emit('receive_message', message);
+                invalidateDashboardCache();
+
+                io.emit('activity_feed', {
+                    id: chatLog._id?.toString(),
+                    senderName: user.name,
+                    senderType: user.role,
+                    content: safeContent.substring(0, 150),
+                    courseId: authoritativeCourseId,
+                    groupId: authoritativeGroupId,
+                    chatSpaceId,
+                    createdAt: chatLog.createdAt.toISOString(),
+                });
 
                 resetSilenceTimer(chatSpaceId, authoritativeCourseId, authoritativeGroupId, chatSpaceId);
+
+                if (isStagedEscalationEnabled() && user.role === 'student') {
+                    try {
+                        const silenceState = await findOrCreateState(authoritativeCourseId, authoritativeGroupId, chatSpaceId, 'silence');
+                        if (silenceState.currentStage !== 'resolved' && silenceState.currentStage !== 'new') {
+                            await advanceStage(silenceState, 'resolved', 'Student resumed discussion after silence', 'quality_check');
+                        }
+                    } catch (e) {
+                        logger.debug('Auto-resolve silence escalation failed:', e);
+                    }
+                }
 
                 if (safeContent.toLowerCase().includes('@ai')) {
                     handleAIQuestion(chatSpaceId, authoritativeCourseId, authoritativeGroupId, chatSpaceId, safeContent, user.id);
@@ -479,7 +589,7 @@ export function initSocketIO(server: HttpServer): Server {
 
                 const historyPage = await ChatLog.find({
                     chatSpaceId,
-                    isDeleted: { $ne: true },
+                    deletedAt: null,
                     _id: { $lt: beforeObjectId },
                 })
                     .sort({ _id: -1 })
@@ -506,6 +616,13 @@ export function initSocketIO(server: HttpServer): Server {
                         : undefined,
                     attachments: msg.attachments || [],
                     mentions: msg.mentions || [],
+                    guardrailOutcome: msg.guardrailOutcome ?? undefined,
+                    guardrailReason: msg.guardrailReason ?? undefined,
+                    interventionType: msg.interventionType ?? undefined,
+                    interventionReason: msg.interventionReason ?? undefined,
+                    scaffoldingLevel: msg.scaffoldingLevel ?? undefined,
+                    isRelevant: msg.isRelevant ?? undefined,
+                    citations: msg.citations?.length ? msg.citations : undefined,
                     createdAt: msg.createdAt.toISOString(),
                 }));
 
@@ -521,6 +638,93 @@ export function initSocketIO(server: HttpServer): Server {
 
         // Delete message (only own messages)
         registerDeleteMessage(io, socket);
+
+        socket.on('pin_message', async (data: {
+            messageId: string;
+            conversationId: string;
+            pinnedMessage?: {
+                id: string;
+                message_id: string;
+                content: string;
+                sender_name: string;
+                pinned_by: string;
+                pinned_at: string;
+            };
+        }) => {
+            if (!socket.user) {
+                socket.emit('server_error', { message: 'Not authenticated' });
+                return;
+            }
+            if (!data.messageId || !data.conversationId) {
+                socket.emit('server_error', { message: 'messageId and conversationId required' });
+                return;
+            }
+            try {
+                const message = await ChatLog.findById(data.messageId);
+                if (!message || message.chatSpaceId !== data.conversationId) {
+                    socket.emit('server_error', { message: 'Message not found' });
+                    return;
+                }
+
+                message.isPinned = true;
+                message.pinnedAt = new Date();
+                message.pinnedBy = socket.user.userId;
+                await message.save();
+
+                const pinnedData = {
+                    id: message._id.toString(),
+                    message_id: message._id.toString(),
+                    conversation_id: message.chatSpaceId,
+                    pinned_by: message.pinnedBy,
+                    content: message.content,
+                    sender_name: message.senderName,
+                    pinned_at: message.pinnedAt!.toISOString(),
+                };
+
+                io.to(data.conversationId).emit('pin_message', {
+                    messageId: data.messageId,
+                    conversationId: data.conversationId,
+                    pinnedMessage: pinnedData,
+                });
+            } catch (error) {
+                logger.error('Pin message error:', error);
+                socket.emit('server_error', { message: 'Failed to pin message' });
+            }
+        });
+
+        socket.on('unpin_message', async (data: {
+            messageId: string;
+            conversationId: string;
+        }) => {
+            if (!socket.user) {
+                socket.emit('server_error', { message: 'Not authenticated' });
+                return;
+            }
+            if (!data.messageId || !data.conversationId) {
+                socket.emit('server_error', { message: 'messageId and conversationId required' });
+                return;
+            }
+            try {
+                const message = await ChatLog.findById(data.messageId);
+                if (!message || message.chatSpaceId !== data.conversationId) {
+                    socket.emit('server_error', { message: 'Message not found' });
+                    return;
+                }
+
+                message.isPinned = false;
+                message.pinnedAt = undefined;
+                message.pinnedBy = undefined;
+                await message.save();
+
+                io.to(data.conversationId).emit('unpin_message', {
+                    messageId: data.messageId,
+                    conversationId: data.conversationId,
+                });
+            } catch (error) {
+                logger.error('Unpin message error:', error);
+                socket.emit('server_error', { message: 'Failed to unpin message' });
+            }
+        });
 
         registerPresence(io, socket);
     });
@@ -620,11 +824,11 @@ async function checkAndIntervenForQuality(
         }
 
         // Get recent messages with engagement data
-        const recentMessages = await ChatLog.find({
-            chatSpaceId,
-            isDeleted: { $ne: true },
-            senderType: { $in: ['student', 'lecturer'] },
-        })
+                const recentMessages = await ChatLog.find({
+                    chatSpaceId,
+                    deletedAt: null,
+                    senderType: { $in: ['student', 'lecturer'] },
+                })
             .sort({ createdAt: -1 })
             .limit(15)
             .lean();
@@ -663,7 +867,34 @@ async function checkAndIntervenForQuality(
         // No intervention needed if quality is good
         if (!interventionType) {
             logger.debug(`Quality OK in ${roomId}: HOT=${hotPercentage.toFixed(0)}%, Cognitive=${cognitiveRatio.toFixed(0)}%, Lexical=${avgLexical.toFixed(0)}%`);
+
+            if (isStagedEscalationEnabled()) {
+                const state = await findOrCreateState(courseId, groupId, chatSpaceId, 'low_quality');
+                if (state.currentStage !== 'resolved') {
+                    await advanceStage(state, 'resolved', 'Discussion quality recovered', 'quality_check');
+                }
+            }
             return;
+        }
+
+        if (isStagedEscalationEnabled()) {
+            const state = await findOrCreateState(courseId, groupId, chatSpaceId, 'low_quality');
+
+            if (state.currentStage === 'resolved') {
+                return;
+            }
+            if (state.currentStage === 'flag-lecturer') {
+                logger.debug(`Quality intervention skipped for ${roomId} (already escalated to lecturer)`);
+                return;
+            }
+
+            if (state.currentStage === 'new') {
+                await advanceStage(state, 'nudge', `Low quality detected: ${qualityIssue}`, 'quality_check');
+            } else if (state.currentStage === 'nudge') {
+                await advanceStage(state, 'probe-blocker', `Quality still low after nudge: ${qualityIssue}`, 'quality_check');
+            } else if (state.currentStage === 'probe-blocker') {
+                await advanceStage(state, 'flag-lecturer', `No improvement after probe: ${qualityIssue}`, 'quality_check');
+            }
         }
 
         let interventionMessage: string;
@@ -765,7 +996,22 @@ async function handleAIQuestion(
     io.to(roomId).emit('ai_typing', { isTyping: true });
 
     try {
-        // Check if AI Engine is available
+        const userPrefs = await prisma.user.findUnique({
+            where: { id: userId },
+            select: { aiInteractionConsent: true }
+        });
+        if (!userPrefs?.aiInteractionConsent) {
+            io.to(roomId).emit('receive_message', {
+                id: `ai-denied-${Date.now()}`,
+                senderId: 'ai',
+                senderName: 'AI Assistant',
+                senderType: 'ai',
+                content: 'Anda perlu memberikan persetujuan AI interaction di pengaturan privasi sebelum menggunakan fitur AI.',
+                createdAt: new Date().toISOString(),
+            });
+            return;
+        }
+
         const isAvailable = await aiEngineService.isAvailable();
         
         let response: string;
@@ -779,20 +1025,61 @@ async function handleAIQuestion(
                   engagement_distribution?: Record<string, number>;
               }
             | undefined;
+        let orchestrationResult: Awaited<ReturnType<typeof aiEngineService.orchestratedChat>> | undefined;
+        let filteredCitations: CitationPayload[] = [];
 
         if (!isAvailable) {
             response = "Maaf, AI Assistant sedang tidak tersedia saat ini. Silakan coba lagi nanti.";
         } else {
-            // Use orchestrated pipeline for full analytics
+            const courseRecord = await prisma.course.findUnique({
+                where: { id: courseId },
+            }) as {
+                aiGuardrailConfig?: { preset?: 'strict' | 'balanced' | 'relaxed'; allowRewrite?: boolean; allowFlagOnly?: boolean } | null;
+                aiScaffoldingConfig?: { scaffoldingLevel?: 'early' | 'late' | 'auto'; enabled?: boolean } | null;
+                semester?: string | null;
+                academicYear?: string | null;
+            } | null;
+
+            const guardrailPolicy = {
+                preset: courseRecord?.aiGuardrailConfig?.preset ?? 'balanced',
+                allow_rewrite: courseRecord?.aiGuardrailConfig?.allowRewrite ?? true,
+                allow_flag_only: courseRecord?.aiGuardrailConfig?.allowFlagOnly ?? false,
+            };
+
+            const scaffoldingConfig = {
+                scaffolding_level: courseRecord?.aiScaffoldingConfig?.scaffoldingLevel ?? 'auto',
+                enabled: courseRecord?.aiScaffoldingConfig?.enabled ?? true,
+            };
+
+            const chatSpaceRow = await prisma.chatSpace.findFirst({
+                where: { id: chatSpaceId, deletedAt: null },
+                select: { weekId: true },
+            });
+            const weekCtx = await WeekContextService.sessionWeekForChatSpace(chatSpaceRow?.weekId);
+            const sessionWeekIndex = weekCtx?.weekIndex;
+            const maxWeekIndex = sessionWeekIndex;
+
             const result = await aiEngineService.orchestratedChat({
                 user_id: userId,
                 group_id: groupId,
                 message: question.replace(/@ai/gi, '').trim(),
-                topic: 'General Discussion',
+                topic: weekCtx?.weekTitle ?? 'General Discussion',
                 collection_name: `course_${courseId}`,
                 course_id: courseId,
                 chat_room_id: chatSpaceId,
+                guardrail_policy: guardrailPolicy,
+                scaffolding_config: scaffoldingConfig,
+                session_week_index: sessionWeekIndex,
+                max_week_index: maxWeekIndex,
+                week_context: weekCtx
+                    ? {
+                          week_title: weekCtx.weekTitle,
+                          week_index: weekCtx.weekIndex,
+                          material_titles: weekCtx.materials.map((m) => m.title),
+                      }
+                    : undefined,
             });
+            orchestrationResult = result;
 
             if (result.success) {
                 response = result.bot_response;
@@ -806,12 +1093,36 @@ async function handleAIQuestion(
                           engagement_distribution: result.meta.engagement_distribution,
                       }
                     : undefined;
+
+                if (result.guardrail_outcome) {
+                    await prisma.auditLog.create({
+                        data: {
+                            action: 'course_ai_guardrail_triggered',
+                            entityType: 'course',
+                            entityId: courseId,
+                            userId,
+                            metadata: {
+                                outcome: result.guardrail_outcome,
+                                reason: result.guardrail_reason ?? null,
+                                surface: 'group-chat',
+                                chatSpaceId,
+                            },
+                        },
+                    });
+                }
             } else {
                 response = result.bot_response || "Maaf, terjadi kesalahan saat memproses pertanyaan. Silakan coba lagi.";
             }
+
+            const rawCitations = result.citations ?? [];
+            if (rawCitations.length > 0 && sessionWeekIndex) {
+                const allowed = await allowedMaterialsForCourseMaxWeek(courseId, sessionWeekIndex);
+                filteredCitations = filterCitationsForSession(rawCitations, allowed, sessionWeekIndex);
+            } else {
+                filteredCitations = rawCitations;
+            }
         }
 
-        // Save AI response with chatSpaceId
         const chatLog = new ChatLog({
             courseId,
             groupId,
@@ -821,8 +1132,35 @@ async function handleAIQuestion(
             senderType: 'ai',
             content: response,
             isIntervention: false,
+            guardrailReason: orchestrationResult?.guardrail_reason ?? undefined,
+            guardrailOutcome: orchestrationResult?.guardrail_outcome ?? undefined,
+            interventionType: orchestrationResult?.intervention_type ?? undefined,
+            interventionReason: orchestrationResult?.system_intervention ?? undefined,
+            scaffoldingLevel: orchestrationResult?.scaffolding_level ?? undefined,
+            qualityScore: orchestrationResult?.quality_score ?? undefined,
+            citations: filteredCitations.length > 0 ? filteredCitations : undefined,
         });
         await chatLog.save();
+
+        // Audit log every AI response for explainability (NFR-MNT-02)
+        await prisma.auditLog.create({
+            data: {
+                action: 'course_ai_response_generated',
+                entityType: 'chatLog',
+                entityId: chatLog._id.toString(),
+                userId,
+                metadata: {
+                    chatSpaceId,
+                    courseId,
+                    guardrailOutcome: orchestrationResult?.guardrail_outcome ?? null,
+                    guardrailReason: orchestrationResult?.guardrail_reason ?? null,
+                    interventionType: orchestrationResult?.intervention_type ?? null,
+                    interventionReason: orchestrationResult?.system_intervention ?? null,
+                    scaffoldingLevel: orchestrationResult?.scaffolding_level ?? null,
+                    qualityScore: orchestrationResult?.quality_score ?? null,
+                },
+            },
+        });
 
         // Send response
         io.to(roomId).emit('receive_message', {
@@ -832,6 +1170,12 @@ async function handleAIQuestion(
             senderType: 'ai',
             content: response,
             createdAt: chatLog.createdAt.toISOString(),
+            guardrailOutcome: orchestrationResult?.guardrail_outcome ?? undefined,
+            guardrailReason: orchestrationResult?.guardrail_reason ?? undefined,
+            interventionType: orchestrationResult?.intervention_type ?? undefined,
+            interventionReason: orchestrationResult?.system_intervention ?? undefined,
+            scaffoldingLevel: orchestrationResult?.scaffolding_level ?? undefined,
+            citations: filteredCitations.length > 0 ? filteredCitations : undefined,
         });
 
         // Emit quality feedback for real-time UI updates
@@ -874,15 +1218,35 @@ async function handleAIQuestion(
 
         // Notify lecturer if quality is critically low
         if (shouldNotifyTeacher) {
-            io.emit('lecturer_alert', {
-                type: 'low_quality',
-                courseId,
-                groupId,
-                chatSpaceId,
-                qualityScore,
-                message: `Kualitas diskusi di grup ${groupId} memerlukan perhatian.`,
-                timestamp: new Date().toISOString(),
-            });
+            if (isStagedEscalationEnabled()) {
+                const state = await findOrCreateState(courseId, groupId, chatSpaceId, 'low_quality');
+                if (state.currentStage !== 'flag-lecturer' && state.currentStage !== 'resolved') {
+                    await advanceStage(state, 'flag-lecturer', 'AI Chat detected critical quality issue', 'ai_chat');
+                }
+                if (shouldNotifyLecturer(state)) {
+                    io.emit('lecturer_alert', {
+                        type: 'low_quality',
+                        courseId,
+                        groupId,
+                        chatSpaceId,
+                        qualityScore,
+                        message: `Kualitas diskusi di grup ${groupId} memerlukan perhatian.`,
+                        timestamp: new Date().toISOString(),
+                    });
+                    markNotificationSent(state);
+                    await state.save();
+                }
+            } else {
+                io.emit('lecturer_alert', {
+                    type: 'low_quality',
+                    courseId,
+                    groupId,
+                    chatSpaceId,
+                    qualityScore,
+                    message: `Kualitas diskusi di grup ${groupId} memerlukan perhatian.`,
+                    timestamp: new Date().toISOString(),
+                });
+            }
         }
 
     } catch (error) {

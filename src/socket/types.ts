@@ -17,9 +17,17 @@ export interface ChatHistoryItem {
     senderType: 'student' | 'lecturer' | 'ai' | 'bot' | 'system';
     content: string;
     isIntervention: boolean;
-    isDeleted: boolean;
+    deletedAt?: Date;
     replyTo?: IReplyTo;
     attachments: IAttachment[];
     mentions: string[];
+    guardrailReason?: string;
+    guardrailOutcome?: string;
+    interventionType?: string;
+    interventionReason?: string;
+    scaffoldingLevel?: string;
+    qualityScore?: number;
+    isRelevant?: boolean;
+    citations?: string[];
     createdAt: Date;
 }

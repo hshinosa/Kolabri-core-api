@@ -17,7 +17,7 @@ function buildStore(prefix: string): Options['store'] | undefined {
 
 export const rateLimiter = rateLimit({
     windowMs: Number(process.env.RATE_LIMIT_WINDOW_MS) || 15 * 60 * 1000,
-    max: Number(process.env.RATE_LIMIT_MAX_REQUESTS) || 100,
+    max: () => Number(process.env.RATE_LIMIT_MAX_REQUESTS) || 100,
     store: buildStore('general'),
     keyGenerator: (req) => {
         const authReq = req as AuthenticatedRequest;
@@ -35,7 +35,7 @@ export const rateLimiter = rateLimit({
 
 export const authRateLimiter = rateLimit({
     windowMs: 15 * 60 * 1000,
-    max: Number(process.env.AUTH_RATE_LIMIT_MAX) || 50,
+    max: () => Number(process.env.AUTH_RATE_LIMIT_MAX) || 50,
     store: buildStore('auth'),
     keyGenerator: (req) => {
         const authReq = req as AuthenticatedRequest;
@@ -133,6 +133,24 @@ export const testConnectionLimiter = rateLimit({
         error: {
             code: 'TEST_CONNECTION_RATE_LIMIT_EXCEEDED',
             message: 'Too many test connection attempts, please try again later',
+        },
+    },
+    standardHeaders: true,
+    legacyHeaders: false,
+});
+
+export const exportRateLimiter = rateLimit({
+    windowMs: 60 * 1000,
+    max: 5,
+    store: buildStore('export'),
+    keyGenerator: (req) => {
+        const authReq = req as AuthenticatedRequest;
+        return authReq.user?.userId || req.ip || 'anonymous';
+    },
+    message: {
+        error: {
+            code: 'EXPORT_RATE_LIMIT_EXCEEDED',
+            message: 'Too many export requests, please try again later',
         },
     },
     standardHeaders: true,

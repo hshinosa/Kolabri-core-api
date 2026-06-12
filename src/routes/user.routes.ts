@@ -2,6 +2,7 @@ import { Router } from 'express';
 import multer from 'multer';
 import { z } from 'zod';
 import { UserController } from '../controllers/user.controller.js';
+import { AdminUserController } from '../controllers/admin-user.controller.js';
 import { verifyToken, checkRole } from '../middleware/auth.js';
 import { rateLimiter } from '../middleware/rateLimiter.js';
 import { validateBody, validateParams, validateQuery } from '../validators/validate.js';
@@ -46,7 +47,7 @@ router.get('/:id', validateParams(idSchema), UserController.show);
 router.post('/', validateBody(createUserSchema), UserController.create);
 router.put('/:id', validateParams(idSchema), validateBody(updateUserSchema), UserController.update);
 router.delete('/:id', validateParams(idSchema), UserController.delete);
-router.delete('/:id/hard', validateParams(idSchema), UserController.hardDelete);
+router.delete('/:id/hard', validateParams(idSchema), AdminUserController.forceHardDelete);
 router.post(
     '/:id/reset-password',
     validateParams(idSchema),

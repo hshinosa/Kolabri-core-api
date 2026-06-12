@@ -40,6 +40,14 @@ export class ApiError extends Error implements AppError {
         return new ApiError(409, 'CONFLICT', message);
     }
 
+    static gone(message: string) {
+        return new ApiError(410, 'GONE', message);
+    }
+
+    static tooManyRequests(message: string) {
+        return new ApiError(429, 'TOO_MANY_REQUESTS', message);
+    }
+
     static internal(message = 'Internal server error') {
         return new ApiError(500, 'INTERNAL_ERROR', message);
     }

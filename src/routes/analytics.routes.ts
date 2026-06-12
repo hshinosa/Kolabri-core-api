@@ -44,4 +44,6 @@ router.post('/analyze', requireLecturer, validateBody(analyzeTextSchema), Analyt
 
 router.get('/export/:courseId', requireLecturer, AnalyticsController.exportProcessMining);
 
+router.get('/export/:courseId/summary', requireLecturer, AnalyticsController.exportAnalyticsSummary);
+
 export default router;

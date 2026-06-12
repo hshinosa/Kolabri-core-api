@@ -4,8 +4,9 @@ import { CourseController } from '../controllers/course.controller.js';
 import { GroupController } from '../controllers/group.controller.js';
 import { verifyToken, requireLecturer, requireStudent } from '../middleware/auth.js';
 import { validateBody } from '../validators/validate.js';
-import { createCourseSchema, joinCourseSchema } from '../validators/course.validator.js';
+import { createCourseSchema, joinCourseSchema, updateCourseSchema } from '../validators/course.validator.js';
 import { createGroupSchema, addMembersSchema } from '../validators/group.validator.js';
+import { readingRecommendationRequestSchema } from '../validators/readingRecommendation.validator.js';
 import { z } from 'zod';
 
 const router = Router();
@@ -82,7 +83,7 @@ router.get('/', CourseController.index); // Alias for /my
 
 // Course by ID routes
 router.get('/:id', CourseController.show);
-router.put('/:id', requireLecturer, CourseController.update);
+router.put('/:id', requireLecturer, validateBody(updateCourseSchema), CourseController.update);
 router.get('/:id/my-group', requireStudent, CourseController.getMyGroup);
 router.get('/:id/my-goal', requireStudent, CourseController.getMyGoal);
 
@@ -99,5 +100,6 @@ router.post('/:id/groups/:groupId/members', requireLecturer, validateBody(addMem
 router.post('/:id/knowledge-base', requireLecturer, upload.single('file'), CourseController.uploadKnowledgeBase);
 router.post('/:id/knowledge-base/batch', requireLecturer, uploadBatchHandler, validateBody(uploadBatchOptionsSchema), CourseController.uploadKnowledgeBaseBatch);
 router.get('/:id/knowledge-base', CourseController.getKnowledgeBase);
+router.post('/:id/reading-recommendations', validateBody(readingRecommendationRequestSchema), CourseController.getReadingRecommendations);
 
 export default router;

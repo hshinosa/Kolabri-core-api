@@ -4,6 +4,7 @@ import { SilenceEvent } from '../models/SilenceEvent.js';
 import { aiEngineService } from '../services/aiEngine.service.js';
 import { INTERVENTION_MESSAGES, pickRandom } from './interventionMessages.js';
 import { tryAcquireSilenceLock, SILENCE_TIMEOUT_MS } from './interventionGate.js';
+import { isStagedEscalationEnabled, findOrCreateState, advanceStage } from '../services/escalation.service.js';
 
 export interface SilenceInterventionContext {
     roomId: string;
@@ -21,7 +22,7 @@ async function selectMessage(chatSpaceId: string): Promise<string> {
     try {
         const recentMessages = await ChatLog.find({
             chatSpaceId,
-            isDeleted: { $ne: true },
+            deletedAt: null,
             senderType: { $in: ['student', 'lecturer'] },
         })
             .sort({ createdAt: -1 })
@@ -69,6 +70,28 @@ export async function runSilenceIntervention(
         if (!lockAcquired) {
             logger.debug(`Silence intervention skipped for ${roomId} (lock held by another instance)`);
             return;
+        }
+
+        if (isStagedEscalationEnabled()) {
+            const state = await findOrCreateState(courseId, groupId, chatSpaceId, 'silence');
+
+            if (state.currentStage === 'resolved') {
+                logger.debug(`Silence intervention skipped for ${roomId} (escalation resolved)`);
+                return;
+            }
+
+            if (state.currentStage === 'flag-lecturer') {
+                logger.debug(`Silence intervention skipped for ${roomId} (already escalated to lecturer)`);
+                return;
+            }
+
+            if (state.currentStage === 'new') {
+                await advanceStage(state, 'nudge', 'Silence detected, sending nudge', 'silence_timer');
+            } else if (state.currentStage === 'nudge') {
+                await advanceStage(state, 'probe-blocker', 'Silence persists after nudge, probing for blockers', 'silence_timer');
+            } else if (state.currentStage === 'probe-blocker') {
+                await advanceStage(state, 'flag-lecturer', 'No response after probe, escalating to lecturer', 'silence_timer');
+            }
         }
 
         const silenceEvent = new SilenceEvent({
