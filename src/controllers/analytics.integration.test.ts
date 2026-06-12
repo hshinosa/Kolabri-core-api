@@ -1,54 +1,41 @@
 import type { NextFunction, Request, Response } from 'express';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
+import { ApiError } from '../middleware/errorHandler.js';
+import { AnalyticsService } from '../services/analytics.service.js';
+import { AnalyticsController } from './analytics.controller.js';
 
-const { prismaMock, aiEngineServiceMock, chatAnalyticsServiceMock, ChatLogMock } = vi.hoisted(() => ({
-    prismaMock: {
-group: { findUnique: vi.fn(), findFirst: vi.fn() },
-course: { findUnique: vi.fn(), findFirst: vi.fn() },
-chatSpace: { findUnique: vi.fn(), findFirst: vi.fn() },
-    },
-    aiEngineServiceMock: {
-        analyzeEngagement: vi.fn(),
-        exportProcessMiningData: vi.fn(),
-    },
-    chatAnalyticsServiceMock: {
+vi.mock('../services/analytics.service.js', () => ({
+    AnalyticsService: {
         getGroupAnalytics: vi.fn(),
+        getCourseAnalytics: vi.fn(),
+        analyzeText: vi.fn(),
+        getGroupQualityStatus: vi.fn(),
         getChatSpaceAnalytics: vi.fn(),
-        getParticipantActivity: vi.fn(),
-    },
-    ChatLogMock: {
-        find: vi.fn().mockReturnValue({ sort: vi.fn().mockReturnValue({ limit: vi.fn().mockReturnValue({ lean: vi.fn().mockResolvedValue([]) }) }) }),
-        countDocuments: vi.fn().mockResolvedValue(0),
+        exportProcessMining: vi.fn(),
     },
 }));
 
-vi.mock('../config/database.js', () => ({ default: prismaMock }));
-vi.mock('../services/aiEngine.service.js', () => ({ aiEngineService: aiEngineServiceMock }));
-vi.mock('../services/chatAnalytics.service.js', () => ({ chatAnalyticsService: chatAnalyticsServiceMock }));
-vi.mock('../models/ChatLog.js', () => ({ ChatLog: ChatLogMock }));
-vi.mock('../middleware/errorHandler.js', async () => {
-    const actual = await vi.importActual('../middleware/errorHandler.js');
-    return actual;
-});
-
-import { AnalyticsController } from './analytics.controller.js';
-
 function mockReq(overrides: Partial<Request> = {}) {
     return {
-        body: {}, params: {}, query: {},
+        body: {},
+        params: {},
+        query: {},
         user: { userId: 'lecturer-1', role: 'lecturer', email: 'lecturer@example.com' },
         ...overrides,
     } as unknown as Request;
 }
 
 function mockRes() {
-    const res = { status: vi.fn(), json: vi.fn() } as any;
+    const res = { status: vi.fn(), json: vi.fn(), setHeader: vi.fn(), send: vi.fn() } as any;
     res.status.mockReturnValue(res);
     res.json.mockReturnValue(res);
+    res.send.mockReturnValue(res);
     return res as Response;
 }
 
-const mockNext: () => NextFunction = () => vi.fn() as unknown as NextFunction;
+function mockNext() {
+    return vi.fn() as unknown as NextFunction;
+}
 
 describe('AnalyticsController Integration — Flow 6: SRL & Analytics', () => {
     beforeEach(() => {
@@ -56,10 +43,10 @@ describe('AnalyticsController Integration — Flow 6: SRL & Analytics', () => {
     });
 
     it('analyzes text engagement via AI Engine', async () => {
-        aiEngineServiceMock.analyzeEngagement.mockResolvedValue({
-            success: true, lexical_variety: 75, engagement_type: 'Cognitive',
-            is_higher_order: true, hot_indicators: ['mengapa'], word_count: 20, unique_words: 15, confidence: 0.8,
-        });
+        vi.mocked(AnalyticsService.analyzeText).mockResolvedValue({
+            success: true,
+            analysis: { lexical_variety: 75 },
+        } as any);
 
         const req = mockReq({ body: { text: 'Mengapa konsep ini penting untuk dipahami?' } });
         const res = mockRes();
@@ -68,10 +55,12 @@ describe('AnalyticsController Integration — Flow 6: SRL & Analytics', () => {
         await AnalyticsController.analyzeText(req, res, next);
 
         expect(res.json).toHaveBeenCalledWith(expect.objectContaining({ success: true }));
-        expect(aiEngineServiceMock.analyzeEngagement).toHaveBeenCalledWith('Mengapa konsep ini penting untuk dipahami?');
+        expect(AnalyticsService.analyzeText).toHaveBeenCalledWith('Mengapa konsep ini penting untuk dipahami?');
     });
 
     it('rejects empty text for engagement analysis', async () => {
+        vi.mocked(AnalyticsService.analyzeText).mockRejectedValue(ApiError.badRequest('Text is required'));
+
         const req = mockReq({ body: { text: '' } });
         const res = mockRes();
         const next = mockNext();
@@ -82,18 +71,7 @@ describe('AnalyticsController Integration — Flow 6: SRL & Analytics', () => {
     });
 
     it('returns group analytics for course owner', async () => {
-        prismaMock.group.findFirst.mockResolvedValue({
-            id: 'group-1', name: 'Kelompok 1',
-            course: { ownerId: 'lecturer-1', name: 'Algo', code: 'CS101' },
-            members: [{ user: { id: 'student-1', name: 'Student', email: 's@e.com' } }],
-            chatSpaces: [{ id: 'cs-1', name: 'Sesi 1', closedAt: null, createdAt: new Date() }],
-        });
-        chatAnalyticsServiceMock.getGroupAnalytics.mockResolvedValue({
-            qualityScore: 72, recommendation: 'Good', messageCount: 50, participantCount: 3,
-            qualityBreakdown: { hotPercentage: 30, lexicalVariety: 60 },
-            engagementDistribution: { cognitive: 40, behavioral: 35, emotional: 25 },
-            engagementExamples: {}, participants: ['Student'],
-        });
+        vi.mocked(AnalyticsService.getGroupAnalytics).mockResolvedValue({ success: true, group: { id: 'group-1' } } as any);
 
         const req = mockReq({ params: { groupId: 'group-1' } });
         const res = mockRes();
@@ -102,15 +80,11 @@ describe('AnalyticsController Integration — Flow 6: SRL & Analytics', () => {
         await AnalyticsController.getGroupAnalytics(req, res, next);
 
         expect(res.json).toHaveBeenCalledWith(expect.objectContaining({ success: true }));
-        expect(chatAnalyticsServiceMock.getGroupAnalytics).toHaveBeenCalledWith('group-1');
+        expect(AnalyticsService.getGroupAnalytics).toHaveBeenCalledWith('group-1', 'lecturer-1', 'lecturer');
     });
 
     it('rejects group analytics when lecturer does not own course', async () => {
-        prismaMock.group.findFirst.mockResolvedValue({
-            id: 'group-1', name: 'K1',
-            course: { ownerId: 'other-lecturer', name: 'Algo', code: 'CS101' },
-            members: [], chatSpaces: [],
-        });
+        vi.mocked(AnalyticsService.getGroupAnalytics).mockRejectedValue(ApiError.forbidden('You do not own this course'));
 
         const req = mockReq({ params: { groupId: 'group-1' } });
         const res = mockRes();
@@ -122,18 +96,13 @@ describe('AnalyticsController Integration — Flow 6: SRL & Analytics', () => {
     });
 
     it('returns course analytics overview', async () => {
-        prismaMock.course.findFirst.mockResolvedValue({
-            id: 'course-1', name: 'Algo', code: 'CS101', ownerId: 'lecturer-1',
-            groups: [
-                { id: 'g-1', name: 'K1', members: [{ userId: 's-1' }], chatSpaces: [{ id: 'cs-1', name: 'S1', closedAt: null }] },
-            ],
-        });
-        chatAnalyticsServiceMock.getGroupAnalytics.mockResolvedValue({
-            qualityScore: 65, recommendation: 'Moderate', messageCount: 30, participantCount: 2,
-            qualityBreakdown: { hotPercentage: 20, lexicalVariety: 50 },
-            engagementDistribution: { cognitive: 30, behavioral: 40, emotional: 30 },
-            engagementExamples: {}, participants: [],
-        });
+        vi.mocked(AnalyticsService.getCourseAnalytics).mockResolvedValue({
+            success: true,
+            course: { id: 'course-1', name: 'Algo', code: 'CS101' },
+            summary: { totalGroups: 1, totalMessages: 30, averageQualityScore: 65, groupsNeedingAttention: 0 },
+            groups: [],
+            trends: { engagement: [], completion: [], attendance: [] },
+        } as any);
 
         const req = mockReq({ params: { courseId: 'course-1' } });
         const res = mockRes();
@@ -148,14 +117,7 @@ describe('AnalyticsController Integration — Flow 6: SRL & Analytics', () => {
     });
 
     it('returns group quality status for live monitoring', async () => {
-        prismaMock.group.findFirst.mockResolvedValue({
-            id: 'group-1', name: 'K1', course: { ownerId: 'lecturer-1' },
-        });
-        ChatLogMock.countDocuments.mockResolvedValue(5);
-        chatAnalyticsServiceMock.getGroupAnalytics.mockResolvedValue({
-            qualityScore: 45, recommendation: 'Needs improvement', messageCount: 10,
-            qualityBreakdown: {}, engagementDistribution: {}, engagementExamples: {}, participants: [], participantCount: 2,
-        });
+        vi.mocked(AnalyticsService.getGroupQualityStatus).mockResolvedValue({ success: true, status: 'needs_attention' } as any);
 
         const req = mockReq({ params: { groupId: 'group-1' } });
         const res = mockRes();
@@ -163,16 +125,15 @@ describe('AnalyticsController Integration — Flow 6: SRL & Analytics', () => {
 
         await AnalyticsController.getGroupQualityStatus(req, res, next);
 
-        expect(res.json).toHaveBeenCalledWith(expect.objectContaining({
-            success: true, status: 'needs_attention',
-        }));
+        expect(res.json).toHaveBeenCalledWith(expect.objectContaining({ success: true, status: 'needs_attention' }));
     });
 
     it('exports process mining data for course owner', async () => {
-        prismaMock.course.findFirst.mockResolvedValue({ id: 'course-1', name: 'Algo', ownerId: 'lecturer-1' });
-        aiEngineServiceMock.exportProcessMiningData.mockResolvedValue({
-            success: true, file_url: '/exports/data.csv', total_events: 100,
-        });
+        vi.mocked(AnalyticsService.exportProcessMining).mockResolvedValue({
+            success: true,
+            export: { file_url: '/exports/data.csv' },
+            course: { id: 'course-1', name: 'Algo' },
+        } as any);
 
         const req = mockReq({ params: { courseId: 'course-1' } });
         const res = mockRes();
@@ -184,7 +145,7 @@ describe('AnalyticsController Integration — Flow 6: SRL & Analytics', () => {
     });
 
     it('returns 404 when group not found for analytics', async () => {
-        prismaMock.group.findFirst.mockResolvedValue(null);
+        vi.mocked(AnalyticsService.getGroupAnalytics).mockRejectedValue(ApiError.notFound('Group not found'));
 
         const req = mockReq({ params: { groupId: 'nonexistent' } });
         const res = mockRes();

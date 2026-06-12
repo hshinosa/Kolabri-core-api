@@ -86,7 +86,13 @@ describe('AIEngineService', () => {
             })
         );
 
-        const result = await service.ask('Apa itu Kolabri?', 'course-1', 'Hshi', 'chat-9');
+        const result = await service.ask(
+            'Apa itu Kolabri?',
+            'course-1',
+            'Hshi',
+            'chat-9',
+            { preset: 'balanced', allow_rewrite: true, allow_flag_only: false }
+        );
 
         expect(result).toEqual({
             answer: 'Ini jawabannya',
@@ -105,9 +111,53 @@ describe('AIEngineService', () => {
                     course_id: 'course-1',
                     user_name: 'Hshi',
                     chat_space_id: 'chat-9',
+                    guardrail_policy: {
+                        preset: 'balanced',
+                        allow_rewrite: true,
+                        allow_flag_only: false,
+                    },
                 }),
             })
         );
+    });
+
+    it('sends reading recommendation requests and returns parsed response', async () => {
+        fetchMock.mockResolvedValue(
+            createJsonResponse({
+                success: true,
+                recommendations: [
+                    {
+                        source_title: 'week-3-transformer.pdf',
+                        snippet: 'Self-attention menghitung relasi antar token.',
+                        rationale: 'Topik sesuai dengan permintaan mahasiswa.',
+                        suggested_action: 'Baca bagian self-attention.',
+                        page: 12,
+                        relevance_score: 0.91,
+                    },
+                ],
+                fallback: null,
+            })
+        );
+
+        const result = await service.generateReadingRecommendations('transformer', 'course-1', 3);
+
+        expect(fetchMock).toHaveBeenCalledWith(
+            'http://ai-engine.test/api/reading-recommendations',
+            expect.objectContaining({
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json',
+                    Authorization: 'Bearer super-secret',
+                },
+                body: JSON.stringify({
+                    topic: 'transformer',
+                    course_id: 'course-1',
+                    limit: 3,
+                }),
+            })
+        );
+        expect(result.success).toBe(true);
+        expect(result.recommendations).toHaveLength(1);
     });
 
     it('returns fallback response when ask times out', async () => {
@@ -252,5 +302,82 @@ describe('AIEngineService', () => {
             reason: 'AI Engine responded with 500',
             error: 'AI Engine responded with 500',
         });
+    });
+});
+
+describe('AIEngineService - Scaffolding', () => {
+    let fetchMock: FetchMock;
+    let service: AIEngineService;
+
+    beforeEach(() => {
+        process.env.AI_ENGINE_URL = 'http://ai-engine.test';
+        process.env.AI_ENGINE_SECRET = 'super-secret';
+
+        fetchMock = vi.fn();
+        vi.stubGlobal('fetch', fetchMock);
+
+        service = new AIEngineService();
+    });
+
+    afterEach(() => {
+        vi.unstubAllGlobals();
+        vi.restoreAllMocks();
+        delete process.env.AI_ENGINE_URL;
+        delete process.env.AI_ENGINE_SECRET;
+    });
+
+    it('returns scaffolding_level and scaffolding_outcome for early+enabled', async () => {
+        fetchMock.mockResolvedValue(
+            createJsonResponse({
+                success: true,
+                bot_response: 'Step by step explanation...',
+                action_taken: 'RAG_FETCH',
+                should_notify_teacher: false,
+                scaffolding_level: 'early',
+                scaffolding_outcome: 'applied',
+            })
+        );
+
+        const result = await service.orchestratedChat({
+            user_id: 'u1',
+            group_id: 'g1',
+            message: 'Explain recursion',
+            topic: 'Recursion',
+            collection_name: 'course_IF201',
+            course_id: 'c1',
+            chat_room_id: 'room-1',
+            guardrail_policy: { preset: 'balanced', allow_rewrite: true, allow_flag_only: false },
+            scaffolding_config: { scaffolding_level: 'early', enabled: true },
+        });
+
+        expect(result.scaffolding_level).toBe('early');
+        expect(result.scaffolding_outcome).toBe('applied');
+    });
+
+    it('returns scaffolding_outcome=disabled when enabled=false', async () => {
+        fetchMock.mockResolvedValue(
+            createJsonResponse({
+                success: true,
+                bot_response: 'Normal answer',
+                action_taken: 'RAG_FETCH',
+                should_notify_teacher: false,
+                scaffolding_level: 'auto',
+                scaffolding_outcome: 'disabled',
+            })
+        );
+
+        const result = await service.orchestratedChat({
+            user_id: 'u1',
+            group_id: 'g1',
+            message: 'Explain recursion',
+            topic: 'Recursion',
+            collection_name: 'course_IF204',
+            course_id: 'c4',
+            chat_room_id: 'room-1',
+            guardrail_policy: { preset: 'balanced', allow_rewrite: true, allow_flag_only: false },
+            scaffolding_config: { scaffolding_level: 'auto', enabled: false },
+        });
+
+        expect(result.scaffolding_outcome).toBe('disabled');
     });
 });

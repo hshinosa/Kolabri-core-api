@@ -2,7 +2,7 @@ import { beforeEach, describe, expect, it, vi } from 'vitest';
 
 const { prismaMock, cacheMock, generateJoinCodeMock } = vi.hoisted(() => ({
     prismaMock: {
-        course: { findUnique: vi.fn(), findFirst: vi.fn(), findMany: vi.fn(), create: vi.fn() },
+        course: { findUnique: vi.fn(), findFirst: vi.fn(), findMany: vi.fn(), create: vi.fn(), update: vi.fn() },
         courseStudent: { findUnique: vi.fn(), create: vi.fn(), findMany: vi.fn() },
     },
     cacheMock: { get: vi.fn(), set: vi.fn(), invalidatePattern: vi.fn() },
@@ -41,7 +41,14 @@ describe('CourseService', () => {
         });
 
         const result = await CourseService.createCourse(
-            { code: 'IF101', name: 'Intro AI', description: 'Basics' },
+            {
+                code: 'IF101',
+                name: 'Intro AI',
+                description: 'Basics',
+                ai_guardrail_preset: 'balanced',
+                ai_guardrail_allow_rewrite: true,
+                ai_guardrail_allow_flag_only: false,
+            },
             'lecturer-1'
         );
 
@@ -51,6 +58,19 @@ describe('CourseService', () => {
                 name: 'Intro AI',
                 description: 'Basics',
                 joinCode: 'XYZ789',
+                minMembersPerGroup: undefined,
+                maxMembersPerGroup: undefined,
+                aiGuardrailConfig: {
+                    preset: 'balanced',
+                    allowRewrite: true,
+                    allowFlagOnly: false,
+                },
+                aiScaffoldingConfig: {
+                    scaffoldingLevel: 'auto',
+                    enabled: true,
+                },
+                semester: undefined,
+                academicYear: undefined,
                 ownerId: 'lecturer-1',
             },
             include: {
@@ -83,6 +103,28 @@ describe('CourseService', () => {
         ).rejects.toMatchObject({
             statusCode: 500,
             message: 'Failed to generate unique join code',
+        });
+    });
+
+    it('updates AI guardrail policy fields for a lecturer-owned course', async () => {
+        prismaMock.course.findFirst.mockResolvedValueOnce({ id: 'course-1', ownerId: 'lecturer-1' });
+        prismaMock.course.update = vi.fn().mockResolvedValue({ id: 'course-1' });
+
+        await CourseService.updateCourse('course-1', 'lecturer-1', {
+            ai_guardrail_preset: 'strict',
+            ai_guardrail_allow_rewrite: false,
+            ai_guardrail_allow_flag_only: true,
+        });
+
+        expect(prismaMock.course.update).toHaveBeenCalledWith({
+            where: { id: 'course-1' },
+            data: {
+                aiGuardrailConfig: {
+                    preset: 'strict',
+                    allowRewrite: false,
+                    allowFlagOnly: true,
+                },
+            },
         });
     });
 
@@ -251,6 +293,9 @@ describe('CourseService', () => {
             name: 'Intro AI',
             description: 'Basics',
             joinCode: 'JOIN01',
+            minMembersPerGroup: 1,
+            maxMembersPerGroup: 1000,
+            aiGuardrailConfig: { preset: 'balanced', allowRewrite: true, allowFlagOnly: false },
             ownerId: 'lecturer-1',
             isArchived: false,
             createdAt: new Date('2026-05-01T00:00:00.000Z'),
@@ -287,6 +332,13 @@ describe('CourseService', () => {
             name: 'Intro AI',
             description: 'Basics',
             join_code: 'JOIN01',
+            min_members_per_group: 1,
+            max_members_per_group: 1000,
+            ai_guardrail_preset: 'balanced',
+            ai_guardrail_allow_rewrite: true,
+            ai_guardrail_allow_flag_only: false,
+            ai_scaffolding_enabled: true,
+            ai_scaffolding_level: 'auto',
             owner: { id: 'lecturer-1', name: 'Dr. AI', email: 'ai@example.com' },
             groups: [
                 {

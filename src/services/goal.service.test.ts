@@ -23,16 +23,35 @@ vi.mock('./group.service.js', () => ({
     },
 }));
 
-vi.mock('./aiEngine.service.js', () => ({
-    aiEngineService: {
-        validateGoal: vi.fn(() => Promise.resolve({
+const { validateGoalMock } = vi.hoisted(() => ({
+    validateGoalMock: vi.fn(() =>
+        Promise.resolve({
             success: true,
             is_valid: true,
+            status: 'accepted' as const,
             feedback: undefined,
             socratic_hint: undefined,
             missing_criteria: [],
-        })),
+        }),
+    ),
+}));
+
+vi.mock('./aiEngine.service.js', () => ({
+    aiEngineService: {
+        validateGoal: validateGoalMock,
         refineGoal: vi.fn(() => Promise.resolve({ success: true, refined_goal: null })),
+    },
+}));
+
+vi.mock('./weekContext.service.js', () => ({
+    WeekContextService: {
+        sessionWeekForChatSpace: vi.fn(() =>
+            Promise.resolve({
+                weekTitle: 'Minggu 1',
+                weekIndex: 1,
+                materials: [{ title: 'Intro' }],
+            }),
+        ),
     },
 }));
 
@@ -146,6 +165,38 @@ describe('GoalService', () => {
             statusCode: 400,
             message: 'Tujuan harus mengandung kata kerja aksi dari Taksonomi Bloom',
         });
+    });
+
+    it('rejects with socratic_hint details when AI week validation returns revise', async () => {
+        prismaMock.chatSpace.findFirst.mockResolvedValue({
+            id: 'chat-1',
+            groupId: 'group-1',
+            weekId: 'week-1',
+            group: { id: 'group-1', name: 'Group 1' },
+        });
+        isGroupMemberMock.mockResolvedValue(true);
+        prismaMock.learningGoal.findFirst.mockResolvedValue(null);
+        validateGoalContentMock.mockReturnValue({ isValid: true, message: 'Tujuan valid' });
+        validateGoalMock.mockResolvedValueOnce({
+            success: true,
+            is_valid: false,
+            status: 'revise',
+            socratic_hint: 'Hubungkan tujuan dengan materi minggu ini.',
+            feedback: undefined,
+            missing_criteria: [],
+        });
+
+        await expect(
+            GoalService.createGoal(
+                { chat_space_id: 'chat-1', content: 'Menganalisis topik yang tidak terkait minggu ini sama sekali.' },
+                'user-1',
+            ),
+        ).rejects.toMatchObject({
+            statusCode: 400,
+            message: 'Hubungkan tujuan dengan materi minggu ini.',
+            details: { status: 'revise', socratic_hint: 'Hubungkan tujuan dengan materi minggu ini.' },
+        });
+        expect(prismaMock.learningGoal.create).not.toHaveBeenCalled();
     });
 
     it('returns empty goals for a chat space with no shared goal', async () => {

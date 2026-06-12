@@ -6,6 +6,7 @@ const {
     mockKnowledgeBaseService,
     mockGroupService,
     mockGoalService,
+    mockReadingRecommendationService,
 } = vi.hoisted(() => ({
     mockCourseService: {
         createCourse: vi.fn(),
@@ -25,6 +26,9 @@ const {
     mockGoalService: {
         getMyGoals: vi.fn(),
     },
+    mockReadingRecommendationService: {
+        generate: vi.fn(),
+    },
 }));
 
 vi.mock('../services/course.service.js', () => ({
@@ -41,6 +45,10 @@ vi.mock('../services/group.service.js', () => ({
 
 vi.mock('../services/goal.service.js', () => ({
     GoalService: mockGoalService,
+}));
+
+vi.mock('../services/readingRecommendation.service.js', () => ({
+    ReadingRecommendationService: mockReadingRecommendationService,
 }));
 
 import { CourseController } from './course.controller.js';
@@ -246,6 +254,35 @@ describe('CourseController', () => {
 
         expect(mockKnowledgeBaseService.getCourseFiles).toHaveBeenCalledWith('course-1', 'student-1', 'student');
         expect(res.json).toHaveBeenCalledWith({ data: files });
+    });
+
+    it('returns reading recommendations for a course', async () => {
+        mockReadingRecommendationService.generate.mockResolvedValue({
+            recommendations: [{ sourceTitle: 'week-3-transformer.pdf' }],
+            fallback: null,
+        });
+        const req = mockReq({
+            params: { id: 'course-1' },
+            body: { topic: 'transformer', source_scope: 'course_knowledge_base', limit: 3 },
+            user: { userId: 'student-1', role: 'student' } as Request['user'],
+        });
+        const res = mockRes();
+        const next = mockNext();
+
+        await CourseController.getReadingRecommendations(req as Request, res as Response, next);
+
+        expect(mockReadingRecommendationService.generate).toHaveBeenCalledWith(
+            'course-1',
+            req.body,
+            'student-1',
+            'student'
+        );
+        expect(res.json).toHaveBeenCalledWith({
+            data: {
+                recommendations: [{ sourceTitle: 'week-3-transformer.pdf' }],
+                fallback: null,
+            },
+        });
     });
 
     it('returns enrolled courses using student role override', async () => {

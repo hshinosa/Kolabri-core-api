@@ -32,27 +32,20 @@ describe('DashboardService', () => {
         prismaMock.group.count.mockResolvedValue(8);
         prismaMock.chatSpace.count.mockResolvedValue(6);
         prismaMock.chatMessage.count.mockResolvedValueOnce(100).mockResolvedValueOnce(7).mockResolvedValueOnce(18);
-        prismaMock.chatMessage.groupBy.mockResolvedValue([{ senderId: 'user-1' }, { senderId: 'user-2' }]);
+        prismaMock.chatMessage.groupBy
+            .mockResolvedValueOnce([{ senderId: 'user-1' }, { senderId: 'user-2' }])
+            .mockResolvedValueOnce([{ chatSpaceId: 'cs-1', _count: { id: 2 } }])
+            .mockResolvedValueOnce([{ senderId: 'user-1', _count: { id: 1 } }, { senderId: 'user-2', _count: { id: 1 } }]);
         prismaMock.chatMessage.findMany
-            .mockResolvedValueOnce([
-                {
-                    id: 'msg-1',
-                    content: 'Explain why this argument works',
-                    senderId: 'user-1',
-                    sender: { id: 'user-1', name: 'Alya' },
-                    chatSpace: { id: 'chat-1', group: { course: { id: 'course-1', name: 'AI Basics' } } },
-                },
-                {
-                    id: 'msg-2',
-                    content: 'Plain status update',
-                    senderId: 'user-2',
-                    sender: { id: 'user-2', name: 'Bima' },
-                    chatSpace: { id: 'chat-1', group: { course: { id: 'course-1', name: 'AI Basics' } } },
-                },
-            ])
+            .mockResolvedValueOnce([{ content: 'Explain why this argument works' }, { content: 'Plain status update' }])
             .mockResolvedValueOnce([{ createdAt: new Date('2026-05-01T00:00:00.000Z') }])
             .mockResolvedValueOnce([{ createdAt: new Date('2026-05-01T00:00:00.000Z') }]);
-        prismaMock.user.findMany.mockResolvedValue([{ createdAt: new Date('2026-05-01T00:00:00.000Z') }]);
+        prismaMock.chatSpace.findMany.mockResolvedValue([
+            { id: 'cs-1', group: { course: { id: 'course-1', name: 'AI Basics' } } },
+        ]);
+        prismaMock.user.findMany
+            .mockResolvedValueOnce([{ id: 'user-1', name: 'Alya' }, { id: 'user-2', name: 'Bima' }])
+            .mockResolvedValueOnce([{ createdAt: new Date('2026-05-01T00:00:00.000Z') }]);
 
         const result = await DashboardService.getStats({ startDate: '2026-05-01', endDate: '2026-05-02' });
 
@@ -85,7 +78,7 @@ describe('DashboardService', () => {
     });
 
     it('defaults unsupported chart periods to 30d', async () => {
-        prismaMock.user.findMany.mockResolvedValue([{ createdAt: new Date('2026-05-01T00:00:00.000Z') }]);
+        prismaMock.user.findMany.mockResolvedValue([{ createdAt: new Date() }]);
 
         const result = await DashboardService.getUserGrowthChart('weird-period');
 

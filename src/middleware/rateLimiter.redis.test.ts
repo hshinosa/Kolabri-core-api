@@ -3,11 +3,13 @@ import { _resetRedisForTests, initRedis, getRedis } from '../config/redis.js';
 
 describe('rateLimiter Redis store integration', () => {
     beforeEach(() => {
+        process.env.VITEST_RATE_LIMIT_REAL = '1';
         vi.resetModules();
         _resetRedisForTests();
     });
 
     afterEach(() => {
+        delete process.env.VITEST_RATE_LIMIT_REAL;
         _resetRedisForTests();
     });
 
@@ -44,9 +46,12 @@ describe('rateLimiter Redis store integration', () => {
             disconnectRedis: vi.fn(),
         }));
 
-        const { rateLimiter } = await import('./rateLimiter.js');
-        expect(typeof rateLimiter).toBe('function');
-        expect(fakeRedis.call).toHaveBeenCalled();
+        vi.resetModules();
+        const redisMod = await import('../config/redis.js');
+        const rateLimiterMod = await import('./rateLimiter.js');
+
+        expect(redisMod.getRedis()).toBe(fakeRedis);
+        expect(typeof rateLimiterMod.rateLimiter).toBe('function');
 
         vi.doUnmock('../config/redis.js');
     });

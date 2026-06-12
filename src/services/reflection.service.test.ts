@@ -1,14 +1,19 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
-const { prismaMock } = vi.hoisted(() => ({
+const { prismaMock, invalidateDashboardCacheMock } = vi.hoisted(() => ({
     prismaMock: {
         learningGoal: { findUnique: vi.fn() },
         reflection: { create: vi.fn(), findMany: vi.fn() },
     },
+    invalidateDashboardCacheMock: vi.fn(),
 }));
 
 vi.mock('../config/database.js', () => ({
     default: prismaMock,
+}));
+
+vi.mock('./dashboard.service.js', () => ({
+    invalidateDashboardCache: invalidateDashboardCacheMock,
 }));
 
 import { ReflectionService } from './reflection.service.js';
@@ -54,6 +59,7 @@ describe('ReflectionService', () => {
             createdBy: { id: 'student-1', name: 'Alya' },
             createdAt,
         });
+        expect(invalidateDashboardCacheMock).toHaveBeenCalledTimes(1);
     });
 
     it('rejects reflection creation for users outside the group', async () => {

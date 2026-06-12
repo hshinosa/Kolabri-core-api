@@ -3,10 +3,21 @@ import http from 'node:http';
 import express from 'express';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
+import { _resetRedisForTests } from '../config/redis.js';
+
 type RateLimiterModule = typeof import('./rateLimiter.js');
 
-async function createServer(rateLimiterModule: RateLimiterModule) {
+async function createServer(rateLimiterModule: RateLimiterModule, isolateKey = false) {
     const app = express();
+
+    if (isolateKey) {
+        const bucket = `vitest-${Date.now()}-${Math.random()}`;
+        app.set('trust proxy', false);
+        app.use((req, _res, next) => {
+            Object.defineProperty(req, 'ip', { value: bucket, configurable: true });
+            next();
+        });
+    }
 
     app.use(rateLimiterModule.rateLimiter);
     app.get('/limited', (_req, res) => {
@@ -45,17 +56,28 @@ async function closeServer(server: http.Server): Promise<void> {
 
 describe('rateLimiter', () => {
     beforeEach(() => {
+        process.env.VITEST_RATE_LIMIT_REAL = '1';
+        delete process.env.REDIS_URL;
+        _resetRedisForTests();
+        vi.resetModules();
+    });
+
+    afterEach(() => {
         vi.resetModules();
     });
 
     afterEach(() => {
         delete process.env.RATE_LIMIT_WINDOW_MS;
         delete process.env.RATE_LIMIT_MAX_REQUESTS;
+        delete process.env.VITEST_RATE_LIMIT_REAL;
+        delete process.env.REDIS_URL;
+        _resetRedisForTests();
     });
 
     it('allows requests within the configured limit', async () => {
         process.env.RATE_LIMIT_WINDOW_MS = '60000';
         process.env.RATE_LIMIT_MAX_REQUESTS = '2';
+        delete process.env.REDIS_URL;
 
         const rateLimiterModule = await import('./rateLimiter.js');
         const { server, url } = await createServer(rateLimiterModule);
@@ -70,11 +92,13 @@ describe('rateLimiter', () => {
     });
 
     it('returns 429 after exceeding the configured limit', async () => {
+        vi.resetModules();
         process.env.RATE_LIMIT_WINDOW_MS = '60000';
         process.env.RATE_LIMIT_MAX_REQUESTS = '1';
+        delete process.env.REDIS_URL;
 
         const rateLimiterModule = await import('./rateLimiter.js');
-        const { server, url } = await createServer(rateLimiterModule);
+        const { server, url } = await createServer(rateLimiterModule, true);
 
         const first = await fetch(url);
         const second = await fetch(url);

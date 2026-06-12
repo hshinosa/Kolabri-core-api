@@ -59,6 +59,7 @@ describe('Error Middleware', () => {
             expect(mockRes.json).toHaveBeenCalledWith({
                 status: 400,
                 message: 'Invalid input',
+                error: { code: 'BAD_REQUEST', message: 'Invalid input' },
                 errors: [{ field: 'email', message: 'Invalid email format' }],
             });
         });

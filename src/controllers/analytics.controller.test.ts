@@ -1,55 +1,21 @@
 import type { NextFunction, Request, Response } from 'express';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
-const {
-    mockAiEngineService,
-    mockChatAnalyticsService,
-    prismaMock,
-    chatLogFindMock,
-    recentMessagesSortMock,
-    recentMessagesLimitMock,
-    recentMessagesLeanMock,
-} = vi.hoisted(() => {
-    const recentMessagesLeanMock = vi.fn();
-    const recentMessagesLimitMock = vi.fn(() => ({ lean: recentMessagesLeanMock }));
-    const recentMessagesSortMock = vi.fn(() => ({ limit: recentMessagesLimitMock }));
-    const chatLogFindMock = vi.fn(() => ({ sort: recentMessagesSortMock }));
-
-    return {
-        mockAiEngineService: {
-            analyzeEngagement: vi.fn(),
-            exportProcessMiningData: vi.fn(),
-        },
-        mockChatAnalyticsService: {
-            getGroupAnalytics: vi.fn(),
-        },
-        prismaMock: {
-group: { findUnique: vi.fn(), findFirst: vi.fn() },
-course: { findUnique: vi.fn(), findFirst: vi.fn() },
-        },
-        chatLogFindMock,
-        recentMessagesSortMock,
-        recentMessagesLimitMock,
-        recentMessagesLeanMock,
-    };
-});
-
-vi.mock('../services/aiEngine.service.js', () => ({
-    aiEngineService: mockAiEngineService,
-}));
-
-vi.mock('../services/chatAnalytics.service.js', () => ({
-    chatAnalyticsService: mockChatAnalyticsService,
-}));
-
-vi.mock('../config/database.js', () => ({
-    default: prismaMock,
-}));
-
-vi.mock('../models/ChatLog.js', () => ({
-    ChatLog: {
-        find: chatLogFindMock,
+const { mockAnalyticsService } = vi.hoisted(() => ({
+    mockAnalyticsService: {
+        getGroupAnalytics: vi.fn(),
+        getCourseAnalytics: vi.fn(),
+        analyzeText: vi.fn(),
+        exportProcessMining: vi.fn(),
+        getAnalyticsSummary: vi.fn(),
+        getChatSpaceAnalytics: vi.fn(),
+        getGroupQualityStatus: vi.fn(),
+        formatAnalyticsAsCSV: vi.fn(),
     },
+}));
+
+vi.mock('../services/analytics.service.js', () => ({
+    AnalyticsService: mockAnalyticsService,
 }));
 
 import { AnalyticsController } from './analytics.controller.js';
@@ -69,12 +35,16 @@ function mockReq(overrides: Partial<Request> = {}) {
 }
 
 function mockRes(): Partial<Response> {
-    const res: Partial<Response> & { status: ReturnType<typeof vi.fn>; json: ReturnType<typeof vi.fn> } = {
+    const res: Partial<Response> & { status: ReturnType<typeof vi.fn>; json: ReturnType<typeof vi.fn>; setHeader: ReturnType<typeof vi.fn>; send: ReturnType<typeof vi.fn> } = {
         status: vi.fn(),
         json: vi.fn(),
+        setHeader: vi.fn(),
+        send: vi.fn(),
     };
     res.status.mockReturnValue(res as Response);
     res.json.mockReturnValue(res as Response);
+    res.setHeader.mockReturnValue(res as Response);
+    res.send.mockReturnValue(res as Response);
     return res;
 }
 
@@ -88,59 +58,7 @@ describe('AnalyticsController', () => {
     });
 
     it('returns shaped group analytics with members, chat spaces, and recent activity', async () => {
-        prismaMock.group.findFirst.mockResolvedValue({
-            id: 'group-1',
-            name: 'Alpha',
-            course: { ownerId: 'lecturer-1', name: 'Intro AI', code: 'IF101' },
-            members: [
-                { user: { id: 'student-1', name: 'Alice', email: 'alice@example.com' } },
-                { user: { id: 'student-2', name: 'Bob', email: 'bob@example.com' } },
-            ],
-            chatSpaces: [
-                { id: 'chat-1', name: 'General', closedAt: null, createdAt: new Date('2026-05-01T00:00:00.000Z') },
-                { id: 'chat-2', name: 'Review', closedAt: new Date('2026-05-02T00:00:00.000Z'), createdAt: new Date('2026-05-02T00:00:00.000Z') },
-            ],
-        });
-        mockChatAnalyticsService.getGroupAnalytics.mockResolvedValue({
-            qualityScore: 82,
-            recommendation: 'Diskusi sangat baik.',
-            engagementDistribution: { cognitive: 60, behavioral: 25, emotional: 15 },
-            engagementExamples: [{ type: 'cognitive', excerpt: 'analysis' }],
-            qualityBreakdown: { hotPercentage: 50, lexicalVariety: 70 },
-            participantCount: 2,
-            messageCount: 12,
-            participants: ['Alice', 'Bob'],
-        });
-        recentMessagesLeanMock.mockResolvedValue([
-            {
-                _id: { toString: () => 'msg-1' },
-                senderName: 'Alice',
-                senderType: 'student',
-                content: 'x'.repeat(110),
-                createdAt: new Date('2026-05-03T10:00:00.000Z'),
-                isIntervention: false,
-            },
-        ]);
-        const req = mockReq({ params: { groupId: 'group-1' } });
-        const res = mockRes();
-        const next = mockNext();
-
-        await AnalyticsController.getGroupAnalytics(req as Request, res as Response, next);
-
-        expect(prismaMock.group.findFirst).toHaveBeenCalledWith({
-            where: { id: 'group-1', deletedAt: null },
-            include: expect.objectContaining({
-                course: { select: { ownerId: true, name: true, code: true } },
-            }),
-        });
-        expect(chatLogFindMock).toHaveBeenCalledWith({
-            groupId: 'group-1',
-            isDeleted: { $ne: true },
-        });
-        expect(recentMessagesSortMock).toHaveBeenCalledWith({ createdAt: -1 });
-        expect(recentMessagesLimitMock).toHaveBeenCalledWith(20);
-        expect(mockChatAnalyticsService.getGroupAnalytics).toHaveBeenCalledWith('group-1');
-        expect(res.json).toHaveBeenCalledWith({
+        const payload = {
             success: true,
             group: {
                 id: 'group-1',
@@ -153,211 +71,106 @@ describe('AnalyticsController', () => {
                 { id: 'student-1', name: 'Alice', email: 'alice@example.com' },
                 { id: 'student-2', name: 'Bob', email: 'bob@example.com' },
             ],
-            chatSpaces: [
-                {
-                    id: 'chat-1',
-                    name: 'General',
-                    isClosed: false,
-                    closedAt: null,
-                    createdAt: new Date('2026-05-01T00:00:00.000Z'),
-                },
-                {
-                    id: 'chat-2',
-                    name: 'Review',
-                    isClosed: true,
-                    closedAt: new Date('2026-05-02T00:00:00.000Z'),
-                    createdAt: new Date('2026-05-02T00:00:00.000Z'),
-                },
-            ],
-            analytics: {
-                qualityScore: 82,
-                recommendation: 'Diskusi sangat baik.',
-                engagementDistribution: { cognitive: 60, behavioral: 25, emotional: 15 },
-                engagementExamples: [{ type: 'cognitive', excerpt: 'analysis' }],
-                hotPercentage: 50,
-                qualityBreakdown: {
-                    lexical_variety: 0.7,
-                    hot_percentage: 50,
-                    participation: 2,
-                    lexical_score: 70,
-                    hot_score: 50,
-                    cognitive_ratio: 60,
-                },
-                local_message_count: 12,
-                participants: ['Alice', 'Bob'],
-                participantCount: 2,
-            },
-            recentActivity: [
-                {
-                    id: 'msg-1',
-                    senderName: 'Alice',
-                    senderType: 'student',
-                    content: `${'x'.repeat(100)}...`,
-                    createdAt: new Date('2026-05-03T10:00:00.000Z'),
-                    isIntervention: false,
-                },
-            ],
-        });
+            chatSpaces: [],
+            analytics: { qualityScore: 82 },
+            recentActivity: [],
+        };
+        mockAnalyticsService.getGroupAnalytics.mockResolvedValue(payload);
+        const req = mockReq({ params: { groupId: 'group-1' } });
+        const res = mockRes();
+        const next = mockNext();
+
+        await AnalyticsController.getGroupAnalytics(req as Request, res as Response, next);
+
+        expect(mockAnalyticsService.getGroupAnalytics).toHaveBeenCalledWith(
+            'group-1',
+            'lecturer-1',
+            'lecturer'
+        );
+        expect(res.json).toHaveBeenCalledWith(payload);
         expect(next).not.toHaveBeenCalled();
     });
 
     it('forwards not found error when group does not exist', async () => {
-        prismaMock.group.findFirst.mockResolvedValue(null);
+        const err = Object.assign(new Error('Group not found'), {
+            statusCode: 404,
+            code: 'NOT_FOUND',
+        });
+        mockAnalyticsService.getGroupAnalytics.mockRejectedValue(err);
         const req = mockReq({ params: { groupId: 'missing-group' } });
         const res = mockRes();
         const next = mockNext();
 
         await AnalyticsController.getGroupAnalytics(req as Request, res as Response, next);
 
-        expect(next).toHaveBeenCalledWith(
-            expect.objectContaining({
-                statusCode: 404,
-                code: 'NOT_FOUND',
-                message: 'Group not found',
-            })
-        );
+        expect(next).toHaveBeenCalledWith(err);
     });
 
     it('forwards forbidden error when lecturer does not own the course group', async () => {
-        prismaMock.group.findFirst.mockResolvedValue({
-            id: 'group-1',
-            name: 'Alpha',
-            course: { ownerId: 'lecturer-2', name: 'Intro AI', code: 'IF101' },
-            members: [],
-            chatSpaces: [],
+        const err = Object.assign(new Error('You do not own this course'), {
+            statusCode: 403,
+            code: 'FORBIDDEN',
         });
-        const req = mockReq({ params: { groupId: 'group-1' }, user: { userId: 'lecturer-1', role: 'lecturer' } as Request['user'] });
+        mockAnalyticsService.getGroupAnalytics.mockRejectedValue(err);
+        const req = mockReq({ params: { groupId: 'group-1' } });
         const res = mockRes();
         const next = mockNext();
 
         await AnalyticsController.getGroupAnalytics(req as Request, res as Response, next);
 
-        expect(next).toHaveBeenCalledWith(
-            expect.objectContaining({
-                statusCode: 403,
-                code: 'FORBIDDEN',
-                message: 'You do not own this course',
-            })
-        );
+        expect(next).toHaveBeenCalledWith(err);
     });
 
     it('returns aggregated course analytics summary across groups', async () => {
-        prismaMock.course.findFirst.mockResolvedValue({
-            id: 'course-1',
-            name: 'Intro AI',
-            code: 'IF101',
-            ownerId: 'lecturer-1',
-            groups: [
-                {
-                    id: 'group-1',
-                    name: 'Alpha',
-                    members: [{ userId: 'student-1' }, { userId: 'student-2' }],
-                    chatSpaces: [{ id: 'chat-1', name: 'General', closedAt: null }],
-                },
-                {
-                    id: 'group-2',
-                    name: 'Beta',
-                    members: [{ userId: 'student-3' }],
-                    chatSpaces: [
-                        { id: 'chat-2', name: 'Review', closedAt: null },
-                        { id: 'chat-3', name: 'Archive', closedAt: null },
-                    ],
-                },
-            ],
-        });
-        mockChatAnalyticsService.getGroupAnalytics
-            .mockResolvedValueOnce({
-                messageCount: 10,
-                qualityScore: 80,
-                recommendation: 'Solid',
-                engagementDistribution: { cognitive: 50, behavioral: 30, emotional: 20 },
-            })
-            .mockResolvedValueOnce({
-                messageCount: 0,
-                qualityScore: 30,
-                recommendation: 'No data',
-                engagementDistribution: { cognitive: 0, behavioral: 0, emotional: 0 },
-            });
-        const req = mockReq({ params: { courseId: 'course-1' }, user: { userId: 'lecturer-1', role: 'lecturer' } as Request['user'] });
-        const res = mockRes();
-        const next = mockNext();
-
-        await AnalyticsController.getCourseAnalytics(req as Request, res as Response, next);
-
-        expect(mockChatAnalyticsService.getGroupAnalytics).toHaveBeenNthCalledWith(1, 'group-1');
-        expect(mockChatAnalyticsService.getGroupAnalytics).toHaveBeenNthCalledWith(2, 'group-2');
-        expect(res.json).toHaveBeenCalledWith({
+        const payload = {
             success: true,
-            course: {
-                id: 'course-1',
-                name: 'Intro AI',
-                code: 'IF101',
-            },
+            course: { id: 'course-1', name: 'Intro AI', code: 'IF101' },
             summary: {
                 totalGroups: 2,
                 totalMessages: 10,
                 averageQualityScore: 80,
                 groupsNeedingAttention: 0,
             },
-            groups: [
-                {
-                    groupId: 'group-1',
-                    groupName: 'Alpha',
-                    memberCount: 2,
-                    chatSpaceCount: 1,
-                    messageCount: 10,
-                    qualityScore: 80,
-                    recommendation: 'Solid',
-                    engagementDistribution: { cognitive: 50, behavioral: 30, emotional: 20 },
-                    needsAttention: false,
-                },
-                {
-                    groupId: 'group-2',
-                    groupName: 'Beta',
-                    memberCount: 1,
-                    chatSpaceCount: 2,
-                    messageCount: 0,
-                    qualityScore: 30,
-                    recommendation: 'No data',
-                    engagementDistribution: { cognitive: 0, behavioral: 0, emotional: 0 },
-                    needsAttention: true,
-                },
-            ],
-        });
+            groups: [],
+        };
+        mockAnalyticsService.getCourseAnalytics.mockResolvedValue(payload);
+        const req = mockReq({ params: { courseId: 'course-1' } });
+        const res = mockRes();
+        const next = mockNext();
+
+        await AnalyticsController.getCourseAnalytics(req as Request, res as Response, next);
+
+        expect(mockAnalyticsService.getCourseAnalytics).toHaveBeenCalledWith('course-1', 'lecturer-1');
+        expect(res.json).toHaveBeenCalledWith(payload);
         expect(next).not.toHaveBeenCalled();
     });
 
     it('forwards bad request error when analyzeText receives invalid input', async () => {
+        const err = Object.assign(new Error('Text is required'), {
+            statusCode: 400,
+            code: 'BAD_REQUEST',
+        });
+        mockAnalyticsService.analyzeText.mockRejectedValue(err);
         const req = mockReq({ body: { text: '' } });
         const res = mockRes();
         const next = mockNext();
 
         await AnalyticsController.analyzeText(req as Request, res as Response, next);
 
-        expect(mockAiEngineService.analyzeEngagement).not.toHaveBeenCalled();
-        expect(next).toHaveBeenCalledWith(
-            expect.objectContaining({
-                statusCode: 400,
-                code: 'BAD_REQUEST',
-                message: 'Text is required',
-            })
-        );
+        expect(next).toHaveBeenCalledWith(err);
     });
 
     it('analyzes text and returns the ai engine result', async () => {
         const analysis = { score: 0.82, type: 'cognitive' };
-        mockAiEngineService.analyzeEngagement.mockResolvedValue(analysis);
+        mockAnalyticsService.analyzeText.mockResolvedValue({ success: true, analysis });
         const req = mockReq({ body: { text: 'Please analyze this discussion.' } });
         const res = mockRes();
         const next = mockNext();
 
         await AnalyticsController.analyzeText(req as Request, res as Response, next);
 
-        expect(mockAiEngineService.analyzeEngagement).toHaveBeenCalledWith('Please analyze this discussion.');
-        expect(res.json).toHaveBeenCalledWith({
-            success: true,
-            analysis,
-        });
+        expect(mockAnalyticsService.analyzeText).toHaveBeenCalledWith('Please analyze this discussion.');
+        expect(res.json).toHaveBeenCalledWith({ success: true, analysis });
         expect(next).not.toHaveBeenCalled();
     });
 });

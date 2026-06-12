@@ -31,12 +31,18 @@ function mockReq(overrides: Partial<Request> = {}) {
 }
 
 function mockRes(): Partial<Response> {
-    const res: Partial<Response> & { status: ReturnType<typeof vi.fn>; json: ReturnType<typeof vi.fn> } = {
+    const res: Partial<Response> & {
+        status: ReturnType<typeof vi.fn>;
+        json: ReturnType<typeof vi.fn>;
+        set: ReturnType<typeof vi.fn>;
+    } = {
         status: vi.fn(),
         json: vi.fn(),
+        set: vi.fn(),
     };
     res.status.mockReturnValue(res as Response);
     res.json.mockReturnValue(res as Response);
+    res.set.mockReturnValue(res as Response);
     return res;
 }
 
