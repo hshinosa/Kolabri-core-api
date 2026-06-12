@@ -46,13 +46,13 @@ npx prisma db push
 npx prisma generate
 ```
 
-## Demo seed / analytics populate
+## Demo dataset seeding
 
-Use the analytics populate flow for TA demo data and lecturer dashboards. This is the canonical demo seed because it fills both PostgreSQL dashboard data and MongoDB `ChatLog` graph data.
+Use the demo dataset flow for TA demo data and lecturer dashboards. This is the canonical demo seed because it fills both PostgreSQL dashboard data and MongoDB `ChatLog` graph data.
 
 ```bash
-npm run db:populate
-npm run db:verify-populate
+npm run db:demo-data
+npm run db:verify-demo-data
 ```
 
 What it populates:
@@ -66,12 +66,17 @@ siti.rahayu@univ.ac.id / password123
 andi.pratama@student.ac.id / password123
 ```
 
-For a destructive reset + populate + verify:
+For a destructive reset + seed + verify:
 ```bash
-npm run db:reset:populate
+npm run db:reset:demo-data
 ```
 
-Avoid `npm run db:seed` for analytics/dashboard demos. It uses the older blueprint dataset and does not include the Budi analytics dataset.
+`npm run db:seed` now uses the full demo dataset by default.
+
+If you still need the older blueprint dataset, use:
+```bash
+npm run db:seed:legacy
+```
 
 Run:
 ```bash

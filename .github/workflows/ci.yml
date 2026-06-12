@@ -27,3 +27,6 @@ jobs:
 
       - name: Run tests
         run: npm run test:run
+
+      - name: Run scaffolding production-readiness tests (gate)
+        run: npm run test:run -- --testPathPattern="scaffolding|aiEngine.service"

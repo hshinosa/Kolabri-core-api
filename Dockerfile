@@ -10,10 +10,10 @@ RUN npm ci
 COPY prisma ./prisma
 RUN npx prisma generate
 
-COPY tsconfig.json ./
+COPY tsconfig.json tsconfig.build.json ./
 COPY src ./src
 
-RUN npm run build
+RUN npx tsc -p tsconfig.build.json
 
 FROM node:20-alpine AS production
 ENV NODE_ENV=production
@@ -25,7 +25,11 @@ COPY --from=base /app/node_modules ./node_modules
 COPY --from=base /app/dist ./dist
 COPY package*.json ./
 COPY prisma ./prisma
+COPY entrypoint.sh ./
+
+RUN chmod +x entrypoint.sh
 
 EXPOSE 3000
 
+ENTRYPOINT ["./entrypoint.sh"]
 CMD ["node", "dist/server.js"]
