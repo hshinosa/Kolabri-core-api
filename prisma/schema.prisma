@@ -32,6 +32,9 @@ model User {
   emailVerifiedAt      DateTime? @map("email_verified_at")
   themePreference      String?   @default("system") @map("theme_preference") // "light" | "dark" | "system"
   languagePreference   String?   @default("id") @map("language_preference") // "id" | "en"
+  analyticsVisibility  Boolean   @default(false) @map("analytics_visibility")
+  aiInteractionConsent Boolean   @default(false) @map("ai_interaction_consent")
+  dataSharingConsent   Boolean   @default(false) @map("data_sharing_consent")
   createdAt            DateTime  @default(now()) @map("created_at")
   updatedAt            DateTime  @updatedAt @map("updated_at")
   deletedAt            DateTime? @map("deleted_at")
@@ -53,6 +56,9 @@ model User {
   aiAbTestResults  AiAbTestResult[]
   auditLogs        AuditLog[]
   notifications    Notification[]
+  consentRecords         ConsentRecord[]
+  exportJobs             ExportJob[]
+  chatSpacePreReadCompletions ChatSpacePreReadCompletion[]
 
   @@index([role])
   @@index([isActive])
@@ -72,6 +78,11 @@ model Course {
   name         String
   description  String?
   joinCode     String    @unique @map("join_code")
+  minMembersPerGroup Int @default(1) @map("min_members_per_group")
+  maxMembersPerGroup Int @default(1000) @map("max_members_per_group")
+  aiGuardrailConfig Json? @map("ai_guardrail_config")
+  aiScaffoldingConfig Json? @map("ai_scaffolding_config")
+  aiEscalationConfig Json? @map("ai_escalation_config")
   semester     String?   // "Ganjil" | "Genap"
   academicYear String?   @map("academic_year") // e.g. "2024/2025"
   isActive     Boolean   @default(true) @map("is_active")
@@ -94,6 +105,8 @@ model Course {
   knowledgeBases KnowledgeBase[]
   aiUsages       AiUsage[]
   aiAbTests      AiAbTest[]
+  courseWeeks    CourseWeek[]
+  courseMaterials CourseMaterial[]
 
   @@index([ownerId])
   @@index([code])
@@ -208,18 +221,37 @@ model ChatSpace {
   // Creator
   createdBy String @map("created_by")
 
+  // Course week (Laravel course_weeks.id — opaque UUID, no FK)
+  weekId String? @map("week_id")
+
   // Relations
-  groupId     String         @map("group_id")
-  group       Group          @relation(fields: [groupId], references: [id], onDelete: Cascade)
-  messages    ChatMessage[]
-  goals       LearningGoal[]
-  reflections Reflection[]
+  groupId              String                        @map("group_id")
+  group                Group                         @relation(fields: [groupId], references: [id], onDelete: Cascade)
+  messages             ChatMessage[]
+  goals                LearningGoal[]
+  reflections          Reflection[]
+  preReadCompletions   ChatSpacePreReadCompletion[]
 
   @@index([groupId])
+  @@index([weekId])
   @@index([deletedAt])
   @@index([groupId, deletedAt])
   @@index([groupId, type])
   @@map("chat_spaces")
+}
+
+model ChatSpacePreReadCompletion {
+  id          String   @id @default(uuid())
+  completedAt DateTime @default(now()) @map("completed_at")
+
+  userId      String    @map("user_id")
+  user        User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+  chatSpaceId String    @map("chat_space_id")
+  chatSpace   ChatSpace @relation(fields: [chatSpaceId], references: [id], onDelete: Cascade)
+
+  @@unique([userId, chatSpaceId])
+  @@index([chatSpaceId])
+  @@map("chat_space_pre_read_completions")
 }
 
 model ChatMessage {
@@ -234,6 +266,16 @@ model ChatMessage {
   replyTo   ChatMessage?  @relation("MessageReplies", fields: [replyToId], references: [id], onDelete: SetNull)
   replies   ChatMessage[] @relation("MessageReplies")
 
+  // Topic / thread / pin for search & organization (fr-disc-08)
+  topic     String?  @map("topic")
+  threadId  String?  @map("thread_id")
+  isPinned  Boolean  @default(false) @map("is_pinned")
+  pinnedAt  DateTime? @map("pinned_at")
+  pinnedBy  String?  @map("pinned_by")
+
+  /// AI scaffolding citations: [{ course_material_id, label?, page? }]
+  citations Json? @map("citations")
+
   // Relations
   chatSpaceId String    @map("chat_space_id")
   chatSpace   ChatSpace @relation(fields: [chatSpaceId], references: [id], onDelete: Cascade)
@@ -243,6 +285,7 @@ model ChatMessage {
   @@index([chatSpaceId])
   @@index([senderId])
   @@index([chatSpaceId, createdAt])
+  @@index([chatSpaceId, isPinned, createdAt])
   @@map("chat_messages")
 }
 
@@ -316,6 +359,10 @@ model KnowledgeBase {
   processedAt  DateTime?    @map("processed_at")
   deletedAt    DateTime?    @map("deleted_at")
 
+  weekIndex        Int?    @map("week_index")
+  weekId           String? @map("week_id")
+  courseMaterialId String? @map("course_material_id")
+
   // Relations
   courseId   String @map("course_id")
   course     Course @relation(fields: [courseId], references: [id], onDelete: Cascade)
@@ -325,6 +372,8 @@ model KnowledgeBase {
   @@index([courseId])
   @@index([uploadedBy])
   @@index([deletedAt])
+  @@index([courseId, weekIndex])
+  @@index([courseMaterialId])
   @@map("knowledge_bases")
 }
 
@@ -570,4 +619,144 @@ model Notification {
   @@index([isRead])
   @@index([createdAt])
   @@map("notifications")
+}
+
+model EscalationState {
+  id              String   @id @default(uuid())
+  courseId        String   @map("course_id")
+  groupId         String   @map("group_id")
+  chatSpaceId     String   @map("chat_space_id")
+  issueType       String   @map("issue_type")
+  currentStage    String   @map("current_stage")
+  history         Json     @default("[]")
+  lastCheckedAt   DateTime @map("last_checked_at")
+  resolvedAt      DateTime? @map("resolved_at")
+  resolvedBy      String?  @map("resolved_by")
+  notificationSentAt DateTime? @map("notification_sent_at")
+  createdAt       DateTime @default(now()) @map("created_at")
+  updatedAt       DateTime @updatedAt @map("updated_at")
+
+  @@index([courseId, currentStage])
+  @@index([groupId, currentStage])
+  @@index([chatSpaceId, issueType, currentStage])
+  @@map("escalation_states")
+}
+
+model ConsentRecord {
+  id         String   @id @default(uuid())
+  userId     String   @map("user_id")
+  consentType String  @map("consent_type") // 'ai_interaction' | 'data_analytics' | 'data_sharing'
+  granted    Boolean
+  grantedAt  DateTime @map("granted_at")
+  revokedAt  DateTime? @map("revoked_at")
+  createdAt  DateTime @default(now()) @map("created_at")
+  updatedAt  DateTime @updatedAt @map("updated_at")
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId])
+  @@index([consentType])
+  @@index([userId, consentType])
+  @@map("consent_records")
+}
+
+model ExportJob {
+  id          String   @id @default(uuid())
+  userId      String   @map("user_id")
+  exportType  String   @map("export_type") // 'USER_DATA' | 'COURSE_DATA'
+  courseId    String?  @map("course_id")
+  status      String   @default("pending") // 'pending' | 'processing' | 'completed' | 'failed' | 'expired'
+  filePath    String?  @map("file_path")
+  createdAt   DateTime @default(now()) @map("created_at")
+  completedAt DateTime? @map("completed_at")
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId])
+  @@index([status])
+  @@index([createdAt])
+  @@map("export_jobs")
+}
+
+// ============================================
+// DATA RETENTION POLICIES (NFR-DATA-01)
+// ============================================
+
+enum DataType {
+  USER
+  COURSE
+  GROUP
+  CHAT_SPACE
+  KNOWLEDGE_BASE
+  CHAT_LOG
+}
+
+model DataRetentionPolicy {
+  id               String   @id @default(uuid())
+  dataType         DataType @unique
+  retentionDays    Int      @default(365) @map("retention_days")
+  archiveAfterDays Int      @default(180) @map("archive_after_days")
+  autoPurge        Boolean  @default(false) @map("auto_purge")
+  createdAt        DateTime @default(now()) @map("created_at")
+  updatedAt        DateTime @updatedAt @map("updated_at")
+
+  @@map("data_retention_policies")
+}
+
+// ============================================
+// COURSE WEEKS & MATERIALS
+// ============================================
+
+model CourseWeek {
+  id         String   @id
+  courseId   String   @map("course_id")
+  weekIndex  Int      @map("week_index")
+  title      String
+  sortOrder  Int      @default(0) @map("sort_order")
+  createdAt  DateTime @default(now()) @map("created_at")
+  updatedAt  DateTime @updatedAt @map("updated_at")
+
+  course     Course   @relation(fields: [courseId], references: [id], onDelete: Cascade)
+  materials  CourseWeekMaterial[]
+
+  @@unique([courseId, weekIndex])
+  @@map("course_weeks")
+}
+
+model CourseWeekMaterial {
+  id               String   @id
+  courseWeekId     String   @map("course_week_id")
+  courseMaterialId String   @map("course_material_id")
+  sortOrder        Int      @default(0) @map("sort_order")
+  createdAt        DateTime @default(now()) @map("created_at")
+  updatedAt        DateTime @updatedAt @map("updated_at")
+
+  courseWeek       CourseWeek    @relation(fields: [courseWeekId], references: [id], onDelete: Cascade)
+  material         CourseMaterial @relation(fields: [courseMaterialId], references: [id], onDelete: Cascade)
+
+  @@unique([courseWeekId, courseMaterialId])
+  @@index([courseWeekId, sortOrder])
+  @@map("course_week_materials")
+}
+
+model CourseMaterial {
+  id          String   @id
+  courseId    String   @map("course_id")
+  title       String
+  description String?
+  fileName    String   @map("file_name")
+  filePath    String   @map("file_path")
+  fileType    String?  @map("file_type")
+  fileSize    Int      @default(0) @map("file_size")
+  uploadedBy  String?  @map("uploaded_by")
+  viewCount   Int      @default(0) @map("view_count")
+  sortOrder   Int      @default(0) @map("sort_order")
+  createdAt   DateTime @default(now()) @map("created_at")
+  updatedAt   DateTime @updatedAt @map("updated_at")
+
+  course      Course   @relation(fields: [courseId], references: [id], onDelete: Cascade)
+  weekLinks   CourseWeekMaterial[]
+
+  @@index([courseId])
+  @@map("course_materials")
 }
