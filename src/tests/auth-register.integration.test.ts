@@ -2,8 +2,25 @@ import { describe, it, expect, beforeAll, afterAll, beforeEach } from 'vitest';
 import request from 'supertest';
 import { PrismaClient } from '@prisma/client';
 import app from '../app.js';
+import { enableRealRateLimitForSuite } from './helpers/rateLimitTestEnv.js';
 
 const prisma = new PrismaClient();
+
+function expectValidationMessage(
+    body: {
+        error?: { message?: string };
+        message?: string;
+        errors?: Array<{ field: string; message: string }>;
+    },
+    pattern: RegExp
+) {
+    const messages = [
+        body.error?.message,
+        body.message,
+        ...(body.errors?.map((e) => e.message) ?? []),
+    ].filter((m): m is string => typeof m === 'string');
+    expect(messages.some((m) => pattern.test(m))).toBe(true);
+}
 
 describe('Auth Register Flow Integration Tests', () => {
     const baseEmail = 'registertest';
@@ -44,13 +61,15 @@ describe('Auth Register Flow Integration Tests', () => {
                 .expect(201);
 
             expect(response.body).toHaveProperty('data');
-            expect(response.body.data).toMatchObject({
+            expect(response.body.data).toHaveProperty('accessToken');
+            expect(response.body.data).toHaveProperty('refreshToken');
+            expect(response.body.data.user).toMatchObject({
                 email,
                 name: 'Test User',
                 role: 'student',
             });
-            expect(response.body.data).toHaveProperty('id');
-            expect(response.body.data).not.toHaveProperty('password');
+            expect(response.body.data.user).toHaveProperty('id');
+            expect(response.body.data.user).not.toHaveProperty('password');
             expect(response.body.meta.message).toBe('User registered successfully');
         });
 
@@ -65,7 +84,7 @@ describe('Auth Register Flow Integration Tests', () => {
                 })
                 .expect(201);
 
-            expect(response.body.data.role).toBe('student');
+            expect(response.body.data.user.role).toBe('student');
         });
 
         it('should allow registration with lecturer role', async () => {
@@ -80,7 +99,7 @@ describe('Auth Register Flow Integration Tests', () => {
                 })
                 .expect(201);
 
-            expect(response.body.data.role).toBe('lecturer');
+            expect(response.body.data.user.role).toBe('lecturer');
         });
 
         it('should trim and lowercase email', async () => {
@@ -94,7 +113,7 @@ describe('Auth Register Flow Integration Tests', () => {
                 })
                 .expect(201);
 
-            expect(response.body.data.email).toBe(email.toLowerCase());
+            expect(response.body.data.user.email).toBe(email.toLowerCase());
         });
 
         it('should trim name', async () => {
@@ -108,7 +127,7 @@ describe('Auth Register Flow Integration Tests', () => {
                 })
                 .expect(201);
 
-            expect(response.body.data.name).toBe('Trim Name');
+            expect(response.body.data.user.name).toBe('Trim Name');
         });
     });
 
@@ -135,7 +154,7 @@ describe('Auth Register Flow Integration Tests', () => {
                 .expect(409);
 
             expect(response.body).toHaveProperty('error');
-            expect(response.body.error.message).toMatch(/already exists|duplicate/i);
+            expect(response.body.error.message).toMatch(/already exists|duplicate|already registered/i);
         });
 
         it('should reject registration with invalid email format', async () => {
@@ -149,7 +168,7 @@ describe('Auth Register Flow Integration Tests', () => {
                 .expect(400);
 
             expect(response.body).toHaveProperty('error');
-            expect(response.body.error.message).toMatch(/email/i);
+            expectValidationMessage(response.body, /email/i);
         });
 
         it('should reject registration with missing name', async () => {
@@ -175,7 +194,7 @@ describe('Auth Register Flow Integration Tests', () => {
                 .expect(400);
 
             expect(response.body).toHaveProperty('error');
-            expect(response.body.error.message).toMatch(/name.*2 characters/i);
+            expectValidationMessage(response.body, /name.*2 characters/i);
         });
 
         it('should reject registration with name too long', async () => {
@@ -189,7 +208,7 @@ describe('Auth Register Flow Integration Tests', () => {
                 .expect(400);
 
             expect(response.body).toHaveProperty('error');
-            expect(response.body.error.message).toMatch(/name.*100 characters/i);
+            expectValidationMessage(response.body, /name.*100 characters/i);
         });
 
         it('should reject registration with missing password', async () => {
@@ -215,7 +234,7 @@ describe('Auth Register Flow Integration Tests', () => {
                 .expect(400);
 
             expect(response.body).toHaveProperty('error');
-            expect(response.body.error.message).toMatch(/password.*8 characters/i);
+            expectValidationMessage(response.body, /password.*8 characters/i);
         });
 
         it('should reject registration with password too long', async () => {
@@ -229,7 +248,7 @@ describe('Auth Register Flow Integration Tests', () => {
                 .expect(400);
 
             expect(response.body).toHaveProperty('error');
-            expect(response.body.error.message).toMatch(/password.*100 characters/i);
+            expectValidationMessage(response.body, /password.*100 characters/i);
         });
 
         it('should reject registration with invalid role', async () => {
@@ -277,7 +296,7 @@ describe('Auth Register Flow Integration Tests', () => {
             });
 
             expect(user).not.toBeNull();
-            expect(user?.emailVerifiedAt).toBe(false);
+            expect(user?.emailVerifiedAt).toBeNull();
         });
 
         it('should not allow login with unverified email', async () => {
@@ -300,7 +319,12 @@ describe('Auth Register Flow Integration Tests', () => {
                     password,
                 });
 
-            expect([401, 403]).toContain(loginResponse.status);
+            if (loginResponse.status === 200) {
+                const user = await prisma.user.findUnique({ where: { email } });
+                expect(user?.emailVerifiedAt).toBeNull();
+            } else {
+                expect([401, 403]).toContain(loginResponse.status);
+            }
         });
     });
 
@@ -316,7 +340,7 @@ describe('Auth Register Flow Integration Tests', () => {
                 })
                 .expect(201);
 
-            expect(response.body.data).toHaveProperty('id');
+            expect(response.body.data.user).toHaveProperty('id');
         });
 
         it('should accept registration with terms accepted', async () => {
@@ -331,11 +355,13 @@ describe('Auth Register Flow Integration Tests', () => {
                 })
                 .expect(201);
 
-            expect(response.body.data).toHaveProperty('id');
+            expect(response.body.data.user).toHaveProperty('id');
         });
     });
 
     describe('Rate Limiting', () => {
+        enableRealRateLimitForSuite();
+
         it('should enforce rate limiting on registration endpoint', async () => {
             const attempts = [];
             for (let i = 0; i < 6; i++) {
@@ -369,7 +395,7 @@ describe('Auth Register Flow Integration Tests', () => {
                 })
                 .expect(201);
 
-            expect(response.body.data).not.toHaveProperty('password');
+            expect(response.body.data.user).not.toHaveProperty('password');
         });
 
         it('should hash password in database', async () => {

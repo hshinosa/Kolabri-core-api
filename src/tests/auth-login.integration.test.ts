@@ -3,6 +3,7 @@ import request from 'supertest';
 import { PrismaClient } from '@prisma/client';
 import bcrypt from 'bcrypt';
 import app from '../app.js';
+import { enableRealRateLimitForSuite } from './helpers/rateLimitTestEnv.js';
 
 const prisma = new PrismaClient();
 
@@ -187,6 +188,8 @@ describe('Auth Login Flow Integration Tests', () => {
     });
 
     describe('Rate Limiting', () => {
+        enableRealRateLimitForSuite();
+
         it('should enforce rate limiting after multiple failed attempts', async () => {
             // Make multiple failed login attempts
             const attempts = [];

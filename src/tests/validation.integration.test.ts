@@ -1,18 +1,64 @@
 import { describe, it, expect, beforeAll, afterAll } from 'vitest';
 import request from 'supertest';
+import bcrypt from 'bcrypt';
+import { PrismaClient } from '@prisma/client';
 import app from '../app.js';
+
+const prisma = new PrismaClient();
 
 describe('Input Validation Integration Tests', () => {
     let authToken: string;
+    let studentAuthToken: string;
+
+    const validationUser = {
+        email: 'validation-test@example.com',
+        password: 'ValidationPass123!',
+        name: 'Validation Test',
+    };
 
     beforeAll(async () => {
+        await prisma.user.deleteMany({
+            where: { email: { in: [validationUser.email, 'validation-student@example.com'] } },
+        });
+        const hashed = await bcrypt.hash(validationUser.password, 10);
+        await prisma.user.create({
+            data: {
+                email: validationUser.email,
+                password: hashed,
+                name: validationUser.name,
+                role: 'lecturer',
+                emailVerifiedAt: new Date(),
+            },
+        });
+
         const loginRes = await request(app)
             .post('/api/auth/login')
             .send({
-                email: 'test@example.com',
-                password: 'password123',
+                email: validationUser.email,
+                password: validationUser.password,
             });
-        authToken = loginRes.body.token;
+        authToken = loginRes.body.data.accessToken;
+
+        await prisma.user.deleteMany({ where: { email: 'validation-student@example.com' } });
+        const studentHashed = await bcrypt.hash(validationUser.password, 10);
+        await prisma.user.create({
+            data: {
+                email: 'validation-student@example.com',
+                password: studentHashed,
+                name: 'Validation Student',
+                role: 'student',
+                emailVerifiedAt: new Date(),
+            },
+        });
+        const studentLogin = await request(app)
+            .post('/api/auth/login')
+            .send({ email: 'validation-student@example.com', password: validationUser.password });
+        studentAuthToken = studentLogin.body.data.accessToken;
+    });
+
+    afterAll(async () => {
+        await prisma.user.deleteMany({ where: { email: validationUser.email } });
+        await prisma.$disconnect();
     });
 
     describe('Analytics - POST /api/analytics/analyze', () => {
@@ -76,7 +122,7 @@ describe('Input Validation Integration Tests', () => {
             const longTitle = 'a'.repeat(101);
             const res = await request(app)
                 .post('/api/ai-chats')
-                .set('Authorization', `Bearer ${authToken}`)
+                .set('Authorization', `Bearer ${studentAuthToken}`)
                 .send({ title: longTitle });
 
             expect(res.status).toBe(400);
@@ -88,7 +134,7 @@ describe('Input Validation Integration Tests', () => {
         it('should reject reflection shorter than 10 chars', async () => {
             const res = await request(app)
                 .post('/api/chat-spaces/test-id/reflection')
-                .set('Authorization', `Bearer ${authToken}`)
+                .set('Authorization', `Bearer ${studentAuthToken}`)
                 .send({ content: 'short' });
 
             expect(res.status).toBe(400);
@@ -99,7 +145,7 @@ describe('Input Validation Integration Tests', () => {
             const longContent = 'a'.repeat(2001);
             const res = await request(app)
                 .post('/api/chat-spaces/test-id/reflection')
-                .set('Authorization', `Bearer ${authToken}`)
+                .set('Authorization', `Bearer ${studentAuthToken}`)
                 .send({ content: longContent });
 
             expect(res.status).toBe(400);

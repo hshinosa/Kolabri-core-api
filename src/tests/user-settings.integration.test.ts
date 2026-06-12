@@ -1,8 +1,16 @@
-import { describe, it, expect, beforeAll, afterAll, beforeEach } from 'vitest';
+import { describe, it, expect, beforeAll, afterAll, beforeEach, vi } from 'vitest';
+
+vi.mock('../models/ChatLog.js', () => ({
+    ChatLog: {
+        updateMany: vi.fn().mockResolvedValue({ modifiedCount: 0 }),
+        deleteMany: vi.fn().mockResolvedValue({ deletedCount: 0 }),
+    },
+}));
 import request from 'supertest';
 import { PrismaClient } from '@prisma/client';
 import bcrypt from 'bcrypt';
 import app from '../app.js';
+import { enableRealRateLimitForSuite } from './helpers/rateLimitTestEnv.js';
 
 const prisma = new PrismaClient();
 
@@ -88,13 +96,28 @@ describe('User Settings Integration Tests', () => {
     });
 
     beforeEach(async () => {
+        await prisma.user.deleteMany({
+            where: {
+                email: {
+                    in: [
+                        'temp-delete@example.com',
+                        'temp-hard-delete@example.com',
+                        'temp-login-delete@example.com',
+                        'bulk1@example.com',
+                        'bulk2@example.com',
+                        'bulk-role@example.com',
+                        'bulkrole1@example.com',
+                    ],
+                },
+            },
+        });
         await new Promise(resolve => setTimeout(resolve, 100));
     });
 
     describe('Profile Update', () => {
         it('should allow admin to update user profile', async () => {
             const response = await request(app)
-                .put(`/api/users/${userId}`)
+                .put(`/api/admin/users/${userId}`)
                 .set('Authorization', `Bearer ${adminToken}`)
                 .send({
                     name: 'Updated Name',
@@ -109,7 +132,7 @@ describe('User Settings Integration Tests', () => {
             const newEmail = 'newemail-settings@example.com';
 
             const response = await request(app)
-                .put(`/api/users/${userId}`)
+                .put(`/api/admin/users/${userId}`)
                 .set('Authorization', `Bearer ${adminToken}`)
                 .send({
                     email: newEmail,
@@ -119,7 +142,7 @@ describe('User Settings Integration Tests', () => {
             expect(response.body.data.email).toBe(newEmail);
 
             await request(app)
-                .put(`/api/users/${userId}`)
+                .put(`/api/admin/users/${userId}`)
                 .set('Authorization', `Bearer ${adminToken}`)
                 .send({
                     email: testUser.email,
@@ -128,7 +151,7 @@ describe('User Settings Integration Tests', () => {
 
         it('should allow admin to update user role', async () => {
             const response = await request(app)
-                .put(`/api/users/${userId}`)
+                .put(`/api/admin/users/${userId}`)
                 .set('Authorization', `Bearer ${adminToken}`)
                 .send({
                     role: 'lecturer',
@@ -138,7 +161,7 @@ describe('User Settings Integration Tests', () => {
             expect(response.body.data.role).toBe('lecturer');
 
             await request(app)
-                .put(`/api/users/${userId}`)
+                .put(`/api/admin/users/${userId}`)
                 .set('Authorization', `Bearer ${adminToken}`)
                 .send({
                     role: testUser.role,
@@ -147,7 +170,7 @@ describe('User Settings Integration Tests', () => {
 
         it('should reject profile update with invalid email', async () => {
             const response = await request(app)
-                .put(`/api/users/${userId}`)
+                .put(`/api/admin/users/${userId}`)
                 .set('Authorization', `Bearer ${adminToken}`)
                 .send({
                     email: 'not-an-email',
@@ -159,7 +182,7 @@ describe('User Settings Integration Tests', () => {
 
         it('should reject profile update with duplicate email', async () => {
             const response = await request(app)
-                .put(`/api/users/${userId}`)
+                .put(`/api/admin/users/${userId}`)
                 .set('Authorization', `Bearer ${adminToken}`)
                 .send({
                     email: adminUser.email,
@@ -171,7 +194,7 @@ describe('User Settings Integration Tests', () => {
 
         it('should reject profile update with invalid role', async () => {
             const response = await request(app)
-                .put(`/api/users/${userId}`)
+                .put(`/api/admin/users/${userId}`)
                 .set('Authorization', `Bearer ${adminToken}`)
                 .send({
                     role: 'superadmin',
@@ -183,7 +206,7 @@ describe('User Settings Integration Tests', () => {
 
         it('should reject profile update without admin token', async () => {
             const response = await request(app)
-                .put(`/api/users/${userId}`)
+                .put(`/api/admin/users/${userId}`)
                 .set('Authorization', `Bearer ${userToken}`)
                 .send({
                     name: 'Unauthorized Update',
@@ -196,7 +219,7 @@ describe('User Settings Integration Tests', () => {
         it('should reject profile update with non-existent user', async () => {
             const fakeUuid = '00000000-0000-0000-0000-000000000000';
             const response = await request(app)
-                .put(`/api/users/${fakeUuid}`)
+                .put(`/api/admin/users/${fakeUuid}`)
                 .set('Authorization', `Bearer ${adminToken}`)
                 .send({
                     name: 'Non-existent User',
@@ -208,7 +231,7 @@ describe('User Settings Integration Tests', () => {
 
         it('should trim and validate name', async () => {
             const response = await request(app)
-                .put(`/api/users/${userId}`)
+                .put(`/api/admin/users/${userId}`)
                 .set('Authorization', `Bearer ${adminToken}`)
                 .send({
                     name: '  Trimmed Name  ',
@@ -220,7 +243,7 @@ describe('User Settings Integration Tests', () => {
 
         it('should reject name that is too short', async () => {
             const response = await request(app)
-                .put(`/api/users/${userId}`)
+                .put(`/api/admin/users/${userId}`)
                 .set('Authorization', `Bearer ${adminToken}`)
                 .send({
                     name: 'A',
@@ -232,10 +255,10 @@ describe('User Settings Integration Tests', () => {
 
         it('should reject name that is too long', async () => {
             const response = await request(app)
-                .put(`/api/users/${userId}`)
+                .put(`/api/admin/users/${userId}`)
                 .set('Authorization', `Bearer ${adminToken}`)
                 .send({
-                    name: 'A'.repeat(101),
+                    name: 'A'.repeat(256),
                 })
                 .expect(400);
 
@@ -266,7 +289,7 @@ describe('User Settings Integration Tests', () => {
 
         it('should allow admin to get any user profile', async () => {
             const response = await request(app)
-                .get(`/api/users/${userId}`)
+                .get(`/api/admin/users/${userId}`)
                 .set('Authorization', `Bearer ${adminToken}`)
                 .expect(200);
 
@@ -275,7 +298,7 @@ describe('User Settings Integration Tests', () => {
 
         it('should deny non-admin from getting other user profiles', async () => {
             const response = await request(app)
-                .get(`/api/users/${adminId}`)
+                .get(`/api/admin/users/${adminId}`)
                 .set('Authorization', `Bearer ${userToken}`)
                 .expect(403);
 
@@ -296,7 +319,7 @@ describe('User Settings Integration Tests', () => {
             });
 
             const response = await request(app)
-                .delete(`/api/users/${tempUser.id}`)
+                .delete(`/api/admin/users/${tempUser.id}`)
                 .set('Authorization', `Bearer ${adminToken}`)
                 .expect(200);
 
@@ -322,7 +345,7 @@ describe('User Settings Integration Tests', () => {
             });
 
             const response = await request(app)
-                .delete(`/api/users/${tempUser.id}/hard`)
+                .delete(`/api/admin/users/${tempUser.id}/hard`)
                 .set('Authorization', `Bearer ${adminToken}`)
                 .expect(200);
 
@@ -337,7 +360,7 @@ describe('User Settings Integration Tests', () => {
 
         it('should reject account deletion without admin token', async () => {
             const response = await request(app)
-                .delete(`/api/users/${userId}`)
+                .delete(`/api/admin/users/${userId}`)
                 .set('Authorization', `Bearer ${userToken}`)
                 .expect(403);
 
@@ -347,7 +370,7 @@ describe('User Settings Integration Tests', () => {
         it('should reject deletion of non-existent user', async () => {
             const fakeUuid = '00000000-0000-0000-0000-000000000000';
             const response = await request(app)
-                .delete(`/api/users/${fakeUuid}`)
+                .delete(`/api/admin/users/${fakeUuid}`)
                 .set('Authorization', `Bearer ${adminToken}`)
                 .expect(404);
 
@@ -366,7 +389,7 @@ describe('User Settings Integration Tests', () => {
             });
 
             await request(app)
-                .delete(`/api/users/${tempUser.id}`)
+                .delete(`/api/admin/users/${tempUser.id}`)
                 .set('Authorization', `Bearer ${adminToken}`)
                 .expect(200);
 
@@ -405,7 +428,7 @@ describe('User Settings Integration Tests', () => {
             });
 
             const response = await request(app)
-                .post('/api/users/bulk-delete')
+                .post('/api/admin/users/bulk-delete')
                 .set('Authorization', `Bearer ${adminToken}`)
                 .send({
                     userIds: [user1.id, user2.id],
@@ -427,7 +450,7 @@ describe('User Settings Integration Tests', () => {
             });
 
             const response = await request(app)
-                .post('/api/users/bulk-role-change')
+                .post('/api/admin/users/bulk-role-change')
                 .set('Authorization', `Bearer ${adminToken}`)
                 .send({
                     userIds: [user1.id],
@@ -442,19 +465,19 @@ describe('User Settings Integration Tests', () => {
     });
 
     describe('Rate Limiting', () => {
+        enableRealRateLimitForSuite({ maxRequests: 10 });
+
         it('should enforce rate limiting on user endpoints', async () => {
-            const attempts = [];
-            for (let i = 0; i < 12; i++) {
-                attempts.push(
-                    request(app)
-                        .get(`/api/users/${userId}`)
-                        .set('Authorization', `Bearer ${adminToken}`)
-                );
+            let rateLimited = false;
+            for (let i = 0; i < 15; i++) {
+                const res = await request(app)
+                    .get(`/api/admin/users/${userId}`)
+                    .set('Authorization', `Bearer ${adminToken}`);
+                if (res.status === 429) {
+                    rateLimited = true;
+                    break;
+                }
             }
-
-            const responses = await Promise.all(attempts);
-
-            const rateLimited = responses.some(r => r.status === 429);
             expect(rateLimited).toBe(true);
         });
     });

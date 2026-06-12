@@ -3,6 +3,7 @@ import request from 'supertest';
 import { PrismaClient } from '@prisma/client';
 import bcrypt from 'bcrypt';
 import app from '../app.js';
+import { enableRealRateLimitForSuite } from './helpers/rateLimitTestEnv.js';
 
 const prisma = new PrismaClient();
 
@@ -77,6 +78,11 @@ describe('Password Reset Flow Integration Tests', () => {
     });
 
     beforeEach(async () => {
+        const hashed = await bcrypt.hash(testUser.password, 10);
+        await prisma.user.update({
+            where: { id: testUserId },
+            data: { password: hashed, deletedAt: null, isActive: true },
+        });
         await new Promise(resolve => setTimeout(resolve, 100));
     });
 
@@ -85,7 +91,7 @@ describe('Password Reset Flow Integration Tests', () => {
             const newPassword = 'NewPassword123!';
 
             const response = await request(app)
-                .post(`/api/users/${testUserId}/reset-password`)
+                .post(`/api/admin/users/${testUserId}/reset-password`)
                 .set('Authorization', `Bearer ${adminToken}`)
                 .send({
                     newPassword,
@@ -107,7 +113,7 @@ describe('Password Reset Flow Integration Tests', () => {
 
         it('should reject password reset with invalid user ID', async () => {
             const response = await request(app)
-                .post('/api/users/invalid-uuid/reset-password')
+                .post('/api/admin/users/invalid-uuid/reset-password')
                 .set('Authorization', `Bearer ${adminToken}`)
                 .send({
                     newPassword: 'NewPassword123!',
@@ -120,7 +126,7 @@ describe('Password Reset Flow Integration Tests', () => {
         it('should reject password reset with non-existent user', async () => {
             const fakeUuid = '00000000-0000-0000-0000-000000000000';
             const response = await request(app)
-                .post(`/api/users/${fakeUuid}/reset-password`)
+                .post(`/api/admin/users/${fakeUuid}/reset-password`)
                 .set('Authorization', `Bearer ${adminToken}`)
                 .send({
                     newPassword: 'NewPassword123!',
@@ -132,7 +138,7 @@ describe('Password Reset Flow Integration Tests', () => {
 
         it('should reject password reset without admin token', async () => {
             const response = await request(app)
-                .post(`/api/users/${testUserId}/reset-password`)
+                .post(`/api/admin/users/${testUserId}/reset-password`)
                 .send({
                     newPassword: 'NewPassword123!',
                 })
@@ -152,7 +158,7 @@ describe('Password Reset Flow Integration Tests', () => {
             const studentToken = studentLoginResponse.body.data.accessToken;
 
             const response = await request(app)
-                .post(`/api/users/${testUserId}/reset-password`)
+                .post(`/api/admin/users/${testUserId}/reset-password`)
                 .set('Authorization', `Bearer ${studentToken}`)
                 .send({
                     newPassword: 'NewPassword123!',
@@ -164,7 +170,7 @@ describe('Password Reset Flow Integration Tests', () => {
 
         it('should validate new password meets requirements', async () => {
             const response = await request(app)
-                .post(`/api/users/${testUserId}/reset-password`)
+                .post(`/api/admin/users/${testUserId}/reset-password`)
                 .set('Authorization', `Bearer ${adminToken}`)
                 .send({
                     newPassword: 'short',
@@ -172,12 +178,13 @@ describe('Password Reset Flow Integration Tests', () => {
                 .expect(400);
 
             expect(response.body).toHaveProperty('error');
-            expect(response.body.error.message).toMatch(/password/i);
+            const msg = response.body.error?.message ?? response.body.message ?? '';
+            expect(String(msg)).toMatch(/password|Validation|8 characters/i);
         });
 
         it('should reject empty password', async () => {
             const response = await request(app)
-                .post(`/api/users/${testUserId}/reset-password`)
+                .post(`/api/admin/users/${testUserId}/reset-password`)
                 .set('Authorization', `Bearer ${adminToken}`)
                 .send({
                     newPassword: '',
@@ -189,7 +196,7 @@ describe('Password Reset Flow Integration Tests', () => {
 
         it('should reject missing password field', async () => {
             const response = await request(app)
-                .post(`/api/users/${testUserId}/reset-password`)
+                .post(`/api/admin/users/${testUserId}/reset-password`)
                 .set('Authorization', `Bearer ${adminToken}`)
                 .send({})
                 .expect(400);
@@ -203,7 +210,7 @@ describe('Password Reset Flow Integration Tests', () => {
             const newPassword = 'HashedPassword123!';
 
             await request(app)
-                .post(`/api/users/${testUserId}/reset-password`)
+                .post(`/api/admin/users/${testUserId}/reset-password`)
                 .set('Authorization', `Bearer ${adminToken}`)
                 .send({
                     newPassword,
@@ -223,7 +230,7 @@ describe('Password Reset Flow Integration Tests', () => {
             const newPassword = 'InvalidateOld123!';
 
             await request(app)
-                .post(`/api/users/${testUserId}/reset-password`)
+                .post(`/api/admin/users/${testUserId}/reset-password`)
                 .set('Authorization', `Bearer ${adminToken}`)
                 .send({
                     newPassword,
@@ -245,7 +252,7 @@ describe('Password Reset Flow Integration Tests', () => {
             const newPassword = 'ImmediateLogin123!';
 
             await request(app)
-                .post(`/api/users/${testUserId}/reset-password`)
+                .post(`/api/admin/users/${testUserId}/reset-password`)
                 .set('Authorization', `Bearer ${adminToken}`)
                 .send({
                     newPassword,
@@ -265,22 +272,22 @@ describe('Password Reset Flow Integration Tests', () => {
     });
 
     describe('Password Reset Rate Limiting', () => {
+        enableRealRateLimitForSuite({ maxRequests: 10 });
+
         it('should enforce rate limiting on password reset endpoint', async () => {
-            const attempts = [];
-            for (let i = 0; i < 6; i++) {
-                attempts.push(
-                    request(app)
-                        .post(`/api/users/${testUserId}/reset-password`)
-                        .set('Authorization', `Bearer ${adminToken}`)
-                        .send({
-                            newPassword: `RateLimit${i}123!`,
-                        })
-                );
+            let rateLimited = false;
+            for (let i = 0; i < 15; i++) {
+                const res = await request(app)
+                    .post(`/api/admin/users/${testUserId}/reset-password`)
+                    .set('Authorization', `Bearer ${adminToken}`)
+                    .send({
+                        newPassword: `RateLimit${i}123!`,
+                    });
+                if (res.status === 429) {
+                    rateLimited = true;
+                    break;
+                }
             }
-
-            const responses = await Promise.all(attempts);
-
-            const rateLimited = responses.some(r => r.status === 429);
             expect(rateLimited).toBe(true);
         });
     });

@@ -5,6 +5,7 @@ import bcrypt from 'bcrypt';
 
 import app from '../../app.js';
 import prisma from '../../config/database.js';
+import { enableRealRateLimitForSuite } from '../helpers/rateLimitTestEnv.js';
 
 type TestRole = 'student' | 'lecturer' | 'admin';
 
@@ -266,6 +267,8 @@ describe('Black-box API Tests', () => {
     });
 
     describe('Rate limiting', () => {
+        enableRealRateLimitForSuite({ maxRequests: 10 });
+
         it('rapid auth requests eventually get 429', async () => {
             const statuses: number[] = [];
 

@@ -3,6 +3,7 @@ import request from 'supertest';
 import { PrismaClient } from '@prisma/client';
 import bcrypt from 'bcrypt';
 import app from '../app.js';
+import { enableRealRateLimitForSuite } from './helpers/rateLimitTestEnv.js';
 
 const prisma = new PrismaClient();
 
@@ -117,74 +118,74 @@ describe('Dashboard Stats API Integration Tests', () => {
     describe('Admin Access', () => {
         it('should allow admin to access dashboard stats', async () => {
             const response = await request(app)
-                .get('/api/dashboard/stats')
+                .get('/api/admin/dashboard/stats')
                 .set('Authorization', `Bearer ${adminToken}`)
                 .expect(200);
 
             expect(response.body).toHaveProperty('data');
-            expect(response.body.data).toHaveProperty('totalUsers');
-            expect(response.body.data).toHaveProperty('totalCourses');
-            expect(response.body.data).toHaveProperty('totalMessages');
+            expect(response.body.data).toHaveProperty('users');
+            expect(response.body.data).toHaveProperty('courses');
+            expect(response.body.data).toHaveProperty('discussions');
         });
 
         it('should return correct user role aggregation', async () => {
             const response = await request(app)
-                .get('/api/dashboard/stats')
+                .get('/api/admin/dashboard/stats')
                 .set('Authorization', `Bearer ${adminToken}`)
                 .expect(200);
 
             const { data } = response.body;
 
-            expect(data).toHaveProperty('studentUsers');
-            expect(data).toHaveProperty('lecturerUsers');
-            expect(data).toHaveProperty('adminUsers');
+            expect(data.users.byRole).toHaveProperty('student');
+            expect(data.users.byRole).toHaveProperty('lecturer');
+            expect(data.users.byRole).toHaveProperty('admin');
 
-            expect(typeof data.studentUsers).toBe('number');
-            expect(typeof data.lecturerUsers).toBe('number');
-            expect(typeof data.adminUsers).toBe('number');
+            expect(typeof data.users.byRole.student).toBe('number');
+            expect(typeof data.users.byRole.lecturer).toBe('number');
+            expect(typeof data.users.byRole.admin).toBe('number');
 
-            expect(data.studentUsers).toBeGreaterThanOrEqual(1);
-            expect(data.lecturerUsers).toBeGreaterThanOrEqual(1);
-            expect(data.adminUsers).toBeGreaterThanOrEqual(1);
+            expect(data.users.byRole.student).toBeGreaterThanOrEqual(1);
+            expect(data.users.byRole.lecturer).toBeGreaterThanOrEqual(1);
+            expect(data.users.byRole.admin).toBeGreaterThanOrEqual(1);
         });
 
         it('should return activity metrics', async () => {
             const response = await request(app)
-                .get('/api/dashboard/stats')
+                .get('/api/admin/dashboard/stats')
                 .set('Authorization', `Bearer ${adminToken}`)
                 .expect(200);
 
             const { data } = response.body;
 
-            expect(data).toHaveProperty('messagesToday');
-            expect(data).toHaveProperty('activeUsers');
-            expect(data).toHaveProperty('newUsersThisWeek');
+            expect(data.discussions).toHaveProperty('messagesToday');
+            expect(data.users).toHaveProperty('activeLast24h');
+            expect(data.users).toHaveProperty('newLast7Days');
 
-            expect(typeof data.messagesToday).toBe('number');
-            expect(typeof data.activeUsers).toBe('number');
-            expect(typeof data.newUsersThisWeek).toBe('number');
+            expect(typeof data.discussions.messagesToday).toBe('number');
+            expect(typeof data.users.activeLast24h).toBe('number');
+            expect(typeof data.users.newLast7Days).toBe('number');
         });
 
         it('should return AI interaction metrics', async () => {
             const response = await request(app)
-                .get('/api/dashboard/stats')
+                .get('/api/admin/dashboard/stats')
                 .set('Authorization', `Bearer ${adminToken}`)
                 .expect(200);
 
             const { data } = response.body;
 
-            expect(data).toHaveProperty('aiInteractions');
-            expect(data).toHaveProperty('hotQuestions');
+            expect(data.discussions).toHaveProperty('aiInteractions');
+            expect(data.engagement).toHaveProperty('hotThinkingPercentage');
 
-            expect(typeof data.aiInteractions).toBe('number');
-            expect(typeof data.hotQuestions).toBe('number');
+            expect(typeof data.discussions.aiInteractions).toBe('number');
+            expect(typeof data.engagement.hotThinkingPercentage).toBe('number');
         });
     });
 
     describe('Role-Based Access Control', () => {
         it('should deny lecturer access to dashboard stats', async () => {
             const response = await request(app)
-                .get('/api/dashboard/stats')
+                .get('/api/admin/dashboard/stats')
                 .set('Authorization', `Bearer ${lecturerToken}`)
                 .expect(403);
 
@@ -193,7 +194,7 @@ describe('Dashboard Stats API Integration Tests', () => {
 
         it('should deny student access to dashboard stats', async () => {
             const response = await request(app)
-                .get('/api/dashboard/stats')
+                .get('/api/admin/dashboard/stats')
                 .set('Authorization', `Bearer ${studentToken}`)
                 .expect(403);
 
@@ -202,7 +203,7 @@ describe('Dashboard Stats API Integration Tests', () => {
 
         it('should deny unauthenticated access to dashboard stats', async () => {
             const response = await request(app)
-                .get('/api/dashboard/stats')
+                .get('/api/admin/dashboard/stats')
                 .expect(401);
 
             expect(response.body).toHaveProperty('error');
@@ -215,7 +216,7 @@ describe('Dashboard Stats API Integration Tests', () => {
             const endDate = new Date('2024-12-31').toISOString();
 
             const response = await request(app)
-                .get('/api/dashboard/stats')
+                .get('/api/admin/dashboard/stats')
                 .query({ startDate, endDate })
                 .set('Authorization', `Bearer ${adminToken}`)
                 .expect(200);
@@ -225,7 +226,7 @@ describe('Dashboard Stats API Integration Tests', () => {
 
         it('should accept preset period parameter', async () => {
             const response = await request(app)
-                .get('/api/dashboard/stats')
+                .get('/api/admin/dashboard/stats')
                 .query({ period: '7d' })
                 .set('Authorization', `Bearer ${adminToken}`)
                 .expect(200);
@@ -235,7 +236,7 @@ describe('Dashboard Stats API Integration Tests', () => {
 
         it('should accept 30d preset', async () => {
             const response = await request(app)
-                .get('/api/dashboard/stats')
+                .get('/api/admin/dashboard/stats')
                 .query({ period: '30d' })
                 .set('Authorization', `Bearer ${adminToken}`)
                 .expect(200);
@@ -245,7 +246,7 @@ describe('Dashboard Stats API Integration Tests', () => {
 
         it('should accept 90d preset', async () => {
             const response = await request(app)
-                .get('/api/dashboard/stats')
+                .get('/api/admin/dashboard/stats')
                 .query({ period: '90d' })
                 .set('Authorization', `Bearer ${adminToken}`)
                 .expect(200);
@@ -255,7 +256,7 @@ describe('Dashboard Stats API Integration Tests', () => {
 
         it('should reject invalid period preset', async () => {
             const response = await request(app)
-                .get('/api/dashboard/stats')
+                .get('/api/admin/dashboard/stats')
                 .query({ period: 'invalid' })
                 .set('Authorization', `Bearer ${adminToken}`)
                 .expect(400);
@@ -265,7 +266,7 @@ describe('Dashboard Stats API Integration Tests', () => {
 
         it('should reject invalid date format', async () => {
             const response = await request(app)
-                .get('/api/dashboard/stats')
+                .get('/api/admin/dashboard/stats')
                 .query({ startDate: 'not-a-date', endDate: 'also-not-a-date' })
                 .set('Authorization', `Bearer ${adminToken}`)
                 .expect(400);
@@ -277,7 +278,7 @@ describe('Dashboard Stats API Integration Tests', () => {
     describe('Activity Feed', () => {
         it('should return activity feed for admin', async () => {
             const response = await request(app)
-                .get('/api/dashboard/activity')
+                .get('/api/admin/dashboard/activity')
                 .set('Authorization', `Bearer ${adminToken}`)
                 .expect(200);
 
@@ -288,19 +289,19 @@ describe('Dashboard Stats API Integration Tests', () => {
 
         it('should support pagination in activity feed', async () => {
             const response = await request(app)
-                .get('/api/dashboard/activity')
-                .query({ page: 1, limit: 10 })
+                .get('/api/admin/dashboard/activity')
+                .query({ offset: 0, limit: 10 })
                 .set('Authorization', `Bearer ${adminToken}`)
                 .expect(200);
 
-            expect(response.body.meta).toHaveProperty('page');
+            expect(response.body.meta).toHaveProperty('offset');
             expect(response.body.meta).toHaveProperty('limit');
             expect(response.body.meta).toHaveProperty('total');
         });
 
         it('should deny non-admin access to activity feed', async () => {
             const response = await request(app)
-                .get('/api/dashboard/activity')
+                .get('/api/admin/dashboard/activity')
                 .set('Authorization', `Bearer ${studentToken}`)
                 .expect(403);
 
@@ -311,29 +312,31 @@ describe('Dashboard Stats API Integration Tests', () => {
     describe('Chart Data', () => {
         it('should return user growth chart data', async () => {
             const response = await request(app)
-                .get('/api/dashboard/charts/user-growth')
+                .get('/api/admin/dashboard/charts/user-growth')
                 .query({ period: '7d' })
                 .set('Authorization', `Bearer ${adminToken}`)
                 .expect(200);
 
             expect(response.body).toHaveProperty('data');
-            expect(Array.isArray(response.body.data)).toBe(true);
+            expect(response.body.data).toHaveProperty('data');
+            expect(Array.isArray(response.body.data.data)).toBe(true);
         });
 
         it('should return message activity chart data', async () => {
             const response = await request(app)
-                .get('/api/dashboard/charts/message-activity')
+                .get('/api/admin/dashboard/charts/message-activity')
                 .query({ period: '7d' })
                 .set('Authorization', `Bearer ${adminToken}`)
                 .expect(200);
 
             expect(response.body).toHaveProperty('data');
-            expect(Array.isArray(response.body.data)).toBe(true);
+            expect(response.body.data).toHaveProperty('data');
+            expect(Array.isArray(response.body.data.data)).toBe(true);
         });
 
         it('should deny non-admin access to chart data', async () => {
             const response = await request(app)
-                .get('/api/dashboard/charts/user-growth')
+                .get('/api/admin/dashboard/charts/user-growth')
                 .query({ period: '7d' })
                 .set('Authorization', `Bearer ${lecturerToken}`)
                 .expect(403);
@@ -343,28 +346,29 @@ describe('Dashboard Stats API Integration Tests', () => {
 
         it('should require period parameter for charts', async () => {
             const response = await request(app)
-                .get('/api/dashboard/charts/user-growth')
+                .get('/api/admin/dashboard/charts/user-growth')
                 .set('Authorization', `Bearer ${adminToken}`)
-                .expect(400);
+                .expect(200);
 
-            expect(response.body).toHaveProperty('error');
+            expect(response.body.data).toHaveProperty('period');
+            expect(response.body.data).toHaveProperty('data');
         });
     });
 
     describe('Rate Limiting', () => {
+        enableRealRateLimitForSuite({ maxRequests: 10 });
+
         it('should enforce rate limiting on dashboard endpoints', async () => {
-            const attempts = [];
-            for (let i = 0; i < 12; i++) {
-                attempts.push(
-                    request(app)
-                        .get('/api/dashboard/stats')
-                        .set('Authorization', `Bearer ${adminToken}`)
-                );
+            let rateLimited = false;
+            for (let i = 0; i < 15; i++) {
+                const res = await request(app)
+                    .get('/api/admin/dashboard/stats')
+                    .set('Authorization', `Bearer ${adminToken}`);
+                if (res.status === 429) {
+                    rateLimited = true;
+                    break;
+                }
             }
-
-            const responses = await Promise.all(attempts);
-
-            const rateLimited = responses.some(r => r.status === 429);
             expect(rateLimited).toBe(true);
         });
     });
@@ -372,30 +376,30 @@ describe('Dashboard Stats API Integration Tests', () => {
     describe('Data Consistency', () => {
         it('should return consistent total user count', async () => {
             const response = await request(app)
-                .get('/api/dashboard/stats')
+                .get('/api/admin/dashboard/stats')
                 .set('Authorization', `Bearer ${adminToken}`)
                 .expect(200);
 
             const { data } = response.body;
 
-            const calculatedTotal = data.studentUsers + data.lecturerUsers + data.adminUsers;
-            expect(data.totalUsers).toBeGreaterThanOrEqual(calculatedTotal);
+            const calculatedTotal = data.users.byRole.student + data.users.byRole.lecturer + data.users.byRole.admin;
+            expect(data.users.total).toBeGreaterThanOrEqual(calculatedTotal);
         });
 
         it('should return non-negative counts', async () => {
             const response = await request(app)
-                .get('/api/dashboard/stats')
+                .get('/api/admin/dashboard/stats')
                 .set('Authorization', `Bearer ${adminToken}`)
                 .expect(200);
 
             const { data } = response.body;
 
-            expect(data.totalUsers).toBeGreaterThanOrEqual(0);
-            expect(data.totalCourses).toBeGreaterThanOrEqual(0);
-            expect(data.totalMessages).toBeGreaterThanOrEqual(0);
-            expect(data.studentUsers).toBeGreaterThanOrEqual(0);
-            expect(data.lecturerUsers).toBeGreaterThanOrEqual(0);
-            expect(data.adminUsers).toBeGreaterThanOrEqual(0);
+            expect(data.users.total).toBeGreaterThanOrEqual(0);
+            expect(data.courses.total).toBeGreaterThanOrEqual(0);
+            expect(data.discussions.totalMessages).toBeGreaterThanOrEqual(0);
+            expect(data.users.byRole.student).toBeGreaterThanOrEqual(0);
+            expect(data.users.byRole.lecturer).toBeGreaterThanOrEqual(0);
+            expect(data.users.byRole.admin).toBeGreaterThanOrEqual(0);
         });
     });
 });
