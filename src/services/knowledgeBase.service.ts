@@ -145,6 +145,7 @@ export class KnowledgeBaseService {
                 uploadedAt: true,
                 processedAt: true,
                 errorMessage: true,
+                courseMaterialId: true,
             },
             orderBy: { uploadedAt: 'desc' },
         });
@@ -432,36 +433,58 @@ export class KnowledgeBaseService {
                 throw new Error(result.message || 'AI Engine batch processing failed');
             }
 
-            // Update each file status based on result documents
-            for (const file of files) {
-                const fileResult = result.results.find((doc) => doc.filename === file.name);
+            const docResults = result.results ?? result.documents ?? [];
+            const stats = result.stats;
+            const totalFiles = stats?.total_files ?? result.total_files ?? files.length;
+            const successful = stats?.successful ?? result.successful_files ?? 0;
+            const failed = stats?.failed ?? result.failed_files ?? 0;
+            const totalChunks = stats?.total_chunks ?? result.total_chunks ?? 0;
 
-                if (fileResult?.status === 'success') {
-                    await prisma.knowledgeBase.update({
-                        where: { id: file.id },
-                        data: {
-                            vectorStatus: 'ready',
-                            processedAt: new Date(),
-                        },
-                    });
-                } else {
+            const isPerFileSuccess = (doc: {
+                status?: string;
+                success?: boolean;
+                error?: string | null;
+            }) => doc.status === 'success' || doc.status === 'ready' || doc.success === true;
+
+            const markReady = async (fileId: string) => {
+                await prisma.knowledgeBase.update({
+                    where: { id: fileId },
+                    data: {
+                        vectorStatus: 'ready',
+                        processedAt: new Date(),
+                        errorMessage: null,
+                    },
+                });
+            };
+
+            for (const file of files) {
+                const fileResult = docResults.find(
+                    (doc: { filename?: string; name?: string }) =>
+                        doc.filename === file.name || doc.name === file.name
+                );
+
+                if (fileResult && !isPerFileSuccess(fileResult)) {
                     await prisma.knowledgeBase.update({
                         where: { id: file.id },
                         data: {
                             vectorStatus: 'failed',
-                            errorMessage: fileResult?.error || 'AI Engine gagal memproses dokumen',
+                            errorMessage:
+                                fileResult.error || 'AI Engine gagal memproses dokumen',
                         },
                     });
+                    continue;
                 }
+
+                await markReady(file.id);
             }
 
             logger.info('Batch processed successfully', {
                 courseId,
                 stats: {
-                    totalFiles: result.stats.total_files,
-                    successful: result.stats.successful,
-                    failed: result.stats.failed,
-                    totalChunks: result.stats.total_chunks,
+                    totalFiles,
+                    successful,
+                    failed,
+                    totalChunks,
                 },
             });
         } catch (error) {

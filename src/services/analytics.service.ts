@@ -3,6 +3,7 @@ import { ApiError } from '../middleware/errorHandler.js';
 import { ChatLog } from '../models/ChatLog.js';
 import { chatAnalyticsService } from './chatAnalytics.service.js';
 import { aiEngineService } from './aiEngine.service.js';
+import { Parser } from 'json2csv';
 
 export class AnalyticsService {
     static async getGroupAnalytics(groupId: string, userId: string | undefined, role: string | undefined) {
@@ -24,7 +25,7 @@ export class AnalyticsService {
         }
 
         const chatAnalytics = await chatAnalyticsService.getGroupAnalytics(groupId);
-        const recentMessages = await ChatLog.find({ groupId, isDeleted: { $ne: true } })
+        const recentMessages = await ChatLog.find({ groupId, deletedAt: null })
             .sort({ createdAt: -1 }).limit(20).lean();
 
         return {
@@ -129,7 +130,7 @@ export class AnalyticsService {
             {
                 $match: {
                     courseId,
-                    isDeleted: { $ne: true },
+                    deletedAt: null,
                     createdAt: { $gte: new Date(Date.now() - 30 * 24 * 60 * 60 * 1000) },
                 },
             },
@@ -175,13 +176,114 @@ export class AnalyticsService {
         return { success: true, analysis };
     }
 
-    static async exportProcessMining(courseId: string, userId: string | undefined) {
+    static async exportProcessMining(courseId: string, userId: string | undefined, format: string = 'json') {
         const course = await prisma.course.findFirst({ where: { id: courseId, deletedAt: null } });
         if (!course) throw ApiError.notFound('Course not found');
         if (course.ownerId !== userId) throw ApiError.forbidden('You do not own this course');
 
         const exportResult = await aiEngineService.exportProcessMiningData();
+        
+        if (format === 'csv') {
+            const csvData = this.formatAnalyticsAsCSV(exportResult);
+            return { success: true, format: 'csv', data: csvData, course: { id: course.id, name: course.name } };
+        }
+        
         return { success: true, export: exportResult, course: { id: course.id, name: course.name } };
+    }
+
+    static formatAnalyticsAsCSV(data: any): string {
+        // If data is an array, convert directly
+        if (Array.isArray(data)) {
+            if (data.length === 0) return '';
+            const parser = new Parser();
+            return parser.parse(data);
+        }
+
+        // If data is an object with nested arrays, flatten it
+        const flatData: any[] = [];
+        
+        if (data && typeof data === 'object') {
+            // Try to extract meaningful tabular data
+            for (const key in data) {
+                if (Array.isArray(data[key]) && data[key].length > 0) {
+                    // Add the key as a section identifier
+                    data[key].forEach((item: any) => {
+                        flatData.push({
+                            section: key,
+                            ...item
+                        });
+                    });
+                } else if (typeof data[key] === 'object' && data[key] !== null) {
+                    // Flatten nested objects
+                    flatData.push({
+                        section: key,
+                        ...data[key]
+                    });
+                } else {
+                    // Single values
+                    flatData.push({
+                        key: key,
+                        value: data[key]
+                    });
+                }
+            }
+        }
+
+        if (flatData.length === 0) {
+            // Fallback: convert the object to key-value pairs
+            return 'key,value\n' + Object.entries(data || {})
+                .map(([k, v]) => `${k},"${JSON.stringify(v).replace(/"/g, '""')}"`)
+                .join('\n');
+        }
+
+        const parser = new Parser();
+        return parser.parse(flatData);
+    }
+
+    static async getAnalyticsSummary(courseId: string, userId: string | undefined) {
+        const course = await prisma.course.findFirst({ where: { id: courseId, deletedAt: null } });
+        if (!course) throw ApiError.notFound('Course not found');
+        if (course.ownerId !== userId) throw ApiError.forbidden('You do not own this course');
+
+        const courseAnalytics = await this.getCourseAnalytics(courseId, userId);
+        
+        const totalMessages = courseAnalytics.summary.totalMessages;
+        const totalGroups = courseAnalytics.summary.totalGroups;
+        const avgQualityScore = courseAnalytics.summary.averageQualityScore;
+        const groupsNeedingAttention = courseAnalytics.summary.groupsNeedingAttention;
+
+        const studentCount = await prisma.courseStudent.count({
+            where: { courseId }
+        });
+
+        const thirtyDaysAgo = new Date(Date.now() - 30 * 24 * 60 * 60 * 1000);
+        const groups = await prisma.group.findMany({
+            where: { courseId, deletedAt: null },
+            select: { id: true }
+        });
+        const groupIds = groups.map(g => g.id);
+
+        const recentMessageCount = await ChatLog.countDocuments({
+            groupId: { $in: groupIds },
+            deletedAt: null,
+            createdAt: { $gte: thirtyDaysAgo }
+        });
+
+        return {
+            success: true,
+            summary: {
+                courseId: course.id,
+                courseName: course.name,
+                courseCode: course.code,
+                totalStudents: studentCount,
+                totalGroups,
+                totalMessages,
+                messagesLast30Days: recentMessageCount,
+                averageQualityScore: avgQualityScore,
+                groupsNeedingAttention,
+                generatedAt: new Date().toISOString()
+            }
+        };
     }
 
     static async getChatSpaceAnalytics(chatSpaceId: string, userId: string | undefined, role: string | undefined) {
@@ -205,7 +307,7 @@ export class AnalyticsService {
         }
 
         const analytics = await chatAnalyticsService.getChatSpaceAnalytics(chatSpaceId);
-        const messages = await ChatLog.find({ chatSpaceId, isDeleted: { $ne: true } })
+        const messages = await ChatLog.find({ chatSpaceId, deletedAt: null })
             .sort({ createdAt: 1 }).lean();
 
         const studentMessages = messages.filter((m) => m.senderType === 'student');
@@ -339,7 +441,7 @@ export class AnalyticsService {
 
         const recentLogs = await ChatLog.find({
             groupId: { $in: groupIds },
-            isDeleted: { $ne: true },
+            deletedAt: null,
             senderType: { $in: ['student', 'lecturer'] },
         })
             .sort({ createdAt: -1 })
@@ -400,7 +502,7 @@ export class AnalyticsService {
                     {
                         $match: {
                             groupId: { $in: groupIds },
-                            isDeleted: { $ne: true },
+                            deletedAt: null,
                             createdAt: { $gte: new Date(Date.now() - 30 * 24 * 60 * 60 * 1000) },
                         },
                     },
@@ -471,7 +573,7 @@ export class AnalyticsService {
 
                 const lastLog = await ChatLog.findOne({
                     groupId: { $in: groupIds },
-                    isDeleted: { $ne: true },
+                    deletedAt: null,
                     senderType: { $in: ['student', 'lecturer'] },
                 })
                     .sort({ createdAt: -1 })

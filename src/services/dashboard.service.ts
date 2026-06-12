@@ -1,5 +1,12 @@
 import prisma from '../config/database.js';
 import { ActivityQuery, ChartPeriod, StatsDateRangeQuery } from '../validators/dashboard.validator.js';
+import { cache } from '../utils/cache.js';
+
+const DASHBOARD_CACHE_TTL = 30 * 1000; // 30 seconds
+
+export function invalidateDashboardCache() {
+    cache.invalidatePattern('dashboard:stats:');
+}
 
 type ActivityItem = {
     id: string;
@@ -53,6 +60,16 @@ const HOT_KEYWORDS = [
 export class DashboardService {
     static async getStats(rangeQuery: StatsDateRangeQuery = {}) {
         const range = this.resolveDateRange(rangeQuery);
+        const cacheKey = `dashboard:stats:${range.preset}:${range.startDate.toISOString()}:${range.endDate.toISOString()}`;
+        const cached = cache.get<ReturnType<typeof this.computeStats>>(cacheKey);
+        if (cached) return cached;
+
+        const result = await this.computeStats(range);
+        cache.set(cacheKey, result, DASHBOARD_CACHE_TTL);
+        return result;
+    }
+
+    private static async computeStats(range: NormalizedDateRange) {
 
         const messagesWhere = {
             createdAt: {
@@ -84,7 +101,10 @@ export class DashboardService {
             usersCreatedInRange,
             activeMessageSenders,
             aiInteractionsInRange,
-            allMessagesInRange,
+            totalMessagesInRange,
+            chatSpaceMessageCounts,
+            senderMessageCounts,
+            recentMessagesForHotCheck,
         ] = await Promise.all([
             prisma.user.count(),
             prisma.user.count({ where: { role: 'student' } }),
@@ -113,75 +133,72 @@ export class DashboardService {
                     senderType: 'ai',
                 },
             }),
+            prisma.chatMessage.count({ where: messagesWhere }),
+            prisma.chatMessage.groupBy({
+                by: ['chatSpaceId'],
+                where: messagesWhere,
+                _count: { id: true },
+            }),
+            prisma.chatMessage.groupBy({
+                by: ['senderId'],
+                where: messagesWhere,
+                _count: { id: true },
+            }),
             prisma.chatMessage.findMany({
                 where: messagesWhere,
-                select: {
-                    id: true,
-                    content: true,
-                    senderId: true,
-                    sender: {
-                        select: {
-                            id: true,
-                            name: true,
-                        },
-                    },
-                    chatSpace: {
-                        select: {
-                            id: true,
-                            group: {
-                                select: {
-                                    course: {
-                                        select: {
-                                            id: true,
-                                            name: true,
-                                        },
-                                    },
-                                },
-                            },
-                        },
-                    },
-                },
-                orderBy: {
-                    createdAt: 'desc',
-                },
-                take: 5000,
+                select: { content: true },
+                orderBy: { createdAt: 'desc' },
+                take: 100,
             }),
         ]);
 
-        const hotThinkingMatches = allMessagesInRange.filter((message) => this.isHotThinkingMessage(message.content)).length;
-        const hotThinkingPercentage = allMessagesInRange.length > 0
-            ? Number(((hotThinkingMatches / allMessagesInRange.length) * 100).toFixed(1))
+        const hotThinkingMatches = recentMessagesForHotCheck.filter((message) => this.isHotThinkingMessage(message.content)).length;
+        const hotThinkingRatio = recentMessagesForHotCheck.length > 0
+            ? hotThinkingMatches / recentMessagesForHotCheck.length
             : 0;
-        const qualityScore = Number(Math.min(100, hotThinkingPercentage * 0.7 + Math.min(allMessagesInRange.length, 200) * 0.15).toFixed(1));
+        const hotThinkingPercentage = Number((hotThinkingRatio * 100).toFixed(1));
+        const qualityScore = Number(Math.min(100, hotThinkingPercentage * 0.7 + Math.min(totalMessagesInRange, 200) * 0.15).toFixed(1));
+
+        const chatSpaceIds = chatSpaceMessageCounts.map((cs) => cs.chatSpaceId).filter(Boolean) as string[];
+        const chatSpaces = await prisma.chatSpace.findMany({
+            where: { id: { in: chatSpaceIds } },
+            select: {
+                id: true,
+                group: {
+                    select: {
+                        course: { select: { id: true, name: true } },
+                    },
+                },
+            },
+        });
+        const chatSpaceToCourse = new Map<string, { id: string; name: string }>();
+        const activeDiscussionIds = new Set<string>();
+        chatSpaces.forEach((cs) => {
+            chatSpaceToCourse.set(cs.id, cs.group?.course ?? { id: '', name: 'Unknown' });
+            activeDiscussionIds.add(cs.id);
+        });
 
         const courseMessageCounts = new Map<string, { id: string; name: string; messageCount: number }>();
+        chatSpaceMessageCounts.forEach((cs) => {
+            const course = chatSpaceToCourse.get(cs.chatSpaceId);
+            if (course?.id) {
+                const current = courseMessageCounts.get(course.id) ?? { id: course.id, name: course.name, messageCount: 0 };
+                current.messageCount += cs._count.id;
+                courseMessageCounts.set(course.id, current);
+            }
+        });
+
+        const senderIds = senderMessageCounts.map((s) => s.senderId).filter(Boolean) as string[];
+        const senders = await prisma.user.findMany({
+            where: { id: { in: senderIds } },
+            select: { id: true, name: true },
+        });
+        const senderMap = new Map(senders.map((s) => [s.id, s.name]));
         const userMessageCounts = new Map<string, { id: string; name: string; messageCount: number }>();
-        const activeDiscussionIds = new Set<string>();
-
-        allMessagesInRange.forEach((message) => {
-            if (message.sender) {
-                const currentUser = userMessageCounts.get(message.sender.id) ?? {
-                    id: message.sender.id,
-                    name: message.sender.name,
-                    messageCount: 0,
-                };
-                currentUser.messageCount += 1;
-                userMessageCounts.set(message.sender.id, currentUser);
-            }
-
-            if (message.chatSpace?.id) {
-                activeDiscussionIds.add(message.chatSpace.id);
-            }
-
-            const course = message.chatSpace?.group?.course;
-            if (course) {
-                const currentCourse = courseMessageCounts.get(course.id) ?? {
-                    id: course.id,
-                    name: course.name,
-                    messageCount: 0,
-                };
-                currentCourse.messageCount += 1;
-                courseMessageCounts.set(course.id, currentCourse);
+        senderMessageCounts.forEach((s) => {
+            if (s.senderId) {
+                const name = senderMap.get(s.senderId) ?? 'Unknown';
+                userMessageCounts.set(s.senderId, { id: s.senderId, name, messageCount: s._count.id });
             }
         });
 
@@ -215,7 +232,7 @@ export class DashboardService {
                 messagesToday,
                 aiInteractions: aiInteractionsInRange,
                 avgMessagesPerDiscussion: activeDiscussionIds.size > 0
-                    ? Number((allMessagesInRange.length / activeDiscussionIds.size).toFixed(1))
+                    ? Number((totalMessagesInRange / activeDiscussionIds.size).toFixed(1))
                     : 0,
             },
             engagement: {
@@ -354,6 +371,10 @@ export class DashboardService {
     }
 
     private static resolveDateRange(rangeQuery: StatsDateRangeQuery): NormalizedDateRange {
+        if (rangeQuery.period) {
+            return this.resolvePeriodRange(rangeQuery.period);
+        }
+
         const endDate = rangeQuery.endDate ? new Date(rangeQuery.endDate) : new Date();
         const startDate = rangeQuery.startDate ? new Date(rangeQuery.startDate) : this.getDateDaysAgo(6);
 

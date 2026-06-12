@@ -118,6 +118,7 @@ export class AuditLogService {
         const where: Prisma.AuditLogWhereInput = {
             ...(filters.action ? { action: filters.action.toUpperCase() } : {}),
             ...(filters.entityType ? { entityType: filters.entityType } : {}),
+            ...(filters.entityId ? { entityId: filters.entityId } : {}),
             ...(filters.userId ? { userId: filters.userId } : {}),
             ...(startDate || endDate
                 ? {

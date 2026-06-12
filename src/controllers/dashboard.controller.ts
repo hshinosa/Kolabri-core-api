@@ -1,13 +1,14 @@
 import { Response, NextFunction } from 'express';
 import { AuthenticatedRequest } from '../middleware/auth.js';
 import { DashboardService } from '../services/dashboard.service.js';
-import { ActivityQuery, ChartPeriod } from '../validators/dashboard.validator.js';
+import { ActivityQuery, ChartPeriod, StatsDateRangeQuery } from '../validators/dashboard.validator.js';
 
 export class DashboardController {
-    static async getStats(_req: AuthenticatedRequest, res: Response, next: NextFunction) {
+    static async getStats(req: AuthenticatedRequest, res: Response, next: NextFunction) {
         try {
-            const stats = await DashboardService.getStats();
+            const stats = await DashboardService.getStats(req.query as unknown as StatsDateRangeQuery);
 
+            res.set('Cache-Control', 'private, max-age=30');
             res.json({
                 data: stats,
             });

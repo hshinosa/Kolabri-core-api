@@ -4,6 +4,7 @@ import { CreateGoalInput } from '../validators/goal.validator.js';
 import { validateGoalContent } from '../utils/helpers.js';
 import { GroupService } from './group.service.js';
 import { aiEngineService } from './aiEngine.service.js';
+import { WeekContextService } from './weekContext.service.js';
 
 export class GoalService {
     /**
@@ -76,15 +77,26 @@ export class GoalService {
         let goalFeedback: string | undefined;
         let socraticHint: string | undefined;
 
-        const aiValidation = await aiEngineService.validateGoal(data.content, userId, chatSpaceId);
+        const weekCtx = await WeekContextService.sessionWeekForChatSpace(chatSpace.weekId);
+        const aiValidation = await aiEngineService.validateGoal(
+            data.content,
+            userId,
+            chatSpaceId,
+            weekCtx
+                ? {
+                      week_title: weekCtx.weekTitle,
+                      week_index: weekCtx.weekIndex,
+                      material_titles: weekCtx.materials.map((m) => m.title),
+                  }
+                : undefined
+        );
         if (aiValidation.success) {
-            if (!aiValidation.is_valid) {
-                let errorMessage = aiValidation.feedback || 'Goal tidak memenuhi kriteria Bloom\'s taxonomy';
-                const refinement = await aiEngineService.refineGoal(data.content, aiValidation.missing_criteria || []).catch(() => ({ success: false as const }));
-                if (refinement.success && 'refined_goal' in refinement && refinement.refined_goal) {
-                    errorMessage += `\n\nSaran perbaikan: "${refinement.refined_goal}"`;
-                }
-                throw ApiError.badRequest(errorMessage);
+            if (!aiValidation.is_valid || aiValidation.status === 'revise') {
+                const hint =
+                    aiValidation.socratic_hint ||
+                    aiValidation.feedback ||
+                    'Perbaiki goal agar selaras dengan minggu dan materi.';
+                throw ApiError.badRequest(hint, { status: 'revise', socratic_hint: hint });
             }
             isValidated = aiValidation.is_valid;
             goalFeedback = aiValidation.feedback;

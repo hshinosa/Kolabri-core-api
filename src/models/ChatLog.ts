@@ -33,11 +33,26 @@ export interface IChatLog extends Document {
     senderType: 'student' | 'lecturer' | 'ai' | 'bot' | 'system';
     content: string;
     isIntervention: boolean;
-    isDeleted: boolean;
+    deletedAt?: Date;
+    version: number;
     replyTo?: IReplyTo;
     attachments: IAttachment[];
     mentions: string[];
     engagement?: IEngagementAnalysis;
+    isRelevant?: boolean | null;
+    topic?: string;
+    threadId?: string;
+    isPinned: boolean;
+    pinnedAt?: Date;
+    pinnedBy?: string;
+    // AI Explainability metadata (NFR-MNT-02)
+    guardrailReason?: string;
+    guardrailOutcome?: string;
+    interventionType?: string;
+    interventionReason?: string;
+    scaffoldingLevel?: string;
+    qualityScore?: number;
+    citations?: Array<{ course_material_id: string; label?: string; page?: number }>;
     createdAt: Date;
 }
 
@@ -92,19 +107,43 @@ const ChatLogSchema = new Schema<IChatLog>(
         },
         content: { type: String, default: '' },
         isIntervention: { type: Boolean, default: false },
-        isDeleted: { type: Boolean, default: false },
+        deletedAt: { type: Date, default: null },
+        version: { type: Number, default: 0 },
         replyTo: { type: ReplyToSchema, required: false },
         attachments: { type: [AttachmentSchema], default: [] },
         mentions: { type: [String], default: [] },
         engagement: { type: EngagementAnalysisSchema, required: false },
+        isRelevant: { type: Schema.Types.Mixed, default: null },
+        topic: { type: String, required: false },
+        threadId: { type: String, required: false },
+        isPinned: { type: Boolean, default: false },
+        pinnedAt: { type: Date, required: false },
+        pinnedBy: { type: String, required: false },
+        guardrailReason: { type: String, required: false },
+        guardrailOutcome: { type: String, required: false },
+        interventionType: { type: String, required: false },
+        interventionReason: { type: String, required: false },
+        scaffoldingLevel: { type: String, required: false },
+        qualityScore: { type: Number, required: false },
+        citations: {
+            type: [
+                {
+                    course_material_id: { type: String, required: true },
+                    label: { type: String, required: false },
+                    page: { type: Number, required: false },
+                },
+            ],
+            default: undefined,
+        },
     },
     {
         timestamps: { createdAt: true, updatedAt: false },
     }
 );
 
-// Compound index for efficient queries - by chatSpaceId for per-session chat
 ChatLogSchema.index({ chatSpaceId: 1, createdAt: -1 });
 ChatLogSchema.index({ courseId: 1, groupId: 1, createdAt: -1 });
+ChatLogSchema.index({ chatSpaceId: 1, isPinned: 1, createdAt: -1 });
+ChatLogSchema.index({ chatSpaceId: 1, topic: 1, createdAt: -1 });
 
 export const ChatLog = mongoose.model<IChatLog>('ChatLog', ChatLogSchema);

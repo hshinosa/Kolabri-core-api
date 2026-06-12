@@ -62,10 +62,10 @@ export class LecturerAiController {
                     code: true,
                     description: true,
                     knowledgeBases: query.includeKnowledgeBase
-                        ? { select: { id: true, fileName: true, description: true } }
+                        ? { select: { id: true, fileName: true } }
                         : false,
                     students: query.includeStudents
-                        ? { select: { id: true, student: { select: { id: true, name: true, email: true } } } }
+                        ? { select: { id: true, user: { select: { id: true, name: true, email: true } } } }
                         : false,
                 },
             });

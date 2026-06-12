@@ -42,6 +42,17 @@ export class CourseService {
                 name: data.name,
                 description: data.description,
                 joinCode,
+                minMembersPerGroup: data.min_members_per_group,
+                maxMembersPerGroup: data.max_members_per_group,
+                aiGuardrailConfig: {
+                    preset: data.ai_guardrail_preset ?? 'balanced',
+                    allowRewrite: data.ai_guardrail_allow_rewrite ?? true,
+                    allowFlagOnly: data.ai_guardrail_allow_flag_only ?? false,
+                },
+                aiScaffoldingConfig: {
+                    scaffoldingLevel: data.ai_scaffolding_level ?? 'auto',
+                    enabled: data.ai_scaffolding_enabled ?? true,
+                },
                 semester: data.semester,
                 academicYear: data.academic_year,
                 ownerId: lecturerId,
@@ -264,12 +275,23 @@ export class CourseService {
             }
         }
 
+        const courseRecord = course as unknown as Record<string, unknown>;
+        const aiGuardrailConfig = (courseRecord.aiGuardrailConfig as Record<string, unknown> | null) ?? {};
+        const aiScaffoldingConfig = (courseRecord.aiScaffoldingConfig as Record<string, unknown> | null) ?? {};
+
         return {
             id: course.id,
             code: course.code,
             name: course.name,
             description: course.description,
             join_code: role === 'lecturer' ? course.joinCode : undefined,
+            min_members_per_group: (courseRecord.minMembersPerGroup as number | undefined) ?? 1,
+            max_members_per_group: (courseRecord.maxMembersPerGroup as number | undefined) ?? 1000,
+            ai_guardrail_preset: (aiGuardrailConfig.preset as string | undefined) ?? 'balanced',
+            ai_guardrail_allow_rewrite: (aiGuardrailConfig.allowRewrite as boolean | undefined) ?? true,
+            ai_guardrail_allow_flag_only: (aiGuardrailConfig.allowFlagOnly as boolean | undefined) ?? false,
+            ai_scaffolding_level: (aiScaffoldingConfig.scaffoldingLevel as string | undefined) ?? 'auto',
+            ai_scaffolding_enabled: (aiScaffoldingConfig.enabled as boolean | undefined) ?? true,
             owner: course.owner,
             groups: course.groups.map((group: typeof course.groups[number]) => {
                 // Sum goals from all chatSpaces in this group
@@ -358,6 +380,30 @@ export class CourseService {
 
         if (data.name !== undefined) updateData.name = data.name;
         if (data.description !== undefined) updateData.description = data.description;
+        if (data.min_members_per_group !== undefined) updateData.minMembersPerGroup = data.min_members_per_group;
+        if (data.max_members_per_group !== undefined) updateData.maxMembersPerGroup = data.max_members_per_group;
+        if (
+            data.ai_guardrail_preset !== undefined
+            || data.ai_guardrail_allow_rewrite !== undefined
+            || data.ai_guardrail_allow_flag_only !== undefined
+        ) {
+            const currentPolicy = (((course as unknown as Record<string, unknown>).aiGuardrailConfig) as Record<string, unknown> | null) ?? {};
+            updateData.aiGuardrailConfig = {
+                preset: data.ai_guardrail_preset ?? currentPolicy.preset ?? 'balanced',
+                allowRewrite: data.ai_guardrail_allow_rewrite ?? currentPolicy.allowRewrite ?? true,
+                allowFlagOnly: data.ai_guardrail_allow_flag_only ?? currentPolicy.allowFlagOnly ?? false,
+            };
+        }
+        if (
+            data.ai_scaffolding_level !== undefined
+            || data.ai_scaffolding_enabled !== undefined
+        ) {
+            const currentScaffolding = (((course as unknown as Record<string, unknown>).aiScaffoldingConfig) as Record<string, unknown> | null) ?? {};
+            updateData.aiScaffoldingConfig = {
+                scaffoldingLevel: data.ai_scaffolding_level ?? currentScaffolding.scaffoldingLevel ?? 'auto',
+                enabled: data.ai_scaffolding_enabled ?? currentScaffolding.enabled ?? true,
+            };
+        }
         if (data.semester !== undefined) updateData.semester = data.semester;
         if (data.academic_year !== undefined) updateData.academicYear = data.academic_year;
 

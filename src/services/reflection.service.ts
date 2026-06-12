@@ -1,6 +1,7 @@
 import prisma from '../config/database.js';
 import { ApiError } from '../middleware/errorHandler.js';
 import { CreateReflectionInput } from '../validators/reflection.validator.js';
+import { invalidateDashboardCache } from './dashboard.service.js';
 
 export class ReflectionService {
     /**
@@ -50,6 +51,8 @@ export class ReflectionService {
                 },
             },
         });
+
+        invalidateDashboardCache();
 
         return {
             id: reflection.id,

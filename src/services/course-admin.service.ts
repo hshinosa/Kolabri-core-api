@@ -231,7 +231,12 @@ export class CourseAdminService {
     static async deleteCourse(id: string, actorUserId: string) {
         const course = await prisma.course.findUnique({
             where: { id },
-            include: courseAdminInclude,
+            include: {
+                ...courseAdminInclude,
+                groups: {
+                    select: { id: true },
+                },
+            },
         });
 
         if (!course) {
@@ -257,8 +262,27 @@ export class CourseAdminService {
             });
         }
 
-        await prisma.course.delete({
-            where: { id },
+        const groupIds = course.groups.map((g) => g.id);
+
+        await prisma.$transaction(async (tx) => {
+            if (groupIds.length > 0) {
+                await tx.chatSpace.updateMany({
+                    where: { groupId: { in: groupIds } },
+                    data: { deletedAt: new Date() },
+                });
+                await tx.group.updateMany({
+                    where: { id: { in: groupIds } },
+                    data: { deletedAt: new Date() },
+                });
+            }
+            await tx.knowledgeBase.updateMany({
+                where: { courseId: id },
+                data: { deletedAt: new Date() },
+            });
+            await tx.course.update({
+                where: { id },
+                data: { deletedAt: new Date() },
+            });
         });
 
         await this.logCourseAction('DELETE', actorUserId, id, course, null, {

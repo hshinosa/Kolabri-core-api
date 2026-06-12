@@ -25,6 +25,36 @@ interface AskResponse {
     error?: string;
 }
 
+interface GuardrailPolicyPayload {
+    preset: 'strict' | 'balanced' | 'relaxed';
+    allow_rewrite: boolean;
+    allow_flag_only: boolean;
+}
+
+interface ScaffoldingPolicyPayload {
+    scaffolding_level?: 'early' | 'late' | 'auto';
+    enabled?: boolean;
+}
+
+interface ReadingRecommendationItem {
+    source_title: string;
+    snippet: string;
+    rationale: string;
+    suggested_action: string;
+    page?: number;
+    relevance_score: number;
+}
+
+interface ReadingRecommendationResponse {
+    success: boolean;
+    recommendations: ReadingRecommendationItem[];
+    fallback: {
+        message: string;
+        suggestedNextStep: string;
+    } | null;
+    error?: string;
+}
+
 interface IngestResponse {
     success: boolean;
     message: string;
@@ -57,9 +87,21 @@ interface BatchUploadResponse {
     success: boolean;
     message: string;
     processing_time_ms: number;
-    batch_id: string;
-    results: BatchDocumentResult[];
-    stats: DocumentProcessingStats;
+    batch_id?: string;
+    results?: BatchDocumentResult[];
+    documents?: Array<{
+        filename?: string;
+        name?: string;
+        status?: string;
+        success?: boolean;
+        error?: string | null;
+        chunks_created?: number;
+    }>;
+    stats?: DocumentProcessingStats;
+    total_files?: number;
+    successful_files?: number;
+    failed_files?: number;
+    total_chunks?: number;
 }
 
 interface InterventionRequest {
@@ -112,7 +154,18 @@ interface OrchestrationRequest {
     collection_name?: string;
     course_id?: string;
     chat_room_id?: string;
+    guardrail_policy?: GuardrailPolicyPayload;
+    scaffolding_config?: ScaffoldingPolicyPayload;
+    session_week_index?: number;
+    max_week_index?: number;
+    week_context?: Record<string, unknown>;
 }
+
+export type CitationPayload = {
+    course_material_id: string;
+    label?: string;
+    page?: number;
+};
 
 interface OrchestrationResponse {
     success: boolean;
@@ -123,7 +176,12 @@ interface OrchestrationResponse {
     should_notify_teacher: boolean;
     quality_score?: number;
     meta?: GroupAnalyticsMeta;
+    guardrail_outcome?: string;
+    guardrail_reason?: string;
+    scaffolding_level?: string;
+    scaffolding_outcome?: string;
     error?: string;
+    citations?: CitationPayload[];
 }
 
 interface GroupAnalyticsMeta {
@@ -266,7 +324,8 @@ export class AIEngineService {
         query: string,
         courseId: string,
         userName?: string,
-        chatSpaceId?: string
+        chatSpaceId?: string,
+        guardrailPolicy?: GuardrailPolicyPayload
     ): Promise<AskResponse> {
         try {
             return await this.resilient(async () => {
@@ -278,6 +337,7 @@ export class AIEngineService {
                         course_id: courseId,
                         user_name: userName,
                         chat_space_id: chatSpaceId,
+                        guardrail_policy: guardrailPolicy,
                     }),
                 }, LLM_TIMEOUT);
                 if (!response.ok) throw new Error(`AI Engine responded with ${response.status}`);
@@ -293,6 +353,40 @@ export class AIEngineService {
         }
     }
 
+    async generateReadingRecommendations(
+        topic: string,
+        courseId: string,
+        limit = 3
+    ): Promise<ReadingRecommendationResponse> {
+        try {
+            return await this.resilient(async () => {
+                const response = await this.fetchWithTimeout(`${this.baseUrl}/api/reading-recommendations`, {
+                    method: 'POST',
+                    headers: this.getHeaders(),
+                    body: JSON.stringify({
+                        topic,
+                        course_id: courseId,
+                        limit,
+                    }),
+                }, LLM_TIMEOUT);
+
+                if (!response.ok) throw new Error(`AI Engine responded with ${response.status}`);
+                return await response.json() as ReadingRecommendationResponse;
+            });
+        } catch (error) {
+            logger.error('AI Engine reading recommendation failed:', error);
+            return {
+                success: false,
+                recommendations: [],
+                fallback: {
+                    message: 'Belum ada materi relevan yang siap direkomendasikan untuk topik ini.',
+                    suggestedNextStep: 'Persempit topik atau minta dosen mengunggah materi tambahan ke knowledge base course ini.',
+                },
+                error: error instanceof Error ? error.message : 'Unknown error',
+            };
+        }
+    }
+
     /**
      * Ingest a PDF document into the vector store
      */
@@ -300,7 +394,9 @@ export class AIEngineService {
         fileId: string,
         filePath: string,
         courseId: string,
-        fileName: string
+        fileName: string,
+        extraMetadata?: Record<string, string | number>,
+        ingestOptions?: { extractImages?: boolean; performOcr?: boolean }
     ): Promise<IngestResponse> {
         try {
             const fileBuffer = await fs.readFile(filePath);
@@ -311,6 +407,22 @@ export class AIEngineService {
                 formData.append('file', fileBlob, fileName);
                 formData.append('course_id', courseId);
                 formData.append('file_id', fileId);
+                const metaPayload: Record<string, unknown> = { ...(extraMetadata ?? {}) };
+                if (ingestOptions?.extractImages) {
+                    metaPayload.extract_images = true;
+                }
+                if (ingestOptions?.performOcr) {
+                    metaPayload.perform_ocr = true;
+                }
+                if (Object.keys(metaPayload).length > 0) {
+                    formData.append('extra_metadata', JSON.stringify(metaPayload));
+                }
+                if (ingestOptions?.extractImages !== undefined) {
+                    formData.append('extract_images', String(ingestOptions.extractImages));
+                }
+                if (ingestOptions?.performOcr !== undefined) {
+                    formData.append('perform_ocr', String(ingestOptions.performOcr));
+                }
 
                 const headers: Record<string, string> = {};
                 if (this.secret) {
@@ -758,14 +870,20 @@ export class AIEngineService {
     async validateGoal(
         goalText: string,
         userId: string,
-        chatSpaceId: string
-    ): Promise<{ success: boolean; is_valid: boolean; score: number; feedback: string; socratic_hint?: string; missing_criteria?: string[]; error?: string }> {
+        chatSpaceId: string,
+        weekContext?: { week_title?: string; week_index?: number; material_titles?: string[] }
+    ): Promise<{ success: boolean; is_valid: boolean; score: number; feedback: string; socratic_hint?: string; missing_criteria?: string[]; status?: 'accepted' | 'revise'; error?: string }> {
         try {
             return await this.resilient(async () => {
                 const response = await this.fetchWithTimeout(`${this.baseUrl}/api/goals/validate`, {
                     method: 'POST',
                     headers: this.getHeaders(),
-                    body: JSON.stringify({ goal_text: goalText, user_id: userId, chat_space_id: chatSpaceId }),
+                    body: JSON.stringify({
+                        goal_text: goalText,
+                        user_id: userId,
+                        chat_space_id: chatSpaceId,
+                        week_context: weekContext ?? undefined,
+                    }),
                 }, ANALYTICS_TIMEOUT);
                 if (!response.ok) throw new Error(`AI Engine responded with ${response.status}`);
                 return await response.json() as { success: boolean; is_valid: boolean; score: number; feedback: string; socratic_hint?: string; missing_criteria?: string[] };

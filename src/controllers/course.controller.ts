@@ -3,6 +3,7 @@ import { CourseService } from '../services/course.service.js';
 import { KnowledgeBaseService } from '../services/knowledgeBase.service.js';
 import { GroupService } from '../services/group.service.js';
 import { GoalService } from '../services/goal.service.js';
+import { ReadingRecommendationService } from '../services/readingRecommendation.service.js';
 import { AuthenticatedRequest } from '../middleware/auth.js';
 import { ChatLog } from '../models/ChatLog.js';
 
@@ -35,7 +36,7 @@ export class CourseController {
             const limit = Math.min(Number(req.query.limit ?? 1000), 10000);
             const messages = await ChatLog.find({
                 courseId: req.params.id,
-                isDeleted: { $ne: true },
+                deletedAt: null,
             })
                 .sort({ createdAt: -1 })
                 .limit(limit)
@@ -239,6 +240,23 @@ export class CourseController {
 
             res.json({
                 data: files,
+            });
+        } catch (error) {
+            next(error);
+        }
+    }
+
+    static async getReadingRecommendations(req: AuthenticatedRequest, res: Response, next: NextFunction) {
+        try {
+            const result = await ReadingRecommendationService.generate(
+                req.params.id,
+                req.body,
+                req.user!.userId,
+                req.user!.role
+            );
+
+            res.json({
+                data: result,
             });
         } catch (error) {
             next(error);

@@ -182,16 +182,22 @@ export class AuthService {
     }
 
     /**
-     * Generate access token (short-lived: 15 minutes)
+     * Generate access token (short-lived)
+     * Default: 1 day. Can be overridden via JWT_EXPIRES_IN env (e.g. "1d", "24h", "1440m").
      */
     private static generateAccessToken(payload: JwtPayload): string {
         const secret = process.env.JWT_SECRET;
+        const expiresIn = process.env.JWT_EXPIRES_IN || '1d';
 
         if (!secret) {
             throw ApiError.internal('JWT secret not configured');
         }
 
-        return jwt.sign(payload, secret, { expiresIn: '15m' } as jwt.SignOptions);
+        const signOptions: jwt.SignOptions = { expiresIn } as jwt.SignOptions;
+        if (process.env.NODE_ENV === 'test' || process.env.VITEST) {
+            signOptions.jwtid = `${payload.userId}-${Date.now()}-${Math.random().toString(36).slice(2)}`;
+        }
+        return jwt.sign(payload, secret, signOptions);
     }
 
     /**

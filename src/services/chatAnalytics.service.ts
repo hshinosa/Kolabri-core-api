@@ -20,7 +20,7 @@ interface LeanChatLog {
     senderType: 'student' | 'lecturer' | 'ai' | 'bot' | 'system';
     content: string;
     isIntervention: boolean;
-    isDeleted: boolean;
+    deletedAt?: Date;
     engagement?: IEngagementAnalysis;
     createdAt: Date;
 }
@@ -88,11 +88,11 @@ export class ChatAnalyticsService {
     async getGroupAnalytics(groupId: string): Promise<GroupAnalyticsResult> {
         try {
             // Get all messages for this group with engagement data
-            const messages = await ChatLog.find({
-                groupId,
-                isDeleted: false,
-                senderType: { $in: ['student', 'lecturer'] }, // Only human messages
-            })
+        const messages = await ChatLog.find({
+            groupId,
+            deletedAt: null,
+            senderType: { $in: ['student', 'lecturer'] }, // Only human messages
+        })
                 .sort({ createdAt: -1 })
                 .lean();
 
@@ -171,7 +171,7 @@ export class ChatAnalyticsService {
         try {
             const messages = await ChatLog.find({
                 chatSpaceId,
-                isDeleted: false,
+                deletedAt: null,
                 senderType: { $in: ['student', 'lecturer'] },
             })
                 .sort({ createdAt: -1 })
@@ -389,7 +389,7 @@ export class ChatAnalyticsService {
         groupId: string
     ): Promise<{ chatSpaceId: string; messageCount: number; lastActivity: Date | null }[]> {
         const stats = await ChatLog.aggregate([
-            { $match: { groupId, isDeleted: false } },
+            { $match: { groupId, deletedAt: null } },
             {
                 $group: {
                     _id: '$chatSpaceId',
@@ -501,7 +501,7 @@ export class ChatAnalyticsService {
                 {
                     $match: {
                         groupId,
-                        isDeleted: false,
+                        deletedAt: null,
                         senderType: { $in: ['student', 'lecturer'] },
                     },
                 },

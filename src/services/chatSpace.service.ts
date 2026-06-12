@@ -86,7 +86,7 @@ export class ChatSpaceService {
         try {
             const recentMessages = await ChatLog.find({
                 chatSpaceId,
-                isDeleted: { $ne: true },
+                deletedAt: null,
                 senderType: { $in: ['student', 'lecturer'] },
             }).sort({ createdAt: -1 }).limit(30).lean();
 

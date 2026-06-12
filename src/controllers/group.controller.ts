@@ -201,6 +201,47 @@ export class GroupController {
     }
 
     /**
+     * POST /api/groups/:id/leave
+     * Student leaves a group (not the owner).
+     */
+    static async leave(req: AuthenticatedRequest, res: Response, next: NextFunction) {
+        try {
+            await GroupService.leaveGroup(req.params.id, req.user!.userId);
+
+            res.json({
+                meta: {
+                    message: 'Left group successfully',
+                },
+            });
+        } catch (error) {
+            next(error);
+        }
+    }
+
+    /**
+     * DELETE /api/groups/:id/members/:memberId
+     * Lecturer removes a member from a group.
+     */
+    static async removeMember(req: AuthenticatedRequest, res: Response, next: NextFunction) {
+        try {
+            await GroupService.removeMember(
+                req.params.id,
+                req.params.memberId,
+                req.user!.userId,
+                req.user!.role
+            );
+
+            res.json({
+                meta: {
+                    message: 'Member removed successfully',
+                },
+            });
+        } catch (error) {
+            next(error);
+        }
+    }
+
+    /**
      * POST /api/groups/:id/chat-spaces
      * Create a new chat space in a group
      */
@@ -260,6 +301,41 @@ export class GroupController {
 
             res.json({
                 data: chatSpace,
+            });
+        } catch (error) {
+            next(error);
+        }
+    }
+
+    static async updateChatSpaceWeek(req: AuthenticatedRequest, res: Response, next: NextFunction) {
+        try {
+            const { week_id: weekId } = req.body as { week_id: string };
+            const result = await GroupService.updateChatSpaceWeek(
+                req.params.chatSpaceId,
+                weekId,
+                req.user!.userId,
+                req.user!.role
+            );
+            res.json({ data: result });
+        } catch (error) {
+            next(error);
+        }
+    }
+
+    /**
+     * POST /api/groups/chat-spaces/:chatSpaceId/pre-read/complete
+     */
+    static async completePreRead(req: AuthenticatedRequest, res: Response, next: NextFunction) {
+        try {
+            const result = await GroupService.completePreRead(
+                req.params.chatSpaceId,
+                req.user!.userId,
+                req.user!.role
+            );
+
+            res.json({
+                data: result,
+                meta: { message: 'Pre-read marked complete' },
             });
         } catch (error) {
             next(error);
