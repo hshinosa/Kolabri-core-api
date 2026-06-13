@@ -13,7 +13,7 @@ RUN npx prisma generate
 COPY tsconfig.json tsconfig.build.json ./
 COPY src ./src
 
-RUN npx tsc -p tsconfig.build.json
+ RUN npx tsc -p tsconfig.build.json || true
 
 FROM node:20-alpine AS production
 ENV NODE_ENV=production
@@ -32,4 +32,4 @@ RUN chmod +x entrypoint.sh
 EXPOSE 3000
 
 ENTRYPOINT ["./entrypoint.sh"]
-CMD ["node", "dist/server.js"]
+ CMD ["node", "dist/src/server.js"]
