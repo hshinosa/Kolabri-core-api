@@ -77,18 +77,11 @@ export class GoalService {
         let goalFeedback: string | undefined;
         let socraticHint: string | undefined;
 
-        const weekCtx = await WeekContextService.sessionWeekForChatSpace(chatSpace.weekId);
         const aiValidation = await aiEngineService.validateGoal(
             data.content,
             userId,
             chatSpaceId,
-            weekCtx
-                ? {
-                      week_title: weekCtx.weekTitle,
-                      week_index: weekCtx.weekIndex,
-                      material_titles: weekCtx.materials.map((m) => m.title),
-                  }
-                : undefined
+            data.week_context
         );
         if (aiValidation.success) {
             if (!aiValidation.is_valid || aiValidation.status === 'revise') {
