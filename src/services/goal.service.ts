@@ -94,6 +94,11 @@ export class GoalService {
             isValidated = aiValidation.is_valid;
             goalFeedback = aiValidation.feedback;
             socraticHint = aiValidation.socratic_hint;
+        } else {
+            throw ApiError.badRequest(
+                'Sistem validasi sedang sibuk. Silakan coba lagi dalam beberapa saat.',
+                { status: 'retry' }
+            );
         }
 
         const goal = await prisma.learningGoal.create({
