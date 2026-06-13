@@ -159,6 +159,7 @@ interface OrchestrationRequest {
     session_week_index?: number;
     max_week_index?: number;
     week_context?: Record<string, unknown>;
+    chat_history?: Array<{ role: 'user' | 'assistant'; content: string }>;
 }
 
 export type CitationPayload = {
@@ -884,7 +885,7 @@ export class AIEngineService {
                         chat_space_id: chatSpaceId,
                         week_context: weekContext ?? undefined,
                     }),
-                }, ANALYTICS_TIMEOUT);
+                }, LLM_TIMEOUT);
                 if (!response.ok) throw new Error(`AI Engine responded with ${response.status}`);
                 return await response.json() as { success: boolean; is_valid: boolean; score: number; feedback: string; socratic_hint?: string; missing_criteria?: string[] };
             });

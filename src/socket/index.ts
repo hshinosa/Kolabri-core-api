@@ -1059,6 +1059,22 @@ async function handleAIQuestion(
             const sessionWeekIndex = weekCtx?.weekIndex;
             const maxWeekIndex = sessionWeekIndex;
 
+            const recentMessages = await ChatLog.find(
+                { chatSpaceId, deletedAt: null },
+                { senderType: 1, content: 1 }
+            )
+                .sort({ createdAt: -1 })
+                .limit(10)
+                .lean();
+
+            const chatHistory = recentMessages
+                .reverse()
+                .filter((m) => m.senderType === 'student' || m.senderType === 'ai')
+                .map((m) => ({
+                    role: m.senderType === 'ai' ? 'assistant' as const : 'user' as const,
+                    content: m.content,
+                }));
+
             const result = await aiEngineService.orchestratedChat({
                 user_id: userId,
                 group_id: groupId,
@@ -1078,6 +1094,7 @@ async function handleAIQuestion(
                           material_titles: weekCtx.materials.map((m) => m.title),
                       }
                     : undefined,
+                chat_history: chatHistory.length > 0 ? chatHistory : undefined,
             });
             orchestrationResult = result;
 
