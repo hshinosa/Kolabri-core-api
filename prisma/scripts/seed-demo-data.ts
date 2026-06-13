@@ -826,7 +826,7 @@ export async function seedDemoData() {
   const lecturers = [];
   for (const data of LECTURERS) {
     const lecturer = await prisma.user.create({
-      data: { id: seedUuid(`user-${data.email}`), email: data.email, password: hashedPassword, name: data.name, role: UserRole.lecturer },
+      data: { id: seedUuid(`user-${data.email}`), email: data.email, password: hashedPassword, name: data.name, role: UserRole.lecturer, aiInteractionConsent: true },
     });
     lecturers.push(lecturer);
     console.log(`  ✅ Lecturer: ${lecturer.name}`);
@@ -835,7 +835,7 @@ export async function seedDemoData() {
   const students: StudentWithEngagement[] = [];
   for (const data of STUDENTS) {
     const student = await prisma.user.create({
-      data: { id: seedUuid(`user-${data.email}`), email: data.email, password: hashedPassword, name: data.name, role: UserRole.student },
+      data: { id: seedUuid(`user-${data.email}`), email: data.email, password: hashedPassword, name: data.name, role: UserRole.student, aiInteractionConsent: true },
     });
     students.push({ ...student, engagement: data.engagement });
     console.log(`  ✅ Student: ${student.name} (${data.engagement})`);

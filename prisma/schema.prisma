@@ -33,7 +33,7 @@ model User {
   themePreference      String?   @default("system") @map("theme_preference") // "light" | "dark" | "system"
   languagePreference   String?   @default("id") @map("language_preference") // "id" | "en"
   analyticsVisibility  Boolean   @default(false) @map("analytics_visibility")
-  aiInteractionConsent Boolean   @default(false) @map("ai_interaction_consent")
+  aiInteractionConsent Boolean   @default(true) @map("ai_interaction_consent")
   dataSharingConsent   Boolean   @default(false) @map("data_sharing_consent")
   createdAt            DateTime  @default(now()) @map("created_at")
   updatedAt            DateTime  @updatedAt @map("updated_at")
