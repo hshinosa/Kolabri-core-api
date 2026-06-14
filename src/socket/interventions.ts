@@ -110,7 +110,7 @@ export async function runSilenceIntervention(
             groupId,
             chatSpaceId,
             senderId: 'bot',
-            senderName: 'CoRegula Bot',
+            senderName: 'Kolabri',
             senderType: 'bot',
             content: message,
             isIntervention: true,
@@ -120,7 +120,7 @@ export async function runSilenceIntervention(
         deps.emit(roomId, 'receive_message', {
             id: chatLog._id?.toString(),
             senderId: 'bot',
-            senderName: 'CoRegula Bot',
+            senderName: 'Kolabri',
             senderType: 'bot',
             content: message,
             isIntervention: true,

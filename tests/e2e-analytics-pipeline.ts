@@ -125,7 +125,7 @@ async function seedData() {
         { sender: IDS.student2, name: 'E2E Student 2', type: 'student', content: 'ok mantap', isHOT: false },
         { sender: IDS.student1, name: 'E2E Student 1', type: 'student', content: 'iya betul', isHOT: false },
         { sender: IDS.student2, name: 'E2E Student 2', type: 'student', content: 'Evaluasi juga perlu mempertimbangkan aspek kolaborasi dan kontribusi individu', isHOT: true },
-        { sender: 'bot', name: 'CoRegula Bot', type: 'bot', content: 'Diskusi kalian sudah bagus! Coba perdalam lagi analisisnya.', isIntervention: true },
+        { sender: 'bot', name: 'Kolabri', type: 'bot', content: 'Diskusi kalian sudah bagus! Coba perdalam lagi analisisnya.', isIntervention: true },
         { sender: IDS.student1, name: 'E2E Student 1', type: 'student', content: 'Dampak lainnya adalah meningkatkan kemampuan berpikir kritis melalui argumentasi', isHOT: true },
     ];
 
