@@ -1,6 +1,6 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
-const { aiEngineMock, ChatLogMock, SilenceEventMock, gateMock } = vi.hoisted(() => {
+const { aiEngineMock, ChatLogMock, SilenceEventMock, gateMock, providerResolutionServiceMock } = vi.hoisted(() => {
     const chatLogSave = vi.fn().mockResolvedValue(undefined);
     const silenceSave = vi.fn().mockResolvedValue(undefined);
 
@@ -25,11 +25,26 @@ const { aiEngineMock, ChatLogMock, SilenceEventMock, gateMock } = vi.hoisted(() 
         gateMock: {
             tryAcquireSilenceLock: vi.fn().mockResolvedValue(true),
         },
+        providerResolutionServiceMock: {
+            resolveProviderContext: vi.fn(),
+            executeWithFallback: vi.fn(async (_input, operation, options) => {
+                const resolution = await providerResolutionServiceMock.resolveProviderContext(_input);
+                const result = await operation(resolution.primary.providerContext);
+                if (options?.isSuccess && !options.isSuccess(result)) {
+                    throw new Error(`Provider ${resolution.primary.providerName} returned unsuccessful result`);
+                }
+                return result;
+            }),
+        },
     };
 });
 
 vi.mock('../services/aiEngine.service.js', () => ({
     aiEngineService: aiEngineMock,
+}));
+
+vi.mock('../services/providerResolution.service.js', () => ({
+    providerResolutionService: providerResolutionServiceMock,
 }));
 
 vi.mock('../models/ChatLog.js', () => {
@@ -66,6 +81,16 @@ vi.mock('../utils/logger.js', () => ({
 import { runSilenceIntervention } from './interventions.js';
 import { INTERVENTION_MESSAGES } from './interventionMessages.js';
 
+function createProviderContext() {
+    return {
+        version: '1.0' as const,
+        provider: { name: 'openai', displayName: 'OpenAI GPT' },
+        execution: { baseUrl: 'https://api.openai.com/v1', model: 'gpt-4o-mini' },
+        auth: { type: 'api-key' as const, credential: 'sk-test' },
+        metadata: { featureFamily: 'interventions', requestId: 'req-1', resolvedAt: '2026-06-16T10:00:00.000Z' },
+    };
+}
+
 const ctx = {
     roomId: 'room-1',
     courseId: 'course-1',
@@ -84,6 +109,10 @@ describe('runSilenceIntervention', () => {
     beforeEach(() => {
         vi.clearAllMocks();
         gateMock.tryAcquireSilenceLock.mockResolvedValue(true);
+        providerResolutionServiceMock.resolveProviderContext.mockResolvedValue({
+            primary: { providerId: 'provider-openai', providerName: 'openai', providerContext: createProviderContext() },
+            fallbackChain: [],
+        });
     });
 
     it('uses AI primary message when analyzeIntervention succeeds', async () => {
@@ -95,7 +124,11 @@ describe('runSilenceIntervention', () => {
 
         await runSilenceIntervention(ctx, deps);
 
+        expect(providerResolutionServiceMock.resolveProviderContext).toHaveBeenCalledWith({ featureFamily: 'interventions' });
         expect(aiEngineMock.analyzeIntervention).toHaveBeenCalledOnce();
+        expect(aiEngineMock.analyzeIntervention).toHaveBeenCalledWith(
+            expect.objectContaining({ provider_context: createProviderContext() })
+        );
         expect(aiEngineMock.generatePrompt).not.toHaveBeenCalled();
 
         const savedChatLogCall = ChatLogMock._save.mock.calls;
@@ -123,6 +156,7 @@ describe('runSilenceIntervention', () => {
             'Diskusi sepi',
             expect.any(String),
             'easy',
+            createProviderContext(),
         );
         expect(deps.emit).toHaveBeenCalledWith(
             'room-1',

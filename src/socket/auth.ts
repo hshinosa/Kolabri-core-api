@@ -10,7 +10,7 @@ type NextFn = Parameters<Parameters<Server['use']>[0]>[1];
 export async function authMiddleware(socket: Socket, next: NextFn): Promise<void> {
     const authed = socket as AuthenticatedSocket;
     try {
-        const token = authed.handshake.auth.token || authed.handshake.query.token;
+        const token = authed.handshake.auth.token;
 
         logger.debug(`Socket auth attempt - token present: ${!!token}`);
 

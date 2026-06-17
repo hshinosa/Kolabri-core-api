@@ -1,4 +1,5 @@
 import { logger } from './logger.js';
+import { sanitizeErrorForLog } from './sensitiveData.js';
 
 type CircuitState = 'CLOSED' | 'OPEN' | 'HALF_OPEN';
 
@@ -109,7 +110,7 @@ export class CircuitBreaker {
 
     private onFailure(error: unknown): void {
         this.consecutiveFailures++;
-        const reason = error instanceof Error ? `${error.name}: ${error.message}` : String(error);
+        const reason = sanitizeErrorForLog(error);
         if (this.state === 'HALF_OPEN') {
             this.transitionTo('OPEN', `probe failed (${reason})`);
             return;
@@ -160,6 +161,13 @@ export async function withRetry<T>(
             if (!retryable || attempt === maxRetries) {
                 throw error;
             }
+
+            logger.warn('Retrying AI Engine request', {
+                attempt: attempt + 1,
+                maxRetries,
+                error: sanitizeErrorForLog(error),
+                label: 'retry_attempt',
+            });
 
             const delay = 1000 * Math.pow(2, attempt) + Math.floor(Math.random() * 1000);
             await sleep(delay);

@@ -8,6 +8,7 @@ const { prismaMock, randomBytesMock } = vi.hoisted(() => ({
         groupMember: { findUnique: vi.fn(), findFirst: vi.fn(), create: vi.fn(), createMany: vi.fn(), delete: vi.fn() },
         chatSpace: { create: vi.fn(), findUnique: vi.fn(), findFirst: vi.fn() },
         chatSpacePreReadCompletion: { findUnique: vi.fn(), findMany: vi.fn(), create: vi.fn() },
+        user: { findUnique: vi.fn() },
         $queryRaw: vi.fn(),
         $transaction: vi.fn(),
     },
@@ -470,6 +471,7 @@ describe('GroupService', () => {
                 id: 'group-1',
                 name: 'Group 1',
                 joinCode: 'ABC12345',
+                createdBy: 'lecturer-1',
                 members: [{ user: { id: 'student-1', name: 'Student One', email: 's1@example.com' } }],
                 chatSpaces: [
                     {
@@ -492,6 +494,11 @@ describe('GroupService', () => {
                 ],
             },
         });
+        prismaMock.user.findUnique.mockResolvedValue({
+            id: 'lecturer-1',
+            name: 'Lecturer One',
+            email: 'lecturer@example.com',
+        });
         prismaMock.$queryRaw.mockResolvedValue([]);
         prismaMock.chatSpacePreReadCompletion.findMany.mockResolvedValue([]);
 
@@ -501,7 +508,9 @@ describe('GroupService', () => {
             id: 'group-1',
             name: 'Group 1',
             joinCode: 'ABC12345',
+            creator: { id: 'lecturer-1', name: 'Lecturer One', email: 'lecturer@example.com' },
             members: [{ id: 'student-1', name: 'Student One', email: 's1@example.com' }],
+            members_count: 1,
             chatSpaces: [
                 {
                     id: 'chat-1',

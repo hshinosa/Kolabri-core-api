@@ -38,6 +38,7 @@ export class DataExportService {
         const recentExport = await prisma.exportJob.findFirst({
             where: {
                 userId,
+                status: 'completed',
                 createdAt: { gte: new Date(Date.now() - 24 * 60 * 60 * 1000) }
             },
             orderBy: { createdAt: 'desc' }

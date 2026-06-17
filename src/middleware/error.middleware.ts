@@ -2,6 +2,26 @@ import { Request, Response, NextFunction } from 'express';
 import { logger } from '../utils/logger.js';
 import { v4 as uuidv4 } from 'uuid';
 
+function normalizeUploadError(err: AppError): AppError {
+    if (err.statusCode) {
+        return err;
+    }
+
+    const message = err.message || '';
+    const code = err.code || '';
+
+    if (
+        code === 'LIMIT_FILE_SIZE' ||
+        code === 'LIMIT_UNEXPECTED_FILE' ||
+        message.startsWith('Unsupported file type:') ||
+        message === 'Only PDF files are allowed'
+    ) {
+        return ApiError.badRequest(message);
+    }
+
+    return err;
+}
+
 export interface AppError extends Error {
     statusCode?: number;
     code?: string;
@@ -94,8 +114,9 @@ export function errorHandler(
     res: Response,
     _next: NextFunction
 ): void {
-    const statusCode = err.statusCode || 500;
-    const code = err.code || 'INTERNAL_ERROR';
+    const normalizedError = normalizeUploadError(err);
+    const statusCode = normalizedError.statusCode || 500;
+    const code = normalizedError.code || 'INTERNAL_ERROR';
     const requestId = (req as any).requestId || 'unknown';
     const userId = (req as any).user?.userId || 'anonymous';
     const method = req.method;
@@ -109,9 +130,9 @@ export function errorHandler(
         path,
         statusCode,
         code,
-        message: err.message,
-        stack: err.stack,
-        details: err.details,
+        message: normalizedError.message,
+        stack: normalizedError.stack,
+        details: normalizedError.details,
     };
 
     if (statusCode >= 500) {
@@ -121,12 +142,12 @@ export function errorHandler(
     }
 
     // Prepare client response
-    let clientMessage = err.message || 'An unexpected error occurred';
+    let clientMessage = normalizedError.message || 'An unexpected error occurred';
     
     // In production, sanitize error messages for 5xx errors
     if (process.env.NODE_ENV === 'production' && statusCode >= 500) {
         // Check if message contains sensitive info
-        if (hasSensitiveInfo(err)) {
+        if (hasSensitiveInfo(normalizedError)) {
             clientMessage = 'An internal server error occurred';
         } else {
             clientMessage = sanitizeErrorMessage(clientMessage);
@@ -146,10 +167,10 @@ export function errorHandler(
         error: { code, message: clientMessage },
     };
 
-    if (err.details && typeof err.details === 'object') {
+    if (normalizedError.details && typeof normalizedError.details === 'object') {
         const errors: Array<{ field: string; message: string }> = [];
-        if (Array.isArray(err.details)) {
-            for (const item of err.details) {
+        if (Array.isArray(normalizedError.details)) {
+            for (const item of normalizedError.details) {
                 if (
                     item &&
                     typeof item === 'object' &&
@@ -165,7 +186,7 @@ export function errorHandler(
                 }
             }
         } else {
-            for (const [field, message] of Object.entries(err.details)) {
+            for (const [field, message] of Object.entries(normalizedError.details)) {
                 if (typeof message === 'string') {
                     errors.push({ field, message });
                 }

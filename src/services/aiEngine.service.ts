@@ -9,6 +9,7 @@ import fs from 'fs/promises';
 import { Blob } from 'node:buffer';
 import { logger } from '../utils/logger.js';
 import { aiEngineCircuitBreaker, withRetry, isRetryableError } from '../utils/circuitBreaker.js';
+import { sanitizeErrorForLog } from '../utils/sensitiveData.js';
 
 const LLM_TIMEOUT = 30000;
 const INGEST_TIMEOUT = 60000;
@@ -23,6 +24,29 @@ interface AskResponse {
     answer: string;
     success: boolean;
     error?: string;
+}
+
+export interface ProviderContextV1 {
+    version: '1.0';
+    provider: {
+        name: string;
+        displayName: string;
+    };
+    execution: {
+        baseUrl: string;
+        model: string;
+        temperature?: number;
+        maxTokens?: number;
+    };
+    auth: {
+        type: 'api-key' | 'bearer';
+        credential: string;
+    };
+    metadata: {
+        featureFamily: string;
+        requestId: string;
+        resolvedAt: string;
+    };
 }
 
 interface GuardrailPolicyPayload {
@@ -104,7 +128,14 @@ interface BatchUploadResponse {
     total_chunks?: number;
 }
 
+interface FileBufferResult {
+    name: string;
+    buffer: Buffer;
+    contentType: string;
+}
+
 interface InterventionRequest {
+    provider_context?: ProviderContextV1;
     messages: Array<{
         sender: string;
         content: string;
@@ -147,6 +178,7 @@ interface HealthResponse {
 // ============== Orchestration Types (Teacher-AI Complementarity) ==============
 
 interface OrchestrationRequest {
+    provider_context?: ProviderContextV1;
     user_id: string;
     group_id: string;
     message: string;
@@ -313,7 +345,7 @@ export class AIEngineService {
             }
             return false;
         } catch (error) {
-            logger.warn('AI Engine health check failed:', error);
+            logger.warn('AI Engine health check failed:', sanitizeErrorForLog(error));
             return false;
         }
     }
@@ -326,7 +358,8 @@ export class AIEngineService {
         courseId: string,
         userName?: string,
         chatSpaceId?: string,
-        guardrailPolicy?: GuardrailPolicyPayload
+        guardrailPolicy?: GuardrailPolicyPayload,
+        providerContext?: ProviderContextV1,
     ): Promise<AskResponse> {
         try {
             return await this.resilient(async () => {
@@ -339,13 +372,14 @@ export class AIEngineService {
                         user_name: userName,
                         chat_space_id: chatSpaceId,
                         guardrail_policy: guardrailPolicy,
+                        provider_context: providerContext,
                     }),
                 }, LLM_TIMEOUT);
                 if (!response.ok) throw new Error(`AI Engine responded with ${response.status}`);
                 return await response.json() as AskResponse;
             });
         } catch (error) {
-            logger.error('AI Engine ask failed:', error);
+            logger.error('AI Engine ask failed:', sanitizeErrorForLog(error));
             return {
                 answer: 'Maaf, AI Assistant sedang tidak tersedia saat ini. Silakan coba lagi nanti.',
                 success: false,
@@ -357,7 +391,8 @@ export class AIEngineService {
     async generateReadingRecommendations(
         topic: string,
         courseId: string,
-        limit = 3
+        limit = 3,
+        providerContext?: ProviderContextV1,
     ): Promise<ReadingRecommendationResponse> {
         try {
             return await this.resilient(async () => {
@@ -368,6 +403,7 @@ export class AIEngineService {
                         topic,
                         course_id: courseId,
                         limit,
+                        provider_context: providerContext,
                     }),
                 }, LLM_TIMEOUT);
 
@@ -375,7 +411,7 @@ export class AIEngineService {
                 return await response.json() as ReadingRecommendationResponse;
             });
         } catch (error) {
-            logger.error('AI Engine reading recommendation failed:', error);
+            logger.error('AI Engine reading recommendation failed:', sanitizeErrorForLog(error));
             return {
                 success: false,
                 recommendations: [],
@@ -444,7 +480,7 @@ export class AIEngineService {
                 return await response.json() as IngestResponse;
             });
         } catch (error) {
-            logger.error('AI Engine ingest failed:', error);
+            logger.error('AI Engine ingest failed:', sanitizeErrorForLog(error));
             throw error;
         }
     }
@@ -469,7 +505,7 @@ export class AIEngineService {
                 return response.ok;
             });
         } catch (error) {
-            logger.error('AI Engine delete document failed:', error);
+            logger.error('AI Engine delete document failed:', sanitizeErrorForLog(error));
             return false;
         }
     }
@@ -490,7 +526,7 @@ export class AIEngineService {
         }
     ): Promise<BatchUploadResponse> {
         try {
-            const fileBuffers = await Promise.all(
+            const fileBufferResults = await Promise.allSettled(
                 files.map(async (file) => ({
                     name: file.name,
                     buffer: await fs.readFile(file.path),
@@ -498,10 +534,40 @@ export class AIEngineService {
                 }))
             );
 
-            return await this.resilient(async () => {
+            const readableFiles: FileBufferResult[] = [];
+            const unreadableResults: BatchDocumentResult[] = [];
+
+            fileBufferResults.forEach((result, index) => {
+                if (result.status === 'fulfilled') {
+                    readableFiles.push(result.value);
+                    return;
+                }
+
+                const failedFile = files[index];
+                unreadableResults.push({
+                    filename: failedFile?.name ?? `file-${index + 1}`,
+                    status: 'error',
+                    error: result.reason instanceof Error ? result.reason.message : 'Failed to read file',
+                });
+            });
+
+            if (readableFiles.length === 0) {
+                return {
+                    success: false,
+                    message: 'No readable files available for batch ingest',
+                    processing_time_ms: 0,
+                    results: unreadableResults,
+                    total_files: files.length,
+                    successful_files: 0,
+                    failed_files: unreadableResults.length,
+                    total_chunks: 0,
+                };
+            }
+
+            const aiResponse = await this.resilient(async () => {
                 const formData = new FormData();
 
-                for (const { name, buffer, contentType } of fileBuffers) {
+                for (const { name, buffer, contentType } of readableFiles) {
                     const blob = new Blob([buffer], { type: contentType });
                     formData.append('files', blob, name);
                 }
@@ -532,8 +598,29 @@ export class AIEngineService {
 
                 return await response.json() as BatchUploadResponse;
             });
+
+            if (unreadableResults.length === 0) {
+                return aiResponse;
+            }
+
+            const mergedResults = [...(aiResponse.results ?? []), ...unreadableResults];
+            const aiSuccessCount = aiResponse.successful_files ?? aiResponse.results?.filter((result) => result.status === 'success').length ?? 0;
+            const aiFailedCount = aiResponse.failed_files ?? aiResponse.results?.filter((result) => result.status === 'error').length ?? 0;
+            const aiTotalFiles = aiResponse.total_files ?? readableFiles.length;
+
+            return {
+                ...aiResponse,
+                success: aiResponse.success && aiSuccessCount > 0,
+                message: unreadableResults.length > 0
+                    ? `${aiResponse.message} (${unreadableResults.length} file(s) could not be read locally)`
+                    : aiResponse.message,
+                results: mergedResults,
+                total_files: aiTotalFiles + unreadableResults.length,
+                successful_files: aiSuccessCount,
+                failed_files: aiFailedCount + unreadableResults.length,
+            };
         } catch (error) {
-            logger.error('AI Engine batch ingest failed:', error);
+            logger.error('AI Engine batch ingest failed:', sanitizeErrorForLog(error));
             throw error;
         }
     }
@@ -596,7 +683,7 @@ export class AIEngineService {
                 return await response.json() as InterventionResponse;
             });
         } catch (error) {
-            logger.error('AI Engine intervention analysis failed:', error);
+            logger.error('AI Engine intervention analysis failed:', sanitizeErrorForLog(error));
             return {
                 success: false,
                 should_intervene: false,
@@ -614,7 +701,8 @@ export class AIEngineService {
      */
     async generateSummary(
         messages: Array<{ sender: string; content: string; timestamp?: string }>,
-        chatRoomId: string
+        chatRoomId: string,
+        providerContext?: ProviderContextV1,
     ): Promise<SummaryResponse> {
         try {
             return await this.resilient(async () => {
@@ -625,13 +713,14 @@ export class AIEngineService {
                         messages,
                         chat_room_id: chatRoomId,
                         include_action_items: true,
+                        provider_context: providerContext,
                     }),
                 }, INTERVENTION_TIMEOUT);
                 if (!response.ok) throw new Error(`AI Engine responded with ${response.status}`);
                 return await response.json() as SummaryResponse;
             });
         } catch (error) {
-            logger.error('AI Engine summary generation failed:', error);
+            logger.error('AI Engine summary generation failed:', sanitizeErrorForLog(error));
             return {
                 success: false,
                 summary: '',
@@ -647,20 +736,21 @@ export class AIEngineService {
     async generatePrompt(
         topic: string,
         context?: string,
-        difficulty: 'easy' | 'medium' | 'hard' = 'medium'
+        difficulty: 'easy' | 'medium' | 'hard' = 'medium',
+        providerContext?: ProviderContextV1,
     ): Promise<{ success: boolean; prompt: string; error?: string }> {
         try {
             return await this.resilient(async () => {
                 const response = await this.fetchWithTimeout(`${this.baseUrl}/api/intervention/prompt`, {
                     method: 'POST',
                     headers: this.getHeaders(),
-                    body: JSON.stringify({ topic, context, difficulty }),
+                    body: JSON.stringify({ topic, context, difficulty, provider_context: providerContext }),
                 }, INTERVENTION_TIMEOUT);
                 if (!response.ok) throw new Error(`AI Engine responded with ${response.status}`);
                 return await response.json() as { success: boolean; prompt: string; error?: string };
             });
         } catch (error) {
-            logger.error('AI Engine prompt generation failed:', error);
+            logger.error('AI Engine prompt generation failed:', sanitizeErrorForLog(error));
             return {
                 success: false,
                 prompt: '',
@@ -672,7 +762,8 @@ export class AIEngineService {
     async personalChatStream(
         message: string,
         history: Array<{ role: 'user' | 'assistant'; content: string }>,
-        userName?: string
+        userName?: string,
+        providerContext?: ProviderContextV1,
     ): Promise<globalThis.Response> {
         return await this.resilient(() => this.fetchWithTimeout(
             `${this.baseUrl}/api/chat/personal/stream`,
@@ -683,6 +774,7 @@ export class AIEngineService {
                     message,
                     history: history.slice(-20),
                     user_name: userName,
+                    provider_context: providerContext,
                 }),
             },
             LLM_TIMEOUT
@@ -692,7 +784,8 @@ export class AIEngineService {
     async personalChat(
         message: string,
         history: Array<{ role: 'user' | 'assistant'; content: string }>,
-        userName?: string
+        userName?: string,
+        providerContext?: ProviderContextV1,
     ): Promise<{ reply: string; success: boolean; tokens_used: number; error?: string }> {
         try {
             return await this.resilient(async () => {
@@ -703,13 +796,14 @@ export class AIEngineService {
                         message,
                         history: history.slice(-20),
                         user_name: userName,
+                        provider_context: providerContext,
                     }),
                 }, LLM_TIMEOUT);
                 if (!response.ok) throw new Error(`AI Engine responded with ${response.status}`);
                 return await response.json() as { reply: string; success: boolean; tokens_used: number; error?: string };
             });
         } catch (error) {
-            logger.error('AI Engine personal chat failed:', error);
+            logger.error('AI Engine personal chat failed:', sanitizeErrorForLog(error));
             return {
                 reply: 'Maaf, AI Assistant sedang tidak tersedia saat ini. Silakan coba lagi nanti.',
                 success: false,
@@ -743,7 +837,7 @@ export class AIEngineService {
                 return await response.json() as OrchestrationResponse;
             });
         } catch (error) {
-            logger.error('AI Engine orchestrated chat failed:', error);
+            logger.error('AI Engine orchestrated chat failed:', sanitizeErrorForLog(error));
             return {
                 success: false,
                 bot_response: 'Maaf, terjadi kesalahan sistem.',
@@ -782,13 +876,13 @@ export class AIEngineService {
      * Analyze a single text for engagement metrics.
      * Returns lexical variety, HOT detection, engagement classification.
      */
-    async analyzeEngagement(text: string): Promise<EngagementAnalysisResponse> {
+    async analyzeEngagement(text: string, providerContext?: ProviderContextV1): Promise<EngagementAnalysisResponse> {
         try {
             return await this.resilient(async () => {
                 const response = await this.fetchWithTimeout(`${this.baseUrl}/api/analytics/engagement`, {
                     method: 'POST',
                     headers: this.getHeaders(),
-                    body: JSON.stringify({ text }),
+                    body: JSON.stringify({ text, provider_context: providerContext }),
                 }, ANALYTICS_TIMEOUT);
                 if (!response.ok) throw new Error(`AI Engine responded with ${response.status}`);
                 return await response.json() as EngagementAnalysisResponse;
@@ -813,10 +907,14 @@ export class AIEngineService {
      * Export event logs for Educational Process Mining.
      * Returns URL to download CSV compatible with ProM/Disco.
      */
-    async exportProcessMiningData(): Promise<ProcessMiningExportResponse> {
+    async exportProcessMiningData(providerContext?: ProviderContextV1): Promise<ProcessMiningExportResponse> {
         try {
             return await this.resilient(async () => {
-                const response = await this.fetchWithTimeout(`${this.baseUrl}/api/analytics/export`, {
+                const url = new URL(`${this.baseUrl}/api/analytics/export`);
+                if (providerContext) {
+                    url.searchParams.append('provider_context', JSON.stringify(providerContext));
+                }
+                const response = await this.fetchWithTimeout(url.toString(), {
                     method: 'GET',
                     headers: this.getHeaders(),
                 }, ANALYTICS_TIMEOUT);
@@ -834,14 +932,15 @@ export class AIEngineService {
     }
     async refineGoal(
         currentGoal: string,
-        missingCriteria: string[]
+        missingCriteria: string[],
+        providerContext?: ProviderContextV1,
     ): Promise<{ success: boolean; refined_goal?: string; error?: string }> {
         try {
             return await this.resilient(async () => {
                 const response = await this.fetchWithTimeout(`${this.baseUrl}/api/goals/refine`, {
                     method: 'POST',
                     headers: this.getHeaders(),
-                    body: JSON.stringify({ current_goal: currentGoal, missing_criteria: missingCriteria }),
+                    body: JSON.stringify({ current_goal: currentGoal, missing_criteria: missingCriteria, provider_context: providerContext }),
                 }, ANALYTICS_TIMEOUT);
                 if (!response.ok) throw new Error(`AI Engine responded with ${response.status}`);
                 return await response.json() as { success: boolean; refined_goal: string };
@@ -862,9 +961,14 @@ export class AIEngineService {
                 }, 3000);
                 if (!response.ok) throw new Error(`AI Engine responded with ${response.status}`);
                 return response;
-            }, false);
-        } catch {
-            logger.debug('AI Engine track activity failed (non-critical)');
+            }, true);
+        } catch (error) {
+            logger.debug('AI Engine track activity failed (non-critical)', {
+                groupId,
+                userId,
+                error: error instanceof Error ? error.message : 'Unknown error',
+                label: 'retry_failed',
+            });
         }
     }
 
@@ -872,7 +976,8 @@ export class AIEngineService {
         goalText: string,
         userId: string,
         chatSpaceId: string,
-        weekContext?: { week_title?: string; week_index?: number; material_titles?: string[] }
+        weekContext?: { week_title?: string; week_index?: number; material_titles?: string[] },
+        providerContext?: ProviderContextV1,
     ): Promise<{ success: boolean; is_valid: boolean; score: number; feedback: string; socratic_hint?: string; missing_criteria?: string[]; status?: 'accepted' | 'revise'; error?: string }> {
         try {
             return await this.resilient(async () => {
@@ -884,6 +989,7 @@ export class AIEngineService {
                         user_id: userId,
                         chat_space_id: chatSpaceId,
                         week_context: weekContext ?? undefined,
+                        provider_context: providerContext,
                     }),
                 }, LLM_TIMEOUT);
                 if (!response.ok) throw new Error(`AI Engine responded with ${response.status}`);

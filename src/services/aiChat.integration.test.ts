@@ -4,7 +4,7 @@ const { prismaMock, aiServiceMock, aiEngineServiceMock } = vi.hoisted(() => ({
     prismaMock: {
         aiChat: { create: vi.fn(), findMany: vi.fn(), findUnique: vi.fn(), update: vi.fn(), delete: vi.fn() },
         aiChatMessage: { findMany: vi.fn(), create: vi.fn(), count: vi.fn() },
-        aiProvider: { count: vi.fn() },
+        aiProvider: { count: vi.fn(), findMany: vi.fn() },
     },
     aiServiceMock: { sendWithConfiguredFallback: vi.fn() },
     aiEngineServiceMock: { personalChat: vi.fn(), personalChatStream: vi.fn(), isAvailable: vi.fn() },
@@ -53,28 +53,27 @@ describe('AiChatService Integration — Flow 1: Student AI Chat', () => {
         );
     });
 
-    it('uses AI Engine personalChat when no active providers exist', async () => {
+    it('returns fallback message when no active providers are configured', async () => {
         prismaMock.aiChat.findUnique
             .mockResolvedValueOnce(CHAT_BASE)
             .mockResolvedValueOnce({ ...CHAT_BASE, messages: [], user: { name: 'Hashfi' } })
             .mockResolvedValueOnce(CHAT_BASE);
         prismaMock.aiChatMessage.create
             .mockResolvedValueOnce({ id: 'msg-u', role: 'user', content: 'Halo', createdAt: NOW })
-            .mockResolvedValueOnce({ id: 'msg-a', role: 'assistant', content: 'Hai!', createdAt: NOW });
+            .mockResolvedValueOnce({ id: 'msg-a', role: 'assistant', content: 'Maaf, AI Assistant sedang tidak tersedia saat ini. Silakan coba lagi nanti.', createdAt: NOW });
         prismaMock.aiChatMessage.count.mockResolvedValue(2);
         prismaMock.aiChat.update.mockResolvedValue({});
-        prismaMock.aiProvider.count.mockResolvedValue(0);
-        aiEngineServiceMock.personalChat.mockResolvedValue({ reply: 'Hai!', success: true, tokens_used: 10 });
+        prismaMock.aiProvider.findMany.mockResolvedValue([]);
 
         const result = await AiChatService.sendMessage('chat-1', 'user-1', 'Halo');
 
-        expect(aiEngineServiceMock.personalChat).toHaveBeenCalledWith('Halo', [], 'Hashfi');
+        expect(aiEngineServiceMock.personalChat).not.toHaveBeenCalled();
         expect(aiServiceMock.sendWithConfiguredFallback).not.toHaveBeenCalled();
         expect(result.userMessage.content).toBe('Halo');
-        expect(result.assistantMessage.content).toBe('Hai!');
+        expect(result.assistantMessage.content).toBe('Maaf, AI Assistant sedang tidak tersedia saat ini. Silakan coba lagi nanti.');
     });
 
-    it('uses configured provider when active providers exist', async () => {
+    it('uses unified provider_context from DB when active providers exist', async () => {
         prismaMock.aiChat.findUnique
             .mockResolvedValueOnce(CHAT_BASE)
             .mockResolvedValueOnce({ ...CHAT_BASE, messages: [], user: { name: 'Hashfi' } })
@@ -84,13 +83,35 @@ describe('AiChatService Integration — Flow 1: Student AI Chat', () => {
             .mockResolvedValueOnce({ id: 'msg-a', role: 'assistant', content: 'Response', createdAt: NOW });
         prismaMock.aiChatMessage.count.mockResolvedValue(2);
         prismaMock.aiChat.update.mockResolvedValue({});
-        prismaMock.aiProvider.count.mockResolvedValue(1);
-        aiServiceMock.sendWithConfiguredFallback.mockResolvedValue({ content: 'Response', success: true });
+        prismaMock.aiProvider.findMany.mockResolvedValue([
+            {
+                id: 'provider-gemini',
+                name: 'gemini',
+                displayName: 'Gemini',
+                apiKey: 'encrypted-gemini-key',
+                baseUrl: 'https://generativelanguage.googleapis.com/v1beta',
+                isActive: true,
+                fallbackOrder: 1,
+                config: { defaultModel: 'gemini-1.5-pro', temperature: 0.3, maxTokens: 512 },
+            },
+        ]);
+        aiEngineServiceMock.personalChat.mockResolvedValue({ reply: 'Response', success: true, tokens_used: 10 });
 
         const result = await AiChatService.sendMessage('chat-1', 'user-1', 'Halo');
 
-        expect(aiServiceMock.sendWithConfiguredFallback).toHaveBeenCalled();
-        expect(aiEngineServiceMock.personalChat).not.toHaveBeenCalled();
+        expect(aiEngineServiceMock.personalChat).toHaveBeenCalledWith(
+            'Halo',
+            [],
+            'Hashfi',
+            expect.objectContaining({
+                version: '1.0',
+                provider: { name: 'gemini', displayName: 'Gemini' },
+                execution: { baseUrl: 'https://generativelanguage.googleapis.com/v1beta', model: 'gemini-1.5-pro', temperature: 0.3, maxTokens: 512 },
+                auth: { type: 'api-key', credential: expect.any(String) },
+                metadata: expect.objectContaining({ featureFamily: 'personal-chat' }),
+            }),
+        );
+        expect(aiServiceMock.sendWithConfiguredFallback).not.toHaveBeenCalled();
         expect(result.assistantMessage.content).toBe('Response');
     });
 

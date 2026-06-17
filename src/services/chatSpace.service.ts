@@ -4,6 +4,7 @@ import { getSocketEmitter } from '../utils/socketEmitter.js';
 import { logger } from '../utils/logger.js';
 import { ChatLog } from '../models/ChatLog.js';
 import { aiEngineService } from './aiEngine.service.js';
+import { providerResolutionService } from './providerResolution.service.js';
 
 // Type for ChatSpace with session fields
 interface ChatSpaceWithSession {
@@ -83,6 +84,7 @@ export class ChatSpaceService {
 
         let summary: string | null = null;
         let summaryGeneratedAt: Date | null = null;
+        let summaryError: string | null = null;
         try {
             const recentMessages = await ChatLog.find({
                 chatSpaceId,
@@ -91,13 +93,21 @@ export class ChatSpaceService {
             }).sort({ createdAt: -1 }).limit(30).lean();
 
             if (recentMessages.length > 0) {
-                const summaryResult = await aiEngineService.generateSummary(
-                    recentMessages.reverse().map((m) => ({
-                        sender: m.senderName,
-                        content: m.content,
-                        timestamp: new Date(m.createdAt).toISOString(),
-                    })),
-                    chatSpaceId
+                const summaryResult = await providerResolutionService.executeWithFallback(
+                    { featureFamily: 'summaries' },
+                    (providerContext) => aiEngineService.generateSummary(
+                        recentMessages.reverse().map((m) => ({
+                            sender: m.senderName,
+                            content: m.content,
+                            timestamp: new Date(m.createdAt).toISOString(),
+                        })),
+                        chatSpaceId,
+                        providerContext,
+                    ),
+                    {
+                        isSuccess: (response) => response.success && Boolean(response.summary),
+                        perProviderTimeoutMs: 20000,
+                    },
                 );
                 if (summaryResult.success && summaryResult.summary) {
                     summary = summaryResult.summary;
@@ -108,10 +118,14 @@ export class ChatSpaceService {
                     });
                 }
             }
-        } catch {
-            logger.debug('summary_generation_failed');
+        } catch (error) {
+            logger.warn('Summary generation failed during session close', {
+                chatSpaceId,
+                error: error instanceof Error ? error.message : String(error),
+                stack: error instanceof Error ? error.stack : undefined,
+            });
+            summaryError = error instanceof Error ? error.message : 'Failed to generate summary';
         }
-
         return {
             id: updatedChatSpace.id,
             name: updatedChatSpace.name,
@@ -119,6 +133,7 @@ export class ChatSpaceService {
             closedBy: updatedChatSpace.closedBy,
             summary,
             summaryGeneratedAt,
+            summaryError,
         };
     }
 
@@ -377,6 +392,91 @@ export class ChatSpaceService {
         return {
             summary: chatSpace.summary,
             generatedAt: chatSpace.summaryGeneratedAt,
+        };
+    }
+
+    /**
+     * Regenerate summary for a chat space (when initial generation failed)
+     */
+    static async regenerateSummary(chatSpaceId: string, userId: string, userRole: string) {
+        const chatSpace = await prisma.chatSpace.findFirst({
+            where: { id: chatSpaceId, deletedAt: null },
+            include: {
+                group: {
+                    include: {
+                        course: { select: { ownerId: true } },
+                        members: { select: { userId: true } },
+                    },
+                },
+            },
+        });
+
+        if (!chatSpace) {
+            throw ApiError.notFound('Chat space not found');
+        }
+
+        if (userRole === 'student') {
+            const isMember = chatSpace.group.members.some((m) => m.userId === userId);
+            if (!isMember) {
+                throw ApiError.forbidden('You are not a member of this group');
+            }
+        } else if (userRole === 'lecturer') {
+            if (chatSpace.group.course.ownerId !== userId) {
+                throw ApiError.forbidden('You do not own this course');
+            }
+        }
+
+        const recentMessages = await ChatLog.find({
+            chatSpaceId,
+            deletedAt: null,
+            senderType: { $in: ['student', 'lecturer'] },
+        }).sort({ createdAt: -1 }).limit(30).lean();
+
+        if (recentMessages.length === 0) {
+            return {
+                success: false,
+                summary: null,
+                generatedAt: null,
+                error: 'No messages found to summarize',
+            };
+        }
+
+        const summaryResult = await providerResolutionService.executeWithFallback(
+            { featureFamily: 'summaries' },
+            (providerContext) => aiEngineService.generateSummary(
+                recentMessages.reverse().map((m) => ({
+                    sender: m.senderName,
+                    content: m.content,
+                    timestamp: new Date(m.createdAt).toISOString(),
+                })),
+                chatSpaceId,
+                providerContext,
+            ),
+            {
+                isSuccess: (response) => response.success && Boolean(response.summary),
+                perProviderTimeoutMs: 20000,
+            },
+        );
+
+        if (summaryResult.success && summaryResult.summary) {
+            const summaryGeneratedAt = new Date();
+            await prisma.chatSpace.update({
+                where: { id: chatSpaceId },
+                data: { summary: summaryResult.summary, summaryGeneratedAt },
+            });
+            return {
+                success: true,
+                summary: summaryResult.summary,
+                generatedAt: summaryGeneratedAt,
+                error: null,
+            };
+        }
+
+        return {
+            success: false,
+            summary: null,
+            generatedAt: null,
+            error: summaryResult.error || 'AI Engine failed to generate summary',
         };
     }
 }

@@ -29,6 +29,7 @@ describe('AuditLogService', () => {
                 },
             },
             history: [{ authorization: 'Bearer 1' }, { note: 'keep me' }],
+            provider_context: { auth: { credential: 'sk-live-secret' } },
             createdAt: new Date('2026-01-01T00:00:00.000Z'),
         };
 
@@ -44,6 +45,7 @@ describe('AuditLogService', () => {
                 },
             },
             history: [{ authorization: '[REDACTED]' }, { note: 'keep me' }],
+            provider_context: { auth: { credential: '[REDACTED]' } },
             createdAt: '2026-01-01T00:00:00.000Z',
         });
     });

@@ -1,50 +1,43 @@
+ import { aiEngineCircuitBreaker } from '../utils/circuitBreaker.js';
+import { providerResolutionService } from './providerResolution.service.js';
+import { aiEngineService } from './aiEngine.service.js';
+import type { ProviderContextV1 } from './aiEngine.service.js';
+
 export class DiscussionDirectionService {
-  /**
-   * Batch classify messages against session goal using AI Engine
-   * @param messages Array of messages with id and content
-   * @param goal Session learning goal
-   * @returns Array of classifications with messageId and isRelevant boolean
-   */
   static async classifyMessages(
     messages: Array<{ id: string; content: string }>,
     goal: string
   ): Promise<Array<{ messageId: string; isRelevant: boolean }>> {
     try {
-      const aiEngineUrl = process.env.AI_ENGINE_URL || 'http://localhost:8001';
-      const secret = process.env.CORE_API_SECRET || '';
-      const response = await fetch(`${aiEngineUrl}/api/classify-relevance`, {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          ...(secret ? { Authorization: `Bearer ${secret}` } : {}),
+      return await providerResolutionService.executeWithFallback(
+        { featureFamily: 'orchestration' },
+        async (providerContext: ProviderContextV1) => {
+          const result = await aiEngineCircuitBreaker.execute(async () => {
+            const aiEngineUrl = process.env.AI_ENGINE_URL || 'http://localhost:8001';
+            const secret = process.env.AI_ENGINE_SECRET || '';
+            const response = await fetch(`${aiEngineUrl}/api/classify-relevance`, {
+              method: 'POST',
+              headers: {
+                'Content-Type': 'application/json',
+                ...(secret ? { Authorization: `Bearer ${secret}` } : {}),
+              },
+              body: JSON.stringify({ messages, goal, provider_context: providerContext }),
+            });
+            if (!response.ok) {
+              throw new Error(`AI Engine returned ${response.status}`);
+            }
+            const data = (await response.json()) as { classifications?: Array<{ messageId: string; isRelevant: boolean }> };
+            return data.classifications || messages.map((m) => ({ messageId: m.id, isRelevant: true }));
+          });
+          return result;
         },
-        body: JSON.stringify({ messages, goal }),
-      });
-
-      if (!response.ok) {
-        // Fallback: all messages are relevant
-        return messages.map((m) => ({ messageId: m.id, isRelevant: true }));
-      }
-
-      const data = (await response.json()) as { classifications?: Array<{ messageId: string; isRelevant: boolean }> };
-      return (
-        data.classifications ||
-        messages.map((m) => ({ messageId: m.id, isRelevant: true }))
       );
     } catch (error) {
-      // Fallback on error (network issues, AI Engine down, etc.)
       console.error('Discussion direction classification error:', error);
       return messages.map((m) => ({ messageId: m.id, isRelevant: true }));
     }
   }
 
-  /**
-   * Generate session summary using AI Engine
-   * @param messages Array of messages with content and senderName
-   * @param goal Session learning goal
-   * @param stats Session statistics (totalMessages, participantCount)
-   * @returns Summary with goalAchieved, topics, contributions, and assessment
-   */
   static async generateSessionSummary(
     messages: Array<{ content: string; senderName: string }>,
     goal: string,
@@ -56,27 +49,33 @@ export class DiscussionDirectionService {
     assessment: string;
   }> {
     try {
-      const aiEngineUrl = process.env.AI_ENGINE_URL || 'http://localhost:8001';
-      const secret = process.env.CORE_API_SECRET || '';
-      const response = await fetch(`${aiEngineUrl}/api/session-summary`, {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          ...(secret ? { Authorization: `Bearer ${secret}` } : {}),
+      return await providerResolutionService.executeWithFallback(
+        { featureFamily: 'orchestration' },
+        async (providerContext: ProviderContextV1) => {
+          const result = await aiEngineCircuitBreaker.execute(async () => {
+            const aiEngineUrl = process.env.AI_ENGINE_URL || 'http://localhost:8001';
+            const secret = process.env.AI_ENGINE_SECRET || '';
+            const response = await fetch(`${aiEngineUrl}/api/session-summary`, {
+              method: 'POST',
+              headers: {
+                'Content-Type': 'application/json',
+                ...(secret ? { Authorization: `Bearer ${secret}` } : {}),
+              },
+              body: JSON.stringify({ messages, goal, stats, provider_context: providerContext }),
+            });
+            if (!response.ok) {
+              throw new Error(`AI Engine returned ${response.status}`);
+            }
+            return (await response.json()) as {
+              goalAchieved: boolean;
+              topics: string[];
+              contributions: Record<string, number>;
+              assessment: string;
+            };
+          });
+          return result;
         },
-        body: JSON.stringify({ messages, goal, stats }),
-      });
-
-      if (!response.ok) {
-        return this.defaultSummary(goal, stats);
-      }
-
-      return (await response.json()) as {
-        goalAchieved: boolean;
-        topics: string[];
-        contributions: Record<string, number>;
-        assessment: string;
-      };
+      );
     } catch (error) {
       console.error('Discussion direction summary generation error:', error);
       return this.defaultSummary(goal, stats);

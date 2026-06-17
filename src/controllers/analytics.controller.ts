@@ -27,6 +27,28 @@ export class AnalyticsController {
         }
     }
 
+    static async getStudentBreakdown(req: Request, res: Response, next: NextFunction) {
+        try {
+            const page = parseInt(req.query.page as string) || 1;
+            const perPage = parseInt(req.query.perPage as string) || 15;
+            const sortBy = (req.query.sortBy as string) || 'quality_score';
+            const sortDir = (req.query.sortDir as string) || 'desc';
+            const search = req.query.search as string;
+            const minScore = req.query.minScore ? parseFloat(req.query.minScore as string) : undefined;
+            const maxScore = req.query.maxScore ? parseFloat(req.query.maxScore as string) : undefined;
+            const startDate = req.query.startDate as string;
+            const endDate = req.query.endDate as string;
+
+            const result = await AnalyticsService.getStudentBreakdown(
+                req.params.courseId,
+                { page, perPage, sortBy, sortDir, search, minScore, maxScore, startDate, endDate }
+            );
+            res.json(result);
+        } catch (error) {
+            next(error);
+        }
+    }
+
     static async analyzeText(req: Request, res: Response, next: NextFunction) {
         try {
             const result = await AnalyticsService.analyzeText(req.body.text);

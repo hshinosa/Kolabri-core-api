@@ -34,6 +34,8 @@ router.get('/overview', requireLecturer, AnalyticsController.getAnalyticsOvervie
 
 router.get('/course/:courseId', requireLecturer, AnalyticsController.getCourseAnalytics);
 
+router.get('/courses/:courseId/students', requireLecturer, AnalyticsController.getStudentBreakdown);
+
 router.get('/group/:groupId', requireLecturer, AnalyticsController.getGroupAnalytics);
 
 router.get('/group/:groupId/status', requireLecturer, AnalyticsController.getGroupQualityStatus);

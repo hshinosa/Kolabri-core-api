@@ -1,12 +1,23 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
-const { prismaMock, isGroupMemberMock, validateGoalContentMock } = vi.hoisted(() => ({
+const { prismaMock, isGroupMemberMock, validateGoalContentMock, providerResolutionServiceMock } = vi.hoisted(() => ({
     prismaMock: {
         chatSpace: { findUnique: vi.fn(), findFirst: vi.fn() },
         learningGoal: { findFirst: vi.fn(), findMany: vi.fn(), findUnique: vi.fn(), create: vi.fn() },
     },
     isGroupMemberMock: vi.fn(),
     validateGoalContentMock: vi.fn(),
+    providerResolutionServiceMock: {
+        resolveProviderContext: vi.fn(),
+        executeWithFallback: vi.fn(async (_input, operation, options) => {
+            const resolution = await providerResolutionServiceMock.resolveProviderContext(_input);
+            const result = await operation(resolution.primary.providerContext);
+            if (options?.isSuccess && !options.isSuccess(result)) {
+                throw new Error(`Provider ${resolution.primary.providerName} returned unsuccessful result`);
+            }
+            return result;
+        }),
+    },
 }));
 
 vi.mock('../config/database.js', () => ({
@@ -23,24 +34,28 @@ vi.mock('./group.service.js', () => ({
     },
 }));
 
-const { validateGoalMock } = vi.hoisted(() => ({
-    validateGoalMock: vi.fn(() =>
-        Promise.resolve({
-            success: true,
-            is_valid: true,
-            status: 'accepted' as const,
-            feedback: undefined,
-            socratic_hint: undefined,
-            missing_criteria: [],
-        }),
-    ),
-}));
+ const { validateGoalMock } = vi.hoisted(() => ({
+     validateGoalMock: vi.fn(() =>
+         Promise.resolve({
+             success: true,
+             is_valid: true,
+             status: 'accepted' as 'accepted' | 'revise',
+             feedback: undefined as string | undefined,
+             socratic_hint: undefined as string | undefined,
+             missing_criteria: [] as string[],
+         }),
+     ),
+ }));
 
 vi.mock('./aiEngine.service.js', () => ({
     aiEngineService: {
         validateGoal: validateGoalMock,
         refineGoal: vi.fn(() => Promise.resolve({ success: true, refined_goal: null })),
     },
+}));
+
+vi.mock('./providerResolution.service.js', () => ({
+    providerResolutionService: providerResolutionServiceMock,
 }));
 
 vi.mock('./weekContext.service.js', () => ({
@@ -57,9 +72,23 @@ vi.mock('./weekContext.service.js', () => ({
 
 import { GoalService } from './goal.service.js';
 
+function createProviderContext() {
+    return {
+        version: '1.0' as const,
+        provider: { name: 'openai', displayName: 'OpenAI GPT' },
+        execution: { baseUrl: 'https://api.openai.com/v1', model: 'gpt-4o-mini' },
+        auth: { type: 'api-key' as const, credential: 'sk-test' },
+        metadata: { featureFamily: 'goals', requestId: 'req-1', resolvedAt: '2026-06-16T10:00:00.000Z' },
+    };
+}
+
 describe('GoalService', () => {
     beforeEach(() => {
         vi.clearAllMocks();
+        providerResolutionServiceMock.resolveProviderContext.mockResolvedValue({
+            primary: { providerId: 'provider-openai', providerName: 'openai', providerContext: createProviderContext() },
+            fallbackChain: [],
+        });
     });
 
     it('creates a shared goal for a chat space when validation passes', async () => {
@@ -88,6 +117,14 @@ describe('GoalService', () => {
             'user-1'
         );
 
+        expect(providerResolutionServiceMock.resolveProviderContext).toHaveBeenCalledWith({ featureFamily: 'goals' });
+        expect(validateGoalMock).toHaveBeenCalledWith(
+            'Menganalisis data pembelajaran secara kolaboratif.',
+            'user-1',
+            'chat-1',
+            undefined,
+            createProviderContext(),
+        );
         expect(validateGoalContentMock).toHaveBeenCalledWith('Menganalisis data pembelajaran secara kolaboratif.');
         expect(prismaMock.learningGoal.create).toHaveBeenCalledWith(
             expect.objectContaining({

@@ -2,6 +2,7 @@ import { logger } from '../utils/logger.js';
 import { ChatLog } from '../models/ChatLog.js';
 import { SilenceEvent } from '../models/SilenceEvent.js';
 import { aiEngineService } from '../services/aiEngine.service.js';
+import { providerResolutionService } from '../services/providerResolution.service.js';
 import { INTERVENTION_MESSAGES, pickRandom } from './interventionMessages.js';
 import { tryAcquireSilenceLock, SILENCE_TIMEOUT_MS } from './interventionGate.js';
 import { isStagedEscalationEnabled, findOrCreateState, advanceStage } from '../services/escalation.service.js';
@@ -29,34 +30,47 @@ async function selectMessage(chatSpaceId: string): Promise<string> {
             .limit(10)
             .lean();
 
-        const aiResult = await aiEngineService.analyzeIntervention({
-            messages: recentMessages.reverse().map((m) => ({
-                sender: m.senderName,
-                content: m.content,
-                timestamp: new Date(m.createdAt).toISOString(),
-                sender_id: m.senderId,
-            })),
-            topic: 'Diskusi sepi',
-            chat_room_id: chatSpaceId,
-            intervention_type: 'silence',
-            force: true,
-        });
-
-        if (aiResult.success && aiResult.message) {
-            return aiResult.message;
-        }
-
-        const promptResult = await aiEngineService.generatePrompt(
-            'Diskusi sepi',
-            'Bantu mendorong diskusi yang sudah sepi tanpa terkesan menggurui',
-            'easy',
+        const aiResult = await providerResolutionService.executeWithFallback(
+            { featureFamily: 'interventions' },
+            (providerContext) => aiEngineService.analyzeIntervention({
+                messages: recentMessages.reverse().map((m) => ({
+                    sender: m.senderName,
+                    content: m.content,
+                    timestamp: new Date(m.createdAt).toISOString(),
+                    sender_id: m.senderId,
+                })),
+                topic: 'Diskusi sepi',
+                chat_room_id: chatSpaceId,
+                intervention_type: 'silence',
+                force: true,
+                provider_context: providerContext,
+            }),
+            {
+                isSuccess: (response) => response.success && Boolean(response.message),
+                perProviderTimeoutMs: 20000,
+            },
         );
-        if (promptResult.success && promptResult.prompt) {
-            return promptResult.prompt;
-        }
-        return pickRandom(INTERVENTION_MESSAGES);
+
+        return aiResult.message;
     } catch {
-        return pickRandom(INTERVENTION_MESSAGES);
+        try {
+            const promptResult = await providerResolutionService.executeWithFallback(
+                { featureFamily: 'interventions' },
+                (providerContext) => aiEngineService.generatePrompt(
+                    'Diskusi sepi',
+                    'Bantu mendorong diskusi yang sudah sepi tanpa terkesan menggurui',
+                    'easy',
+                    providerContext,
+                ),
+                {
+                    isSuccess: (response) => response.success && Boolean(response.prompt),
+                    perProviderTimeoutMs: 20000,
+                },
+            );
+            return promptResult.prompt ?? pickRandom(INTERVENTION_MESSAGES);
+        } catch {
+            return pickRandom(INTERVENTION_MESSAGES);
+        }
     }
 }
 

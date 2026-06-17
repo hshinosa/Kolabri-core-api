@@ -1,6 +1,6 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
-const { prismaMock, aiEngineServiceMock } = vi.hoisted(() => ({
+const { prismaMock, aiEngineServiceMock, providerResolutionServiceMock } = vi.hoisted(() => ({
     prismaMock: {
         course: { findUnique: vi.fn() },
         courseStudent: { findUnique: vi.fn() },
@@ -8,6 +8,17 @@ const { prismaMock, aiEngineServiceMock } = vi.hoisted(() => ({
     },
     aiEngineServiceMock: {
         generateReadingRecommendations: vi.fn(),
+    },
+    providerResolutionServiceMock: {
+        resolveProviderContext: vi.fn(),
+        executeWithFallback: vi.fn(async (_input, operation, options) => {
+            const resolution = await providerResolutionServiceMock.resolveProviderContext(_input);
+            const result = await operation(resolution.primary.providerContext);
+            if (options?.isSuccess && !options.isSuccess(result)) {
+                throw new Error(`Provider ${resolution.primary.providerName} returned unsuccessful result`);
+            }
+            return result;
+        }),
     },
 }));
 
@@ -20,11 +31,29 @@ vi.mock('./aiEngine.service.js', () => ({
     aiEngineService: aiEngineServiceMock,
 }));
 
+vi.mock('./providerResolution.service.js', () => ({
+    providerResolutionService: providerResolutionServiceMock,
+}));
+
 import { ReadingRecommendationService } from './readingRecommendation.service.js';
+
+function createProviderContext() {
+    return {
+        version: '1.0' as const,
+        provider: { name: 'openai', displayName: 'OpenAI GPT' },
+        execution: { baseUrl: 'https://api.openai.com/v1', model: 'gpt-4o-mini' },
+        auth: { type: 'api-key' as const, credential: 'sk-test' },
+        metadata: { featureFamily: 'reading-recommendations', requestId: 'req-1', resolvedAt: '2026-06-16T10:00:00.000Z' },
+    };
+}
 
 describe('ReadingRecommendationService', () => {
     beforeEach(() => {
         vi.clearAllMocks();
+        providerResolutionServiceMock.resolveProviderContext.mockResolvedValue({
+            primary: { providerId: 'provider-openai', providerName: 'openai', providerContext: createProviderContext() },
+            fallbackChain: [],
+        });
     });
 
     it('returns structured recommendations mapped to approved course materials', async () => {
@@ -55,7 +84,8 @@ describe('ReadingRecommendationService', () => {
             'student'
         );
 
-        expect(aiEngineServiceMock.generateReadingRecommendations).toHaveBeenCalledWith('transformer', 'course-1', 3);
+        expect(providerResolutionServiceMock.resolveProviderContext).toHaveBeenCalledWith({ featureFamily: 'reading-recommendations' });
+        expect(aiEngineServiceMock.generateReadingRecommendations).toHaveBeenCalledWith('transformer', 'course-1', 3, createProviderContext());
         expect(result.recommendations).toEqual([
             {
                 knowledgeBaseId: 'kb-1',

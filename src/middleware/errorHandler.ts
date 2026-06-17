@@ -1,5 +1,7 @@
 import { Request, Response, NextFunction } from 'express';
 import { logger } from '../utils/logger.js';
+import { AuditLogService } from '../services/audit-log.service.js';
+import { sanitizeErrorForLog } from '../utils/sensitiveData.js';
 
 export interface AppError extends Error {
     statusCode?: number;
@@ -64,14 +66,18 @@ export function errorHandler(
     const message = err.message || 'An unexpected error occurred';
 
     if (process.env.NODE_ENV !== 'production') {
-        logger.error(`Request error [${code} ${statusCode}]:`, err);
+        logger.error(`Request error [${code} ${statusCode}]:`, {
+            name: err.name,
+            message: sanitizeErrorForLog(err),
+            details: err.details ? AuditLogService.sanitizePayload(err.details) : undefined,
+        });
     }
 
     res.status(statusCode).json({
         error: {
             code,
             message,
-            ...(err.details && { details: err.details }),
+            ...(err.details && { details: AuditLogService.sanitizePayload(err.details) }),
         },
     });
 }

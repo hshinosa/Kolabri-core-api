@@ -58,7 +58,38 @@ describe('errorHandler', () => {
 
         expect(loggerSpy).toHaveBeenCalledWith(
             'Request error [NOT_FOUND 404]:',
-            expect.objectContaining({ message: 'Missing resource' }),
+            expect.objectContaining({ message: 'ApiError: Missing resource' }),
         );
+    });
+
+    it('redacts credential details in logs and response payloads', () => {
+        const loggerSpy = vi.spyOn(logger, 'error').mockImplementation(() => logger);
+        const statusMock = vi.fn().mockReturnThis();
+        const jsonMock = vi.fn();
+        const res = { status: statusMock, json: jsonMock } as unknown as Response;
+        process.env.NODE_ENV = 'test';
+
+        errorHandler(
+            ApiError.badRequest('Bad provider', {
+                provider_context: { auth: { credential: 'sk-secret-123' } },
+            }),
+            {} as Request,
+            res,
+            vi.fn() as NextFunction
+        );
+
+        expect(loggerSpy).toHaveBeenCalledWith(
+            'Request error [BAD_REQUEST 400]:',
+            expect.objectContaining({
+                details: { provider_context: { auth: { credential: '[REDACTED]' } } },
+            })
+        );
+        expect(jsonMock).toHaveBeenCalledWith({
+            error: {
+                code: 'BAD_REQUEST',
+                message: 'Bad provider',
+                details: { provider_context: { auth: { credential: '[REDACTED]' } } },
+            },
+        });
     });
 });

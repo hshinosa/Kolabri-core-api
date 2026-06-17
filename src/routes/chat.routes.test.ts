@@ -2,33 +2,34 @@ import { beforeEach, describe, expect, it, vi } from 'vitest';
 import express from 'express';
 import request from 'supertest';
 
-const { chatLogMock } = vi.hoisted(() => {
-    const mockSave = vi.fn().mockImplementation(function (this: any) {
-        return Promise.resolve(this);
-    });
-    const mockFind = vi.fn(() => ({
-        sort: vi.fn().mockReturnThis(),
-        limit: vi.fn().mockReturnThis(),
-        select: vi.fn().mockReturnThis(),
-        lean: vi.fn(() => Promise.resolve([])),
-    }));
-    const mockFindById = vi.fn(() => Promise.resolve(null));
-
-    return {
-        chatLogMock: {
-            find: mockFind,
-            findById: mockFindById,
-            prototype: { save: mockSave },
-        },
-    };
-});
-
-vi.mock('../models/ChatLog.js', () => ({
-    ChatLog: {
-        find: (...args: any[]) => chatLogMock.find(...args),
-        findById: (...args: any[]) => chatLogMock.findById(...args),
-    },
-}));
+ const { chatLogMock } = vi.hoisted(() => {
+     const mockSave = vi.fn().mockImplementation(function (this: any) {
+         return Promise.resolve(this);
+     });
+     const mockFind: any = vi.fn();
+     const mockFindById: any = vi.fn(() => Promise.resolve(null));
+ 
+     return {
+         chatLogMock: {
+             find: mockFind,
+             findById: mockFindById,
+             prototype: { save: mockSave },
+         },
+     };
+ });
+ 
+ vi.mock('../models/ChatLog.js', () => ({
+     ChatLog: {
+         find: (query: any) => chatLogMock.find(query),
+         findById: (id: any) => chatLogMock.findById(id),
+     },
+ }));
+ 
+ vi.mock('../middleware/chatMembership.js', () => ({
+     assertChatMembership: (_req: any, _res: any, next: any) => {
+         next();
+     },
+ }));
 
 vi.mock('../middleware/auth.js', () => ({
     verifyToken: (req: any, _res: any, next: any) => {

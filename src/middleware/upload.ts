@@ -9,6 +9,9 @@ const SUPPORTED_MIMETYPES = [
     'application/pdf',
     'application/vnd.openxmlformats-officedocument.wordprocessingml.document', // docx
     'application/vnd.openxmlformats-officedocument.presentationml.presentation', // pptx
+    'application/msword',
+    'application/vnd.ms-excel',
+    'application/vnd.ms-powerpoint',
     'text/plain',
     'text/markdown',
     'image/png',

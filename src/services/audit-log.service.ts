@@ -28,6 +28,7 @@ const SENSITIVE_FIELD_PATTERNS = [
     'authorization',
     'secret',
     'clientSecret',
+    'credential',
 ];
 
 function isSensitiveField(key: string) {

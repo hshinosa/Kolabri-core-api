@@ -4,10 +4,10 @@ const mockSave = vi.fn().mockImplementation(function (this: any) {
     return Promise.resolve(this);
 });
 
-function MockEscalationState(data: any) {
-    Object.assign(this, data);
-    this.save = mockSave;
-}
+ function MockEscalationState(this: any, data: any) {
+     Object.assign(this, data);
+     this.save = mockSave;
+ }
 
 vi.mock('../models/EscalationState.js', () => {
     return {

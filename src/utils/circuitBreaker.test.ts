@@ -1,5 +1,6 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { CircuitBreaker, withRetry, isRetryableError } from './circuitBreaker.js';
+import { logger } from './logger.js';
 
 vi.mock('./logger.js', () => ({
     logger: { warn: vi.fn(), error: vi.fn(), info: vi.fn() },
@@ -63,6 +64,19 @@ describe('CircuitBreaker', () => {
         await expect(cb.execute(fn)).rejects.toThrow();
         expect(cb.getState()).toBe('OPEN');
         vi.useRealTimers();
+    });
+
+    it('redacts credentials in logged circuit-breaker reasons', async () => {
+        const fn = vi.fn().mockRejectedValue(new Error('provider_context {"credential":"sk-secret-123"}'));
+        for (let i = 0; i < 5; i++) {
+            await expect(cb.execute(fn)).rejects.toThrow();
+        }
+        expect(logger.warn).toHaveBeenLastCalledWith(
+            expect.stringContaining('[REDACTED]')
+        );
+        expect(logger.warn).not.toHaveBeenLastCalledWith(
+            expect.stringContaining('sk-secret-123')
+        );
     });
 });
 

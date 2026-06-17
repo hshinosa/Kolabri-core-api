@@ -1,12 +1,22 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
-const { prismaMock, aiServiceMock, aiEngineServiceMock } = vi.hoisted(() => ({
+const { prismaMock, providerResolutionServiceMock, aiEngineServiceMock } = vi.hoisted(() => ({
     prismaMock: {
         aiChat: { create: vi.fn(), findMany: vi.fn(), findUnique: vi.fn(), update: vi.fn(), delete: vi.fn() },
         aiChatMessage: { findMany: vi.fn(), create: vi.fn(), count: vi.fn() },
         aiProvider: { count: vi.fn() },
     },
-    aiServiceMock: { sendWithConfiguredFallback: vi.fn() },
+    providerResolutionServiceMock: {
+        resolveProviderContext: vi.fn(),
+        executeWithFallback: vi.fn(async (_input, operation, options) => {
+            const resolution = await providerResolutionServiceMock.resolveProviderContext(_input);
+            const result = await operation(resolution.primary.providerContext);
+            if (options?.isSuccess && !options.isSuccess(result)) {
+                throw new Error(`Provider ${resolution.primary.providerName} returned unsuccessful result`);
+            }
+            return result;
+        }),
+    },
     aiEngineServiceMock: { personalChat: vi.fn() },
 }));
 
@@ -14,8 +24,8 @@ vi.mock('../config/database.js', () => ({
     default: prismaMock,
 }));
 
-vi.mock('./ai.service.js', () => ({
-    aiService: aiServiceMock,
+vi.mock('./providerResolution.service.js', () => ({
+    providerResolutionService: providerResolutionServiceMock,
 }));
 
 vi.mock('./aiEngine.service.js', () => ({
@@ -131,7 +141,7 @@ describe('AiChatService', () => {
         });
     });
 
-    it('sends a message through the configured provider fallback when active providers exist', async () => {
+    it('sends a message through ai-engine with resolved provider context', async () => {
         const addMessageSpy = vi
             .spyOn(AiChatService, 'addMessage')
             .mockResolvedValueOnce({ id: 'user-msg', role: 'user', content: 'How do I improve?', createdAt: new Date('2026-05-01T00:00:00.000Z') })
@@ -146,25 +156,59 @@ describe('AiChatService', () => {
             ],
             user: { name: 'Alya' },
         });
-        prismaMock.aiProvider.count.mockResolvedValue(2);
-        aiServiceMock.sendWithConfiguredFallback.mockResolvedValue({
-            content: 'Try reflective practice.',
-            model: 'gpt-4.1-mini',
+
+        const providerContext = {
+            version: '1.0' as const,
+            provider: { name: 'openai', displayName: 'OpenAI GPT' },
+            execution: { baseUrl: 'https://api.openai.com/v1', model: 'gpt-4o-mini' },
+            auth: { type: 'api-key' as const, credential: 'sk-test' },
+            metadata: { featureFamily: 'personal-chat', requestId: 'req-1', resolvedAt: '2026-06-16T10:00:00.000Z' },
+        };
+        providerResolutionServiceMock.resolveProviderContext.mockResolvedValue({
+            primary: { providerId: 'provider-openai', providerName: 'openai', providerContext },
+            fallbackChain: [],
+        });
+        aiEngineServiceMock.personalChat.mockResolvedValue({
+            reply: 'Try reflective practice.',
+            success: true,
+            tokens_used: 12,
         });
 
         const result = await AiChatService.sendMessage('chat-1', 'user-1', 'How do I improve?');
 
-        expect(aiServiceMock.sendWithConfiguredFallback).toHaveBeenCalledWith('How do I improve?', {
-            userId: 'user-1',
-            history: [{ role: 'assistant', content: 'Welcome back' }],
-            systemPrompt: 'You are a helpful learning assistant for Alya. Answer clearly and supportively.',
-        });
-        expect(aiEngineServiceMock.personalChat).not.toHaveBeenCalled();
+        expect(providerResolutionServiceMock.resolveProviderContext).toHaveBeenCalledWith({ featureFamily: 'personal-chat' });
+        expect(aiEngineServiceMock.personalChat).toHaveBeenCalledWith(
+            'How do I improve?',
+            [{ role: 'assistant', content: 'Welcome back' }],
+            'Alya',
+            providerContext,
+        );
         expect(addMessageSpy).toHaveBeenNthCalledWith(2, 'chat-1', 'user-1', 'assistant', 'Try reflective practice.');
         expect(result).toEqual({
             userMessage: { id: 'user-msg', role: 'user', content: 'How do I improve?', createdAt: new Date('2026-05-01T00:00:00.000Z') },
             assistantMessage: { id: 'assistant-msg', role: 'assistant', content: 'Try reflective practice.', createdAt: new Date('2026-05-01T00:01:00.000Z') },
         });
+    });
+
+    it('returns a fallback reply when provider resolution fails', async () => {
+        const addMessageSpy = vi
+            .spyOn(AiChatService, 'addMessage')
+            .mockResolvedValueOnce({ id: 'user-msg', role: 'user', content: 'How do I improve?', createdAt: new Date('2026-05-01T00:00:00.000Z') })
+            .mockResolvedValueOnce({ id: 'assistant-msg', role: 'assistant', content: 'Maaf, AI Assistant sedang tidak tersedia saat ini. Silakan coba lagi nanti.', createdAt: new Date('2026-05-01T00:01:00.000Z') });
+
+        prismaMock.aiChat.findUnique.mockResolvedValue({
+            id: 'chat-1',
+            userId: 'user-1',
+            messages: [],
+            user: { name: 'Alya' },
+        });
+        providerResolutionServiceMock.resolveProviderContext.mockRejectedValue(new Error('No active AI provider configured'));
+
+        const result = await AiChatService.sendMessage('chat-1', 'user-1', 'How do I improve?');
+
+        expect(aiEngineServiceMock.personalChat).not.toHaveBeenCalled();
+        expect(addMessageSpy).toHaveBeenNthCalledWith(2, 'chat-1', 'user-1', 'assistant', 'Maaf, AI Assistant sedang tidak tersedia saat ini. Silakan coba lagi nanti.');
+        expect(result.assistantMessage.content).toBe('Maaf, AI Assistant sedang tidak tersedia saat ini. Silakan coba lagi nanti.');
     });
 
     it('rejects deleting a chat owned by another user', async () => {

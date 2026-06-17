@@ -19,6 +19,7 @@ router.post('/:id/close', ChatSpaceController.close);
 router.post('/:id/reopen', requireLecturer, ChatSpaceController.reopen);
 router.get('/:id/status', ChatSpaceController.getStatus);
 router.get('/:id/summary', ChatSpaceController.getSummary);
+router.post('/:id/regenerate-summary', ChatSpaceController.regenerateSummary);
 router.post('/:id/reflection', requireStudent, validateBody(sessionReflectionSchema), ChatSpaceController.submitReflection);
 
 export default router;

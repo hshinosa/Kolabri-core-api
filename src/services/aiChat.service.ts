@@ -1,7 +1,7 @@
 import prisma from '../config/database.js';
 import { ApiError } from '../middleware/errorHandler.js';
 import { aiEngineService } from './aiEngine.service.js';
-import { aiService } from './ai.service.js';
+import { providerResolutionService } from './providerResolution.service.js';
 
 export class AiChatService {
     /**
@@ -237,35 +237,32 @@ export class AiChatService {
             }))
             .slice(-20);
 
-        const activeProviders = await prisma.aiProvider.count({ where: { isActive: true } });
-
-        let result: { content: string } | { reply: string };
+        let assistantContent: string;
 
         try {
-            result = activeProviders > 0
-                ? await aiService.sendWithConfiguredFallback(content, {
-                    userId,
-                    history,
-                    systemPrompt: chat?.user?.name
-                        ? `You are a helpful learning assistant for ${chat.user.name}. Answer clearly and supportively.`
-                        : 'You are a helpful learning assistant. Answer clearly and supportively.',
-                })
-                : await aiEngineService.personalChat(
+            const response = await providerResolutionService.executeWithFallback(
+                { featureFamily: 'personal-chat' },
+                (providerContext) => aiEngineService.personalChat(
                     content,
                     history,
                     chat?.user?.name ?? undefined,
-                );
+                    providerContext,
+                ),
+                {
+                    isSuccess: (response: { success: boolean }) => response.success,
+                    perProviderTimeoutMs: 30000,
+                },
+            );
+            assistantContent = response.reply;
         } catch {
-            result = {
-                reply: 'Maaf, AI Assistant sedang tidak tersedia saat ini. Silakan coba lagi nanti.',
-            };
+            assistantContent = 'Maaf, AI Assistant sedang tidak tersedia saat ini. Silakan coba lagi nanti.';
         }
 
         const assistantMessage = await this.addMessage(
             chatId,
             userId,
             'assistant',
-            'content' in result ? result.content : result.reply,
+            assistantContent,
         );
 
         return {

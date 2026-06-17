@@ -1,7 +1,7 @@
 import type { NextFunction, Request, Response } from 'express';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
-const { mockAiChatService, mockAiEngineService } = vi.hoisted(() => ({
+const { mockAiChatService, mockAiEngineService, mockProviderResolutionService } = vi.hoisted(() => ({
     mockAiChatService: {
         createChat: vi.fn(),
         getUserChats: vi.fn(),
@@ -16,6 +16,17 @@ const { mockAiChatService, mockAiEngineService } = vi.hoisted(() => ({
     mockAiEngineService: {
         personalChatStream: vi.fn(),
     },
+    mockProviderResolutionService: {
+        resolveProviderContext: vi.fn(),
+        executeWithFallback: vi.fn(async (_input, operation, options) => {
+            const resolution = await mockProviderResolutionService.resolveProviderContext(_input);
+            const result = await operation(resolution.primary.providerContext);
+            if (options?.isSuccess && !options.isSuccess(result)) {
+                throw new Error(`Provider ${resolution.primary.providerName} returned unsuccessful result`);
+            }
+            return result;
+        }),
+    },
 }));
 
 vi.mock('../services/aiChat.service.js', () => ({
@@ -24,6 +35,10 @@ vi.mock('../services/aiChat.service.js', () => ({
 
 vi.mock('../services/aiEngine.service.js', () => ({
     aiEngineService: mockAiEngineService,
+}));
+
+vi.mock('../services/providerResolution.service.js', () => ({
+    providerResolutionService: mockProviderResolutionService,
 }));
 
 import { AiChatController } from './aiChat.controller.js';
@@ -65,6 +80,16 @@ function mockRes(): Partial<Response> {
 
 function mockNext(): NextFunction {
     return vi.fn() as unknown as NextFunction;
+}
+
+function createProviderContext() {
+    return {
+        version: '1.0' as const,
+        provider: { name: 'openai', displayName: 'OpenAI GPT' },
+        execution: { baseUrl: 'https://api.openai.com/v1', model: 'gpt-4o-mini' },
+        auth: { type: 'api-key' as const, credential: 'sk-test' },
+        metadata: { featureFamily: 'personal-chat', requestId: 'req-1', resolvedAt: '2026-06-16T10:00:00.000Z' },
+    };
 }
 
 describe('AiChatController', () => {
@@ -121,9 +146,10 @@ describe('AiChatController', () => {
         expect(next).not.toHaveBeenCalled();
     });
 
-    it('streams a message, forwards prior history, and persists the assistant reply', async () => {
+    it('streams a message, resolves provider context, forwards prior history, and persists the assistant reply', async () => {
         const userMessage = { id: 'msg-user' };
         const savedAssistant = { id: 'msg-assistant' };
+        const providerContext = createProviderContext();
         mockAiChatService.addMessage
             .mockResolvedValueOnce(userMessage)
             .mockResolvedValueOnce(savedAssistant);
@@ -133,6 +159,10 @@ describe('AiChatController', () => {
                 { id: 'old-1', role: 'assistant', content: 'Previous answer' },
                 { id: 'msg-user', role: 'user', content: 'Should be excluded' },
             ],
+        });
+        mockProviderResolutionService.resolveProviderContext.mockResolvedValue({
+            primary: { providerId: 'provider-openai', providerName: 'openai', providerContext },
+            fallbackChain: [],
         });
         mockAiEngineService.personalChatStream.mockResolvedValue({
             ok: true,
@@ -158,11 +188,13 @@ describe('AiChatController', () => {
 
         await AiChatController.streamMessage(req as Request, res as Response, next);
 
+        expect(mockProviderResolutionService.resolveProviderContext).toHaveBeenCalledWith({ featureFamily: 'personal-chat' });
         expect(mockAiChatService.addMessage).toHaveBeenNthCalledWith(1, 'chat-1', 'user-1', 'user', 'Hi there');
         expect(mockAiEngineService.personalChatStream).toHaveBeenCalledWith(
             'Hi there',
             [{ role: 'assistant', content: 'Previous answer' }],
-            'Alice'
+            'Alice',
+            providerContext
         );
         expect(mockAiChatService.addMessage).toHaveBeenNthCalledWith(2, 'chat-1', 'user-1', 'assistant', 'Hello');
         expect(res.setHeader).toHaveBeenCalledWith('Content-Type', 'text/event-stream');
@@ -179,10 +211,15 @@ describe('AiChatController', () => {
     it('falls back to a canned assistant message when the stream is unavailable', async () => {
         const userMessage = { id: 'msg-user' };
         const fallbackText = 'Maaf, AI Assistant sedang tidak tersedia.';
+        const providerContext = createProviderContext();
         mockAiChatService.addMessage
             .mockResolvedValueOnce(userMessage)
             .mockResolvedValueOnce({ id: 'fallback-assistant' });
         mockAiChatService.getChatWithUser.mockResolvedValue({ userName: 'Alice', messages: [] });
+        mockProviderResolutionService.resolveProviderContext.mockResolvedValue({
+            primary: { providerId: 'provider-openai', providerName: 'openai', providerContext },
+            fallbackChain: [],
+        });
         mockAiEngineService.personalChatStream.mockResolvedValue({ ok: false, body: null });
         const req = mockReq({ params: { id: 'chat-1' }, body: { content: 'Hi there' } });
         const res = mockRes();
@@ -190,6 +227,8 @@ describe('AiChatController', () => {
 
         await AiChatController.streamMessage(req as Request, res as Response, next);
 
+        expect(mockProviderResolutionService.resolveProviderContext).toHaveBeenCalledWith({ featureFamily: 'personal-chat' });
+        expect(mockAiEngineService.personalChatStream).toHaveBeenCalledWith('Hi there', [], 'Alice', providerContext);
         expect(mockAiChatService.addMessage).toHaveBeenNthCalledWith(2, 'chat-1', 'user-1', 'assistant', fallbackText);
         expect(res.write).toHaveBeenCalledWith(`data: ${JSON.stringify({ content: fallbackText })}\n\n`);
         expect(res.write).toHaveBeenCalledWith('data: [DONE]\n\n');

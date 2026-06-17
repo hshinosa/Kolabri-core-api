@@ -1,6 +1,7 @@
 import { Response, NextFunction } from 'express';
 import { AiChatService } from '../services/aiChat.service.js';
 import { aiEngineService } from '../services/aiEngine.service.js';
+import { providerResolutionService } from '../services/providerResolution.service.js';
 import { AuthenticatedRequest } from '../middleware/auth.js';
 
 export class AiChatController {
@@ -156,10 +157,15 @@ export class AiChatController {
 
             res.write(`data: ${JSON.stringify({ type: 'user_message', id: userMessage.id })}\n\n`);
 
-            const streamResp = await aiEngineService.personalChatStream(
-                content,
-                history,
-                chat?.userName ?? undefined,
+            const streamResp = await providerResolutionService.executeWithFallback(
+                { featureFamily: 'personal-chat' },
+                (providerContext) => aiEngineService.personalChatStream(
+                    content,
+                    history,
+                    chat?.userName ?? undefined,
+                    providerContext,
+                ),
+                { perProviderTimeoutMs: 30000 },
             );
 
             if (!streamResp.ok || !streamResp.body) {

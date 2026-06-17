@@ -1,6 +1,7 @@
 import prisma from '../config/database.js';
 import { ApiError } from '../middleware/errorHandler.js';
 import { aiEngineService } from './aiEngine.service.js';
+import { providerResolutionService } from './providerResolution.service.js';
 import type { ReadingRecommendationRequest } from '../validators/readingRecommendation.validator.js';
 
 interface RecommendationFallback {
@@ -65,7 +66,19 @@ export class ReadingRecommendationService {
             };
         }
 
-        const engineResult = await aiEngineService.generateReadingRecommendations(input.topic, courseId, input.limit ?? 3);
+        const engineResult = await providerResolutionService.executeWithFallback(
+            { featureFamily: 'reading-recommendations' },
+            (providerContext) => aiEngineService.generateReadingRecommendations(
+                input.topic,
+                courseId,
+                input.limit ?? 3,
+                providerContext,
+            ),
+            {
+                isSuccess: (response) => response.success,
+                perProviderTimeoutMs: 30000,
+            },
+        );
         if (!engineResult.success || engineResult.recommendations.length === 0) {
             return {
                 recommendations: [] satisfies RecommendationItem[],

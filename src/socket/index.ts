@@ -6,6 +6,7 @@ import { SilenceEvent } from '../models/SilenceEvent.js';
 import mongoose from 'mongoose';
 import prisma from '../config/database.js';
 import { aiEngineService, type CitationPayload } from '../services/aiEngine.service.js';
+import { providerResolutionService } from '../services/providerResolution.service.js';
 import { WeekContextService } from '../services/weekContext.service.js';
 import { filterCitationsForSession, allowedMaterialsForCourseMaxWeek } from '../utils/citationFilter.js';
 import { DiscussionDirectionService } from '../services/discussion-direction.service.js';
@@ -458,7 +459,14 @@ export function initSocketIO(server: HttpServer): Server {
                     }, 5000);
                 }
 
-                aiEngineService.analyzeEngagement(safeContent).then(async (aiEngagement) => {
+                providerResolutionService.executeWithFallback(
+                    { featureFamily: 'analytics' },
+                    (providerContext) => aiEngineService.analyzeEngagement(safeContent, providerContext),
+                    {
+                        isSuccess: (response) => response.success,
+                        perProviderTimeoutMs: 15000,
+                    },
+                ).then(async (aiEngagement) => {
                     if (aiEngagement.success && aiEngagement.engagement_type !== 'unknown') {
                         await ChatLog.findByIdAndUpdate(chatLog._id, {
                             'engagement.lexicalVariety': Math.round(aiEngagement.lexical_variety * 100),
@@ -466,9 +474,23 @@ export function initSocketIO(server: HttpServer): Server {
                             'engagement.engagementType': aiEngagement.engagement_type.toLowerCase() as 'cognitive' | 'behavioral' | 'emotional',
                         });
                     }
-                }).catch(() => {});
+                }).catch((error) => {
+                    logger.error('AI engagement analysis failed', {
+                        userId: user.id,
+                        chatSpaceId,
+                        error: error instanceof Error ? error.message : 'Unknown error',
+                    });
+                });
 
-                aiEngineService.trackActivity(authoritativeGroupId, user.id).catch(() => {});
+                aiEngineService.trackActivity(authoritativeGroupId, user.id).catch((error) => {
+                    logger.error('AI activity tracking failed', {
+                        userId: user.id,
+                        groupId: authoritativeGroupId,
+                        chatSpaceId,
+                        error: error instanceof Error ? error.message : 'Unknown error',
+                        label: 'retry_failed',
+                    });
+                });
 
                 const message = {
                     id: chatLog._id?.toString(),
@@ -517,7 +539,12 @@ export function initSocketIO(server: HttpServer): Server {
 
                 // Check discussion quality and intervene if needed (async, non-blocking)
                 checkAndIntervenForQuality(roomId, courseId, groupId, chatSpaceId).catch(err => {
+                    const message = err instanceof Error ? err.message : 'Unknown error';
                     logger.error('Quality intervention check failed:', err);
+                    io.to(roomId).emit('intervention_error', {
+                        chatSpaceId,
+                        message,
+                    });
                 });
 
                 logger.debug(`Message in ${roomId} from user ${user.id}`);
@@ -899,32 +926,46 @@ async function checkAndIntervenForQuality(
 
         let interventionMessage: string;
         try {
-            const aiResult = await aiEngineService.analyzeIntervention({
-                messages: recentMessages.slice(0, 10).map(m => ({
-                    sender: m.senderName,
-                    content: m.content,
-                    timestamp: new Date(m.createdAt).toISOString(),
-                    sender_id: m.senderId,
-                })),
-                topic: qualityIssue,
-                chat_room_id: chatSpaceId,
-                intervention_type: interventionType,
-                force: true,
-            });
-            if (aiResult.success && aiResult.message) {
-                interventionMessage = aiResult.message;
-            } else {
-                const promptResult = await aiEngineService.generatePrompt(
-                    qualityIssue,
-                    `Diskusi kelompok membutuhkan intervensi: ${qualityIssue}`,
-                    'medium'
-                );
-                interventionMessage = promptResult.success && promptResult.prompt
-                    ? promptResult.prompt
-                    : pickRandom(QUALITY_INTERVENTIONS[interventionType]);
-            }
+            const aiResult = await providerResolutionService.executeWithFallback(
+                { featureFamily: 'interventions' },
+                (providerContext) => aiEngineService.analyzeIntervention({
+                    messages: recentMessages.slice(0, 10).map(m => ({
+                        sender: m.senderName,
+                        content: m.content,
+                        timestamp: new Date(m.createdAt).toISOString(),
+                        sender_id: m.senderId,
+                    })),
+                    topic: qualityIssue,
+                    chat_room_id: chatSpaceId,
+                    intervention_type: interventionType,
+                    force: true,
+                    provider_context: providerContext,
+                }),
+                {
+                    isSuccess: (response) => response.success && Boolean(response.message),
+                    perProviderTimeoutMs: 20000,
+                },
+            );
+            interventionMessage = aiResult.message;
         } catch {
-            interventionMessage = pickRandom(QUALITY_INTERVENTIONS[interventionType]);
+            try {
+                const promptResult = await providerResolutionService.executeWithFallback(
+                    { featureFamily: 'interventions' },
+                    (providerContext) => aiEngineService.generatePrompt(
+                        qualityIssue,
+                        `Diskusi kelompok membutuhkan intervensi: ${qualityIssue}`,
+                        'medium',
+                        providerContext,
+                    ),
+                    {
+                        isSuccess: (response) => response.success && Boolean(response.prompt),
+                        perProviderTimeoutMs: 20000,
+                    },
+                );
+                interventionMessage = promptResult.prompt ?? pickRandom(QUALITY_INTERVENTIONS[interventionType]);
+            } catch {
+                interventionMessage = pickRandom(QUALITY_INTERVENTIONS[interventionType]);
+            }
         }
 
         const lockAcquired = await tryAcquireSilenceLock(roomId);
@@ -1075,27 +1116,35 @@ async function handleAIQuestion(
                     content: m.content,
                 }));
 
-            const result = await aiEngineService.orchestratedChat({
-                user_id: userId,
-                group_id: groupId,
-                message: question.replace(/@ai/gi, '').trim(),
-                topic: weekCtx?.weekTitle ?? 'General Discussion',
-                collection_name: `course_${courseId}`,
-                course_id: courseId,
-                chat_room_id: chatSpaceId,
-                guardrail_policy: guardrailPolicy,
-                scaffolding_config: scaffoldingConfig,
-                session_week_index: sessionWeekIndex,
-                max_week_index: maxWeekIndex,
-                week_context: weekCtx
-                    ? {
-                          week_title: weekCtx.weekTitle,
-                          week_index: weekCtx.weekIndex,
-                          material_titles: weekCtx.materials.map((m) => m.title),
-                      }
-                    : undefined,
-                chat_history: chatHistory.length > 0 ? chatHistory : undefined,
-            });
+            const result = await providerResolutionService.executeWithFallback(
+                { featureFamily: 'orchestration' },
+                (providerContext) => aiEngineService.orchestratedChat({
+                    user_id: userId,
+                    group_id: groupId,
+                    message: question.replace(/@ai/gi, '').trim(),
+                    topic: weekCtx?.weekTitle ?? 'General Discussion',
+                    collection_name: `course_${courseId}`,
+                    course_id: courseId,
+                    chat_room_id: chatSpaceId,
+                    guardrail_policy: guardrailPolicy,
+                    scaffolding_config: scaffoldingConfig,
+                    session_week_index: sessionWeekIndex,
+                    max_week_index: maxWeekIndex,
+                    week_context: weekCtx
+                        ? {
+                              week_title: weekCtx.weekTitle,
+                              week_index: weekCtx.weekIndex,
+                              material_titles: weekCtx.materials.map((m) => m.title),
+                          }
+                        : undefined,
+                    chat_history: chatHistory.length > 0 ? chatHistory : undefined,
+                    provider_context: providerContext,
+                }),
+                {
+                    isSuccess: (response) => response.success,
+                    perProviderTimeoutMs: 30000,
+                },
+            );
             orchestrationResult = result;
 
             if (result.success) {

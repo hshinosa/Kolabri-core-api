@@ -1,15 +1,18 @@
-import { Router } from 'express';
-import mongoose from 'mongoose';
-import { verifyToken } from '../middleware/auth.js';
-import { ChatLog } from '../models/ChatLog.js';
-
-const router = Router();
-
-const isValidObjectId = (id: string): boolean => mongoose.Types.ObjectId.isValid(id);
-
-// All message routes require auth
-router.use(verifyToken);
-
+ import { Router } from 'express';
+ import mongoose from 'mongoose';
+ import { verifyToken } from '../middleware/auth.js';
+ import { assertChatMembership } from '../middleware/chatMembership.js';
+ import { ChatLog } from '../models/ChatLog.js';
+ 
+ const router = Router();
+ 
+ const isValidObjectId = (id: string): boolean => mongoose.Types.ObjectId.isValid(id);
+ 
+ // All message routes require auth
+ router.use(verifyToken);
+ 
+ // All message routes require chat membership verification
+ router.use(assertChatMembership);
 router.get('/messages/search', async (req, res, next) => {
   try {
     const { conversation_id, q, limit = '20' } = req.query as Record<string, string>;

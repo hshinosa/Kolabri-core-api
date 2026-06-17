@@ -3,6 +3,7 @@ import { ApiError } from '../middleware/errorHandler.js';
 import { ChatLog } from '../models/ChatLog.js';
 import { chatAnalyticsService } from './chatAnalytics.service.js';
 import { aiEngineService } from './aiEngine.service.js';
+import { providerResolutionService } from './providerResolution.service.js';
 import { Parser } from 'json2csv';
 
 export class AnalyticsService {
@@ -90,8 +91,8 @@ export class AnalyticsService {
             course.groups.map(async (group) => {
                 const analytics = await chatAnalyticsService.getGroupAnalytics(group.id);
                 return {
-                    groupId: group.id,
-                    groupName: group.name,
+                    id: group.id,
+                    name: group.name,
                     memberCount: group.members.length,
                     chatSpaceCount: group.chatSpaces.length,
                     messageCount: analytics.messageCount,
@@ -125,6 +126,141 @@ export class AnalyticsService {
         };
     }
 
+    static async getStudentBreakdown(
+        courseId: string,
+        options: {
+            page: number;
+            perPage: number;
+            sortBy: string;
+            sortDir: string;
+            search?: string;
+            minScore?: number;
+            maxScore?: number;
+            startDate?: string;
+            endDate?: string;
+        }
+    ) {
+        const { page, perPage, sortBy, sortDir, search, minScore, maxScore, startDate, endDate } = options;
+
+        const enrollments = await prisma.courseStudent.findMany({
+            where: { courseId },
+            include: {
+                user: {
+                    select: {
+                        id: true,
+                        name: true,
+                        email: true,
+                    },
+                },
+            },
+        });
+
+        const studentsWithMetrics = await Promise.all(
+            enrollments.map(async (enrollment) => {
+                const chatLogs = await ChatLog.find({
+                    courseId,
+                    senderId: enrollment.user.id,
+                    deletedAt: null,
+                    ...(startDate && { createdAt: { $gte: new Date(startDate) } }),
+                    ...(endDate && { createdAt: { $lte: new Date(endDate) } }),
+                }).lean();
+
+                const messageCount = chatLogs.length;
+                const hotCount = chatLogs.filter((log) => log.engagement?.isHigherOrder).length;
+                const hotPercentage = messageCount > 0 ? (hotCount / messageCount) * 100 : 0;
+
+                const avgLexical = chatLogs.reduce((sum, log) => sum + (log.engagement?.lexicalVariety || 0), 0) / (messageCount || 1);
+                
+                let cognitiveCount = 0;
+                let behavioralCount = 0;
+                let emotionalCount = 0;
+                chatLogs.forEach((log) => {
+                    if (log.engagement) {
+                        switch (log.engagement.engagementType) {
+                            case 'cognitive': cognitiveCount++; break;
+                            case 'behavioral': behavioralCount++; break;
+                            case 'emotional': emotionalCount++; break;
+                        }
+                    }
+                });
+                
+                const totalWithEngagement = chatLogs.filter((log) => log.engagement).length || 1;
+                const engagementValues = [cognitiveCount, behavioralCount, emotionalCount];
+                const maxVal = Math.max(...engagementValues);
+                const minVal = Math.min(...engagementValues);
+                const engagementBalance = maxVal > 0 ? Math.round(((maxVal - minVal) / maxVal) * 100) : 0;
+                const balanceScore = 100 - engagementBalance;
+                
+                const participation = Math.min(100, messageCount * 5);
+                
+                const qualityScore = Math.round(
+                    hotPercentage * 0.35 +
+                    avgLexical * 0.25 +
+                    participation * 0.2 +
+                    balanceScore * 0.2
+                );
+
+                const engagementScore = Math.min(100, Math.round((messageCount / 10) * 0.5 + qualityScore * 0.5));
+
+                const lastActive = chatLogs.length > 0
+                    ? chatLogs.sort((a, b) => b.createdAt.getTime() - a.createdAt.getTime())[0].createdAt
+                    : null;
+
+                return {
+                    id: enrollment.user.id,
+                    name: enrollment.user.name,
+                    email: enrollment.user.email,
+                    qualityScore: messageCount > 0 ? qualityScore : null,
+                    hotPercentage: Math.round(hotPercentage * 10) / 10,
+                    messageCount,
+                    engagementScore: messageCount > 0 ? engagementScore : null,
+                    lastActive: lastActive?.toISOString() || null,
+                };
+            })
+        );
+
+        let filtered = studentsWithMetrics;
+        if (search) {
+            const searchLower = search.toLowerCase();
+            filtered = filtered.filter(
+                (s) => s.name.toLowerCase().includes(searchLower) || s.email.toLowerCase().includes(searchLower)
+            );
+        }
+
+        if (minScore !== undefined) {
+            filtered = filtered.filter((s) => s.qualityScore !== null && s.qualityScore >= minScore);
+        }
+        if (maxScore !== undefined) {
+            filtered = filtered.filter((s) => s.qualityScore !== null && s.qualityScore <= maxScore);
+        }
+
+        filtered.sort((a, b) => {
+            let aVal = a[sortBy as keyof typeof a];
+            let bVal = b[sortBy as keyof typeof b];
+            
+            if (aVal === null) aVal = -Infinity;
+            if (bVal === null) bVal = -Infinity;
+            
+            if (aVal < bVal) return sortDir === 'asc' ? -1 : 1;
+            if (aVal > bVal) return sortDir === 'asc' ? 1 : -1;
+            return 0;
+        });
+
+        const total = filtered.length;
+        const offset = (page - 1) * perPage;
+        const paginated = filtered.slice(offset, offset + perPage);
+
+        return {
+            data: paginated,
+            meta: {
+                total,
+                per_page: perPage,
+                current_page: page,
+                last_page: Math.ceil(total / perPage),
+            },
+        };
+    }
+
     private static async getCourseTrends(courseId: string) {
         const rows = await ChatLog.aggregate([
             {
@@ -145,6 +281,21 @@ export class AnalyticsService {
                     messageCount: { $sum: 1 },
                     hotCount: { $sum: { $cond: [{ $ifNull: ['$engagement.isHigherOrder', false] }, 1, 0] } },
                     activeSenders: { $addToSet: '$senderId' },
+                    cognitiveCount: {
+                        $sum: {
+                            $cond: [{ $eq: ['$engagement.engagementType', 'cognitive'] }, 1, 0],
+                        },
+                    },
+                    behavioralCount: {
+                        $sum: {
+                            $cond: [{ $eq: ['$engagement.engagementType', 'behavioral'] }, 1, 0],
+                        },
+                    },
+                    emotionalCount: {
+                        $sum: {
+                            $cond: [{ $eq: ['$engagement.engagementType', 'emotional'] }, 1, 0],
+                        },
+                    },
                 },
             },
             { $sort: { '_id.year': 1, '_id.month': 1, '_id.day': 1 } },
@@ -153,26 +304,46 @@ export class AnalyticsService {
         const points = rows.map((row) => {
             const date = `${row._id.year}-${String(row._id.month).padStart(2, '0')}-${String(row._id.day).padStart(2, '0')}`;
             const hotPercentage = row.messageCount > 0 ? (row.hotCount / row.messageCount) * 100 : 0;
-            const activeSenderCount = Array.isArray(row.activeSenders) ? row.activeSenders.length : 0;
+
+            const avgLex = row.avgLexical ?? 0;
+            
+            const engagementValues = [row.cognitiveCount ?? 0, row.behavioralCount ?? 0, row.emotionalCount ?? 0];
+            const maxVal = Math.max(...engagementValues);
+            const minVal = Math.min(...engagementValues);
+            const engagementBalance = maxVal > 0 ? Math.round(((maxVal - minVal) / maxVal) * 100) : 0;
+            const balanceScore = 100 - engagementBalance;
+            
+            const participation = Math.min(100, (row.activeSenders?.length ?? 0) * 20);
+            
+            const qualityScore = Math.round(
+                hotPercentage * 0.35 +
+                avgLex * 0.25 +
+                participation * 0.2 +
+                balanceScore * 0.2
+            );
 
             return {
                 date,
-                engagement: Math.round(((row.avgLexical ?? 0) + hotPercentage) / 2),
-                completion: Math.min(100, Math.round(row.messageCount * 5)),
-                attendance: Math.min(100, Math.round(activeSenderCount * 20)),
+                quality_score: Math.min(100, qualityScore),
+                hot_percentage: Math.round(hotPercentage * 10) / 10,
+                engagement: Math.min(100, Math.round(row.messageCount * 5)),
+                lexical_variety: Math.min(100, Math.round(avgLex)),
             };
         });
 
-        return {
-            engagement: points.map(({ date, engagement }) => ({ date, value: engagement })),
-            completion: points.map(({ date, completion }) => ({ date, value: completion })),
-            attendance: points.map(({ date, attendance }) => ({ date, value: attendance })),
-        };
+        return points;
     }
 
     static async analyzeText(text: string) {
         if (!text || typeof text !== 'string') throw ApiError.badRequest('Text is required');
-        const analysis = await aiEngineService.analyzeEngagement(text);
+        const analysis = await providerResolutionService.executeWithFallback(
+            { featureFamily: 'analytics' },
+            (providerContext) => aiEngineService.analyzeEngagement(text, providerContext),
+            {
+                isSuccess: (response) => response.success,
+                perProviderTimeoutMs: 15000,
+            },
+        );
         return { success: true, analysis };
     }
 
@@ -181,7 +352,14 @@ export class AnalyticsService {
         if (!course) throw ApiError.notFound('Course not found');
         if (course.ownerId !== userId) throw ApiError.forbidden('You do not own this course');
 
-        const exportResult = await aiEngineService.exportProcessMiningData();
+        const exportResult = await providerResolutionService.executeWithFallback(
+            { featureFamily: 'analytics' },
+            (providerContext) => aiEngineService.exportProcessMiningData(providerContext),
+            {
+                isSuccess: (response) => response.success,
+                perProviderTimeoutMs: 15000,
+            },
+        );
         
         if (format === 'csv') {
             const csvData = this.formatAnalyticsAsCSV(exportResult);

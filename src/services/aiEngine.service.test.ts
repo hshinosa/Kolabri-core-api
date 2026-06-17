@@ -1,6 +1,6 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
-import { AIEngineService } from './aiEngine.service.js';
+import { AIEngineService, type ProviderContextV1 } from './aiEngine.service.js';
 
 type FetchMock = ReturnType<typeof vi.fn>;
 
@@ -11,6 +11,31 @@ function createJsonResponse(data: unknown, ok = true, status = 200): Response {
         json: vi.fn().mockResolvedValue(data),
         text: vi.fn().mockResolvedValue(JSON.stringify(data)),
     } as unknown as Response;
+}
+
+function createProviderContext(): ProviderContextV1 {
+    return {
+        version: '1.0',
+        provider: {
+            name: 'openai',
+            displayName: 'OpenAI GPT',
+        },
+        execution: {
+            baseUrl: 'https://api.openai.com/v1',
+            model: 'gpt-4o-mini',
+            temperature: 0.4,
+            maxTokens: 1024,
+        },
+        auth: {
+            type: 'api-key',
+            credential: 'sk-test-credential',
+        },
+        metadata: {
+            featureFamily: 'orchestration',
+            requestId: 'req-123',
+            resolvedAt: '2026-06-16T00:00:00.000Z',
+        },
+    };
 }
 
 describe('AIEngineService', () => {
@@ -121,6 +146,27 @@ describe('AIEngineService', () => {
         );
     });
 
+    it('includes provider_context when supplied to ask requests', async () => {
+        const providerContext = createProviderContext();
+        fetchMock.mockResolvedValue(createJsonResponse({ answer: 'ok', success: true }));
+
+        await service.ask('Apa itu Kolabri?', 'course-1', 'Hshi', 'chat-9', undefined, providerContext);
+
+        expect(fetchMock).toHaveBeenCalledWith(
+            'http://ai-engine.test/api/ask',
+            expect.objectContaining({
+                body: JSON.stringify({
+                    query: 'Apa itu Kolabri?',
+                    course_id: 'course-1',
+                    user_name: 'Hshi',
+                    chat_space_id: 'chat-9',
+                    guardrail_policy: undefined,
+                    provider_context: providerContext,
+                }),
+            })
+        );
+    });
+
     it('sends reading recommendation requests and returns parsed response', async () => {
         fetchMock.mockResolvedValue(
             createJsonResponse({
@@ -158,6 +204,25 @@ describe('AIEngineService', () => {
         );
         expect(result.success).toBe(true);
         expect(result.recommendations).toHaveLength(1);
+    });
+
+    it('includes provider_context when supplied to reading recommendations', async () => {
+        const providerContext = createProviderContext();
+        fetchMock.mockResolvedValue(createJsonResponse({ success: true, recommendations: [], fallback: null }));
+
+        await service.generateReadingRecommendations('transformer', 'course-1', 3, providerContext);
+
+        expect(fetchMock).toHaveBeenCalledWith(
+            'http://ai-engine.test/api/reading-recommendations',
+            expect.objectContaining({
+                body: JSON.stringify({
+                    topic: 'transformer',
+                    course_id: 'course-1',
+                    limit: 3,
+                    provider_context: providerContext,
+                }),
+            })
+        );
     });
 
     it('returns fallback response when ask times out', async () => {
@@ -216,6 +281,30 @@ describe('AIEngineService', () => {
                     group_id: 'group-1',
                     message: 'Halo teman-teman',
                     topic: 'Kolaborasi',
+                }),
+            })
+        );
+    });
+
+    it('preserves provider_context on orchestrated chat requests', async () => {
+        const providerContext = createProviderContext();
+        fetchMock.mockResolvedValue(createJsonResponse({ success: true, bot_response: 'ok', action_taken: 'RESPOND', should_notify_teacher: false }));
+
+        await service.orchestratedChat({
+            user_id: 'user-1',
+            group_id: 'group-1',
+            message: 'Halo teman-teman',
+            provider_context: providerContext,
+        });
+
+        expect(fetchMock).toHaveBeenCalledWith(
+            'http://ai-engine.test/api/chat',
+            expect.objectContaining({
+                body: JSON.stringify({
+                    user_id: 'user-1',
+                    group_id: 'group-1',
+                    message: 'Halo teman-teman',
+                    provider_context: providerContext,
                 }),
             })
         );

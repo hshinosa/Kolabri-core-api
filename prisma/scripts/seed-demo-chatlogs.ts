@@ -109,7 +109,7 @@ export async function seedDemoChatlogs() {
   await mongoose.connect(MONGO_URI);
   console.log('✅ Connected to MongoDB');
 
-  const ChatLog = mongoose.model('ChatLog', new mongoose.Schema({
+  const chatLogSchema = new mongoose.Schema({
     courseId: String,
     groupId: String,
     chatSpaceId: String,
@@ -127,7 +127,9 @@ export async function seedDemoChatlogs() {
       confidence: Number,
     },
     createdAt: Date,
-  }, { collection: 'chatlogs' }));
+  }, { collection: 'chatlogs' });
+
+  const ChatLog = mongoose.models.ChatLog || mongoose.model('ChatLog', chatLogSchema);
 
   await ChatLog.deleteMany({});
   console.log('🧹 Cleaned existing ChatLogs');

@@ -1,7 +1,8 @@
-import prisma from '../config/database.js';
-import { ApiError } from '../middleware/errorHandler.js';
-import { CreateGroupInput } from '../validators/group.validator.js';
-import { randomBytes } from 'crypto';
+ import prisma from '../config/database.js';
+ import { ApiError } from '../middleware/errorHandler.js';
+ import { CreateGroupInput } from '../validators/group.validator.js';
+ import { logger } from '../utils/logger.js';
+ import { randomBytes } from 'crypto';
 
 const getMinMembersPerGroup = (course: Record<string, unknown>) => {
     const value = course.minMembersPerGroup;
@@ -36,32 +37,47 @@ async function assertCourseWeekBelongsToCourse(weekId: string, courseId: string)
             throw ApiError.badRequest('week_id does not belong to this course');
         }
         return week;
-    } catch (e) {
-        if (e instanceof ApiError) throw e;
-        return { id: weekId, course_id: courseId, week_index: 0, title: '' };
-    }
+     } catch (e) {
+         if (e instanceof ApiError) throw e;
+         logger.warn('assertCourseWeekBelongsToCourse query failed', {
+             weekId,
+             courseId,
+             error: e instanceof Error ? e.message : String(e),
+             stack: e instanceof Error ? e.stack : undefined,
+         });
+         return { id: weekId, course_id: courseId, week_index: 0, title: '' };
+     }
 }
 
-async function resolveWeekLabelsByIds(weekIds: (string | null | undefined)[]): Promise<Map<string, { title: string; week_index: number }>> {
-    const unique = [...new Set(weekIds.filter((id): id is string => !!id))];
-    const map = new Map<string, { title: string; week_index: number }>();
-    if (unique.length === 0) {
-        return map;
-    }
-    try {
-        const rows = await prisma.$queryRaw<{ id: string; title: string; week_index: number }[]>`
-            SELECT id, title, week_index
-            FROM course_weeks
-            WHERE id = ANY(${unique}::uuid[])
-        `;
-        for (const row of rows) {
-            map.set(row.id, { title: row.title, week_index: row.week_index });
-        }
-    } catch {
-        // course_weeks lives in client-app MySQL
-    }
-    return map;
-}
+ async function resolveWeekLabelsByIds(weekIds: (string | null | undefined)[]): Promise<{
+     map: Map<string, { title: string; week_index: number }>;
+     warnings: string[];
+ }> {
+     const unique = [...new Set(weekIds.filter((id): id is string => !!id))];
+     const map = new Map<string, { title: string; week_index: number }>();
+     const warnings: string[] = [];
+     if (unique.length === 0) {
+         return { map, warnings };
+     }
+     try {
+         const rows = await prisma.$queryRaw<{ id: string; title: string; week_index: number }[]>`
+             SELECT id, title, week_index
+             FROM course_weeks
+             WHERE id = ANY(${unique}::uuid[])
+         `;
+         for (const row of rows) {
+             map.set(row.id, { title: row.title, week_index: row.week_index });
+         }
+     } catch (error) {
+         logger.warn('Failed to resolve week labels', {
+             weekIds: unique,
+             error: error instanceof Error ? error.message : String(error),
+             stack: error instanceof Error ? error.stack : undefined,
+         });
+         warnings.push('Week data unavailable');
+     }
+     return { map, warnings };
+ }
 
 
 async function hasPreReadCompleted(userId: string, chatSpaceId: string): Promise<boolean> {
@@ -805,7 +821,7 @@ export class GroupService {
         }
 
         const group = groupMembership.group;
-        const weekLabels = await resolveWeekLabelsByIds(group.chatSpaces.map((cs) => cs.weekId));
+        const { map: weekLabels, warnings } = await resolveWeekLabelsByIds(group.chatSpaces.map((cs) => cs.weekId));
         const preReadMap = await preReadFlagsForUser(
             userId,
             group.chatSpaces.map((cs) => cs.id)
@@ -840,6 +856,7 @@ export class GroupService {
                     createdAt: cs.goals[0].createdAt,
                 } : null,
             })),
+            ...(warnings.length > 0 ? { warnings } : {}),
         };
     }
 
@@ -1021,7 +1038,7 @@ export class GroupService {
             });
         }
 
-        const weekLabels = await resolveWeekLabelsByIds(sortedSpaces.map((cs) => cs.weekId));
+        const { map: weekLabels, warnings } = await resolveWeekLabelsByIds(sortedSpaces.map((cs) => cs.weekId));
         const preReadMap =
             userRole === 'student'
                 ? await preReadFlagsForUser(
@@ -1055,6 +1072,7 @@ export class GroupService {
                 current_page: page,
                 last_page: Math.ceil(total / perPage),
             },
+            ...(warnings.length > 0 ? { warnings } : {}),
         };
     }
 
@@ -1169,7 +1187,7 @@ export class GroupService {
 
         const isClosed = !!chatSpace.closedAt;
         const hasReflection = chatSpace.reflections.length > 0;
-        const weekLabels = await resolveWeekLabelsByIds([chatSpace.weekId]);
+        const { map: weekLabels, warnings } = await resolveWeekLabelsByIds([chatSpace.weekId]);
         const weekMeta = weekFieldsFromMap(chatSpace.weekId, weekLabels);
         const preReadDone =
             userRole === 'student'
@@ -1197,6 +1215,7 @@ export class GroupService {
                 createdBy: chatSpace.goals[0].user,
                 createdAt: chatSpace.goals[0].createdAt,
             } : null,
+            ...(warnings.length > 0 ? { warnings } : {}),
         };
     }
 
@@ -1292,7 +1311,7 @@ export class GroupService {
             data: { weekId },
         });
 
-        const weekLabels = await resolveWeekLabelsByIds([updated.weekId]);
+        const { map: weekLabels } = await resolveWeekLabelsByIds([updated.weekId]);
         const weekMeta = weekFieldsFromMap(updated.weekId, weekLabels);
 
         return {

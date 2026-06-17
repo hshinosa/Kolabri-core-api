@@ -107,4 +107,21 @@ export class ChatSpaceController {
             next(error);
         }
     }
+
+    /**
+     * POST /api/chat-spaces/:id/regenerate-summary
+     * Regenerate summary when initial generation failed
+     */
+    static async regenerateSummary(req: AuthenticatedRequest, res: Response, next: NextFunction) {
+        try {
+            const result = await ChatSpaceService.regenerateSummary(
+                req.params.id,
+                req.user!.userId,
+                req.user!.role
+            );
+            res.json({ data: result });
+        } catch (error) {
+            next(error);
+        }
+    }
 }

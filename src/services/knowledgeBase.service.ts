@@ -22,6 +22,9 @@ const SUPPORTED_MIMETYPES: Record<string, string> = {
     'application/pdf': 'pdf',
     'application/vnd.openxmlformats-officedocument.wordprocessingml.document': 'docx',
     'application/vnd.openxmlformats-officedocument.presentationml.presentation': 'pptx',
+    'application/msword': 'doc', // legacy Word (.doc)
+    'application/vnd.ms-excel': 'xls', // legacy Excel (.xls)
+    'application/vnd.ms-powerpoint': 'ppt', // legacy PowerPoint (.ppt)
     'text/plain': 'txt',
     'text/markdown': 'md',
     'image/png': 'image',

@@ -10,9 +10,11 @@ export interface JwtPayload {
     role: 'student' | 'lecturer' | 'admin';
 }
 
-export interface AuthenticatedRequest extends Request {
-    user?: JwtPayload;
-}
+ export interface AuthenticatedRequest extends Request {
+     user?: JwtPayload;
+     chatSpaceId?: string;
+     groupId?: string;
+ }
 
 export async function verifyToken(req: AuthenticatedRequest, _res: Response, next: NextFunction): Promise<void> {
     try {

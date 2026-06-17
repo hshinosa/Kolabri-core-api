@@ -1,7 +1,8 @@
 import { Response, NextFunction } from 'express';
 import { CourseExportService } from '../services/course-export.service.js';
 import { AuthenticatedRequest } from '../middleware/auth.js';
-import fs from 'fs';
+import fs from 'node:fs';
+import { pipeline } from 'node:stream/promises';
 
 export class CourseExportController {
     static async requestExport(req: AuthenticatedRequest, res: Response, next: NextFunction) {
@@ -48,12 +49,7 @@ export class CourseExportController {
             res.setHeader('Content-Type', 'application/zip');
             res.setHeader('Content-Disposition', `attachment; filename="course-export-${jobId}.zip"`);
 
-            const fileStream = fs.createReadStream(filePath);
-            fileStream.pipe(res);
-
-            fileStream.on('error', (error) => {
-                next(error);
-            });
+            await pipeline(fs.createReadStream(filePath), res);
         } catch (error) {
             next(error);
         }
