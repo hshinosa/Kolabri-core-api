@@ -1,6 +1,6 @@
-import { seedDemoData } from './scripts/seed-demo-data.js';
-import { seedDemoChatlogs } from './scripts/seed-demo-chatlogs.js';
-import { verifyDemoData } from './scripts/verify-demo-data.js';
+import { seedDemoData } from './scripts/seed-demo-data.ts';
+import { seedDemoChatlogs } from './scripts/seed-demo-chatlogs.ts';
+import { verifyDemoData } from './scripts/verify-demo-data.ts';
 import { fileURLToPath } from 'node:url';
 
 async function main() {
