@@ -73,48 +73,52 @@ export class DataExportService {
         const userData: Record<string, unknown> = {};
 
         // Profile
-        const user = await prisma.user.findUnique({
-            where: { id: userId },
-            select: { name: true, email: true, role: true, createdAt: true }
-        });
+        // PERF-DB-03: Parallelize all independent queries
+        const [
+            user,
+            reflections,
+            learningGoals,
+            chatMessages,
+            aiChats,
+            consentRecords,
+            prefs,
+        ] = await Promise.all([
+            prisma.user.findUnique({
+                where: { id: userId },
+                select: { name: true, email: true, role: true, createdAt: true }
+            }),
+            prisma.reflection.findMany({
+                where: { userId },
+                select: { content: true, type: true, createdAt: true }
+            }),
+            prisma.learningGoal.findMany({
+                where: { userId },
+                select: { content: true, isValidated: true, createdAt: true }
+            }),
+            prisma.chatMessage.findMany({
+                where: { senderId: userId },
+                select: { content: true, senderType: true, createdAt: true, chatSpaceId: true }
+            }),
+            prisma.aiChat.findMany({
+                where: { userId },
+                include: { messages: { select: { role: true, content: true, createdAt: true } } }
+            }),
+            prisma.consentRecord.findMany({
+                where: { userId },
+                select: { consentType: true, granted: true, grantedAt: true, revokedAt: true }
+            }),
+            prisma.user.findUnique({
+                where: { id: userId },
+                select: { analyticsVisibility: true, aiInteractionConsent: true, dataSharingConsent: true }
+            }),
+        ]);
+
         userData.profile = user;
-
-        // Journals (reflections)
-        userData.reflections = await prisma.reflection.findMany({
-            where: { userId },
-            select: { content: true, type: true, createdAt: true }
-        });
-
-        // Learning goals
-        userData.learningGoals = await prisma.learningGoal.findMany({
-            where: { userId },
-            select: { content: true, isValidated: true, createdAt: true }
-        });
-
-        // Chat messages (from PostgreSQL)
-        userData.chatMessages = await prisma.chatMessage.findMany({
-            where: { senderId: userId },
-            select: { content: true, senderType: true, createdAt: true, chatSpaceId: true }
-        });
-
-        // AI chats
-        const aiChats = await prisma.aiChat.findMany({
-            where: { userId },
-            include: { messages: { select: { role: true, content: true, createdAt: true } } }
-        });
+        userData.reflections = reflections;
+        userData.learningGoals = learningGoals;
+        userData.chatMessages = chatMessages;
         userData.aiChats = aiChats;
-
-        // Consent records
-        userData.consentRecords = await prisma.consentRecord.findMany({
-            where: { userId },
-            select: { consentType: true, granted: true, grantedAt: true, revokedAt: true }
-        });
-
-        // Privacy preferences
-        const prefs = await prisma.user.findUnique({
-            where: { id: userId },
-            select: { analyticsVisibility: true, aiInteractionConsent: true, dataSharingConsent: true }
-        });
+        userData.consentRecords = consentRecords;
         userData.privacyPreferences = prefs;
 
         // Course data export (if requested)

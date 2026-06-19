@@ -124,6 +124,7 @@ describe('GoalService', () => {
             'chat-1',
             undefined,
             createProviderContext(),
+            'group-1',
         );
         expect(validateGoalContentMock).toHaveBeenCalledWith('Menganalisis data pembelajaran secara kolaboratif.');
         expect(prismaMock.learningGoal.create).toHaveBeenCalledWith(

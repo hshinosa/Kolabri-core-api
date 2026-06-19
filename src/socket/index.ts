@@ -563,7 +563,7 @@ export function initSocketIO(server: HttpServer): Server {
                 }
 
                 // Check discussion quality and intervene if needed (async, non-blocking)
-                checkAndIntervenForQuality(roomId, courseId, groupId, chatSpaceId).catch(err => {
+                checkAndIntervenForQuality(roomId, authoritativeCourseId, authoritativeGroupId, chatSpaceId).catch(err => {
                     const message = err instanceof Error ? err.message : 'Unknown error';
                     logger.error('Quality intervention check failed:', err);
                     io.to(roomId).emit('intervention_error', {
@@ -1240,6 +1240,16 @@ async function handleAIQuestion(
             scaffoldingLevel: orchestrationResult?.scaffolding_level ?? undefined,
             qualityScore: orchestrationResult?.quality_score ?? undefined,
             citations: filteredCitations.length > 0 ? filteredCitations : undefined,
+            // BUG-06: Persist engagement data from orchestration analytics
+            engagement: orchestrationResult?.meta && orchestrationResult.meta.engagement_type
+                ? {
+                    engagementType: String(orchestrationResult.meta.engagement_type).toLowerCase() as 'cognitive' | 'behavioral' | 'emotional',
+                    isHigherOrder: Boolean(orchestrationResult.meta.is_higher_order),
+                    lexicalVariety: Math.round((orchestrationResult.meta.lexical_variety ?? 0) * 100),
+                    hotIndicators: [],
+                    confidence: 0.8,
+                }
+                : undefined,
         });
         await chatLog.save();
 

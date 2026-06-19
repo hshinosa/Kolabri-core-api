@@ -224,6 +224,10 @@ interface GroupAnalyticsMeta {
     engagement_distribution: Record<string, number>;
     participants: string[];
     last_intervention_time?: string;
+    // BUG-06: Engagement fields from orchestration analytics
+    engagement_type?: string;
+    is_higher_order?: boolean;
+    lexical_variety?: number;
 }
 
 interface GroupAnalyticsResponse {
@@ -980,6 +984,7 @@ export class AIEngineService {
         chatSpaceId: string,
         weekContext?: { week_title?: string; week_index?: number; material_titles?: string[] },
         providerContext?: ProviderContextV1,
+        groupId?: string,
     ): Promise<{ success: boolean; is_valid: boolean; score: number; feedback: string; socratic_hint?: string; missing_criteria?: string[]; status?: 'accepted' | 'revise'; error?: string }> {
         try {
             return await this.resilient(async () => {
@@ -992,6 +997,7 @@ export class AIEngineService {
                         chat_space_id: chatSpaceId,
                         week_context: weekContext ?? undefined,
                         provider_context: providerContext,
+                        group_id: groupId,
                     }),
                 }, LLM_TIMEOUT);
                 if (!response.ok) throw new Error(`AI Engine responded with ${response.status}`);

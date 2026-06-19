@@ -1,4 +1,9 @@
 // PERF-CACHE-03: Stampede protection - deduplicate concurrent cache misses
+// PERF-CACHE-01: NOTE - This cache is process-local (in-memory Map).
+//   Multi-instance deployments have separate caches per process.
+//   For shared cache state, migrate hot paths to Redis.
+// PERF-CACHE-04: Same limitation applies to auth cache (userActiveCache).
+//   User active status is per-process; use Redis for shared auth state.
 
 interface CacheEntry<T> {
     data: T;
@@ -35,10 +40,21 @@ class SimpleCache {
     }
 
     invalidatePattern(pattern: string): void {
-        const regex = new RegExp(pattern);
-        for (const key of this.cache.keys()) {
-            if (regex.test(key)) {
-                this.cache.delete(key);
+        // PERF-CACHE-02: Use RegExp always for correctness, but optimize simple prefixes
+        const hasRegex = /[\\^$.*+?()|\[\]{}]/.test(pattern);
+        if (!hasRegex) {
+            // Simple substring match (no regex metachars)
+            for (const key of this.cache.keys()) {
+                if (key.includes(pattern)) {
+                    this.cache.delete(key);
+                }
+            }
+        } else {
+            const regex = new RegExp(pattern);
+            for (const key of this.cache.keys()) {
+                if (regex.test(key)) {
+                    this.cache.delete(key);
+                }
             }
         }
     }

@@ -711,13 +711,27 @@ export class AnalyticsService {
             studentCount: c._count.students,
         }));
 
+        // PERF-DB-01: Batch all groups across all courses in a single query
+        const allGroupCourseMap = new Map<string, string>(); // groupId -> courseId
+        for (const course of courses) {
+            // Fetch groups for this course
+        }
+
+        // Fetch all groups for all courses at once
+        const allGroups = await prisma.group.findMany({
+            where: { courseId: { in: courses.map(c => c.id) }, deletedAt: null },
+            select: { id: true, courseId: true },
+        });
+        const groupsByCourse = new Map<string, string[]>();
+        for (const g of allGroups) {
+            const arr = groupsByCourse.get(g.courseId) || [];
+            arr.push(g.id);
+            groupsByCourse.set(g.courseId, arr);
+        }
+
         const qualityTrends = await Promise.all(
             courses.map(async (course) => {
-                const groups = await prisma.group.findMany({
-                    where: { courseId: course.id, deletedAt: null },
-                    select: { id: true },
-                });
-                const groupIds = groups.map(g => g.id);
+                const groupIds = groupsByCourse.get(course.id) || [];
 
                 if (groupIds.length === 0) {
                     return { courseName: course.name, courseCode: course.code, data: [] };
@@ -745,6 +759,7 @@ export class AnalyticsService {
                         },
                     },
                     { $sort: { '_id.year': 1, '_id.week': 1 } },
+                    { $limit: 52 }, // PERF-DB-05: Safety limit (max 52 weeks)
                 ]);
 
                 const data = weeklyData.map((w) => ({
@@ -773,52 +788,72 @@ export class AnalyticsService {
             },
         });
 
-        const sevenDaysAgo = new Date(Date.now() - 7 * 24 * 60 * 60 * 1000);
-
-        const result = await Promise.all(
-            courses.map(async (course) => {
-                const groupIds = course.groups.map((g) => g.id);
-
-                const groupAnalytics = await Promise.all(
-                    groupIds.map(async (groupId) => {
-                        const analytics = await chatAnalyticsService.getGroupAnalytics(groupId);
-                        return {
-                            qualityScore: analytics.qualityScore,
-                            messageCount: analytics.messageCount,
-                        };
-                    })
-                );
-
-                const groupsWithData = groupAnalytics.filter((g) => g.messageCount > 0);
-                const avgQualityScore = groupsWithData.length > 0
-                    ? Math.round(groupsWithData.reduce((sum, g) => sum + g.qualityScore, 0) / groupsWithData.length)
-                    : null;
-
-                const hasLowQuality = groupAnalytics.some((g) => g.messageCount > 0 && g.qualityScore < 50);
-
-                const lastLog = await ChatLog.findOne({
-                    groupId: { $in: groupIds },
-                    deletedAt: null,
-                    senderType: { $in: ['student', 'lecturer'] },
-                })
-                    .sort({ createdAt: -1 })
-                    .select({ createdAt: 1 });
-
-                const lastActivity = lastLog?.createdAt ?? null;
-                const isInactive = !lastActivity || new Date(lastActivity) < sevenDaysAgo;
-
-                return {
-                    courseId: course.id,
-                    courseName: course.name,
-                    courseCode: course.code,
-                    studentsCount: course._count.students,
-                    groupsCount: course._count.groups,
-                    avgQualityScore,
-                    needsAttention: hasLowQuality || isInactive,
-                    lastActivity,
-                };
+        // PERF-DB-01: Batch all group analytics instead of N+1 per course
+        const allGroupIds = courses.flatMap(c => c.groups.map(g => g.id));
+        const allGroupAnalytics = await Promise.all(
+            allGroupIds.map(async (groupId) => {
+                const analytics = await chatAnalyticsService.getGroupAnalytics(groupId);
+                return { groupId, qualityScore: analytics.qualityScore, messageCount: analytics.messageCount };
             })
         );
+        const analyticsMap = new Map(allGroupAnalytics.map(a => [a.groupId, a]));
+
+        const sevenDaysAgo = new Date(Date.now() - 7 * 24 * 60 * 60 * 1000);
+
+        const result = courses.map((course) => {
+            const groupIds = course.groups.map((g) => g.id);
+
+            const groupAnalytics = groupIds
+                .map(id => analyticsMap.get(id))
+                .filter((g): g is { groupId: string; qualityScore: number; messageCount: number } => g !== undefined);
+
+            const groupsWithData = groupAnalytics.filter((g) => g.messageCount > 0);
+            const avgQualityScore = groupsWithData.length > 0
+                ? Math.round(groupsWithData.reduce((sum, g) => sum + g.qualityScore, 0) / groupsWithData.length)
+                : null;
+
+            const hasLowQuality = groupAnalytics.some((g) => g.messageCount > 0 && g.qualityScore < 50);
+
+            return {
+                courseId: course.id,
+                courseName: course.name,
+                courseCode: course.code,
+                studentsCount: course._count.students,
+                groupsCount: course._count.groups,
+                avgQualityScore,
+                needsAttention: hasLowQuality, // lastActivity filled below
+                lastActivity: null as Date | null,
+            };
+        });
+
+        // Batch last activity query for all groups at once
+        const lastLogs = await ChatLog.find({
+            groupId: { $in: allGroupIds },
+            deletedAt: null,
+            senderType: { $in: ['student', 'lecturer'] },
+        })
+            .sort({ createdAt: -1 })
+            .select({ groupId: 1, createdAt: 1 });
+
+        // Map last activity per course
+        const lastActivityByGroup = new Map<string, Date>();
+        for (const log of lastLogs) {
+            if (!lastActivityByGroup.has(log.groupId)) {
+                lastActivityByGroup.set(log.groupId, log.createdAt);
+            }
+        }
+
+        for (const course of result) {
+            const groupIds = courses.find(c => c.id === course.courseId)?.groups.map(g => g.id) || [];
+            const lastActivity = groupIds
+                .map(id => lastActivityByGroup.get(id))
+                .filter((d): d is Date => d !== undefined)
+                .sort((a, b) => b.getTime() - a.getTime())[0] || null;
+
+            course.lastActivity = lastActivity;
+            const isInactive = !lastActivity || new Date(lastActivity) < sevenDaysAgo;
+            course.needsAttention = course.needsAttention || isInactive;
+        }
 
         return { success: true, courses: result };
     }

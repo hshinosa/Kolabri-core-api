@@ -86,6 +86,7 @@ export class GoalService {
                 chatSpaceId,
                 data.week_context ?? undefined,
                 providerContext,
+                chatSpace.groupId,
             ),
             {
                 isSuccess: (response) => response.success,

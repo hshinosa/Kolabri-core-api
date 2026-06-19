@@ -1,3 +1,6 @@
+// PERF-WS-02: Cache verified tokens to reduce JWT verify + DB lookup overhead
+const tokenCache = new Map<string, { userId: string; exp: number }>();
+const TOKEN_CACHE_TTL_MS = 60 * 1000; // 1 minute
 import jwt from 'jsonwebtoken';
 import type { Server, Socket } from 'socket.io';
 import { logger } from '../utils/logger.js';
@@ -25,6 +28,14 @@ export async function authMiddleware(socket: Socket, next: NextFn): Promise<void
             return next(new Error('Server configuration error'));
         }
 
+        // PERF-WS-02: Check token cache first
+        const cached = tokenCache.get(token as string);
+        if (cached && Date.now() < cached.exp) {
+            authed.user = { userId: cached.userId } as JwtPayload;
+            logger.debug(`Socket auth cache hit for user: ${cached.userId}`);
+            return next();
+        }
+
         const decoded = jwt.verify(token as string, secret) as JwtPayload;
 
         const user = await prisma.user.findFirst({
@@ -36,6 +47,12 @@ export async function authMiddleware(socket: Socket, next: NextFn): Promise<void
             logger.warn(`Socket auth rejected: User ${decoded.userId} not found or inactive`);
             return next(new Error('User not found'));
         }
+
+        // Cache the token for future connections
+        tokenCache.set(token as string, {
+            userId: decoded.userId,
+            exp: Date.now() + TOKEN_CACHE_TTL_MS,
+        });
 
         authed.user = decoded;
 
