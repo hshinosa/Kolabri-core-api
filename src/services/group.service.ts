@@ -39,13 +39,13 @@ async function assertCourseWeekBelongsToCourse(weekId: string, courseId: string)
         return week;
      } catch (e) {
          if (e instanceof ApiError) throw e;
-         logger.warn('assertCourseWeekBelongsToCourse query failed', {
+         logger.error('assertCourseWeekBelongsToCourse query failed', {
              weekId,
              courseId,
              error: e instanceof Error ? e.message : String(e),
              stack: e instanceof Error ? e.stack : undefined,
          });
-         return { id: weekId, course_id: courseId, week_index: 0, title: '' };
+         throw ApiError.badRequest('Unable to verify week_id: course week lookup failed');
      }
 }
 
@@ -505,12 +505,20 @@ export class GroupService {
             throw ApiError.notFound('Group not found');
         }
 
+        const creator = group.createdBy
+            ? await prisma.user.findUnique({
+                where: { id: group.createdBy },
+                select: { id: true, name: true, email: true },
+            })
+            : null;
+
         return {
             id: group.id,
             name: group.name,
             joinCode: group.joinCode,
             courseId: group.course.id,
             course: group.course,
+            creator,
             members: group.members.map((m) => m.user),
             chatSpaces: group.chatSpaces.map((cs) => ({
                 id: cs.id,
