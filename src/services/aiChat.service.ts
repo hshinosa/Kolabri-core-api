@@ -99,6 +99,7 @@ export class AiChatService {
             id: m.id,
             role: m.role,
             content: m.content,
+            citations: (m.citations as Array<{ source: string; page?: number; course_id?: string; course_material_id?: string }> | null) ?? undefined,
             createdAt: m.createdAt,
         }));
     }
@@ -131,6 +132,7 @@ export class AiChatService {
                 id: m.id,
                 role: m.role,
                 content: m.content,
+                citations: (m.citations as Array<{ source: string; page?: number; course_id?: string; course_material_id?: string }> | null) ?? undefined,
                 createdAt: m.createdAt,
             })),
             createdAt: chat.createdAt,
@@ -141,7 +143,7 @@ export class AiChatService {
     /**
      * Add a message to a chat
      */
-    static async addMessage(chatId: string, userId: string, role: 'user' | 'assistant', content: string) {
+    static async addMessage(chatId: string, userId: string, role: 'user' | 'assistant', content: string, citations?: Array<{ source: string; page?: number; course_id?: string; course_material_id?: string }>) {
         const chat = await prisma.aiChat.findUnique({
             where: { id: chatId },
         });
@@ -159,6 +161,7 @@ export class AiChatService {
                 chatId,
                 role,
                 content,
+                ...(citations ? { citations } : {}),
             },
         });
 
@@ -188,6 +191,7 @@ export class AiChatService {
             id: message.id,
             role: message.role,
             content: message.content,
+            citations: (message.citations as Array<{ source: string; page?: number; course_id?: string; course_material_id?: string }> | null) ?? undefined,
             createdAt: message.createdAt,
         };
     }

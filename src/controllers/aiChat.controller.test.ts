@@ -197,16 +197,60 @@ describe('AiChatController', () => {
             providerContext,
             expect.any(Array),
         );
-        expect(mockAiChatService.addMessage).toHaveBeenNthCalledWith(2, 'chat-1', 'user-1', 'assistant', 'Hello');
+        expect(mockAiChatService.addMessage).toHaveBeenNthCalledWith(2, 'chat-1', 'user-1', 'assistant', 'Hello', undefined);
         expect(res.setHeader).toHaveBeenCalledWith('Content-Type', 'text/event-stream');
         expect(res.write).toHaveBeenCalledWith(`data: ${JSON.stringify({ type: 'user_message', id: 'msg-user' })}\n\n`);
         expect(res.write).toHaveBeenCalledWith('data: {"content":"Hello"}\n\n');
         expect(res.write).toHaveBeenCalledWith(
-            `data: ${JSON.stringify({ type: 'assistant_saved', id: 'msg-assistant' })}\n\n`
+            `data: ${JSON.stringify({ type: 'assistant_saved', id: 'msg-assistant', citations: undefined })}\n\n`
         );
         expect(res.write).toHaveBeenCalledWith('data: [DONE]\n\n');
         expect(res.end).toHaveBeenCalled();
         expect(next).not.toHaveBeenCalled();
+    });
+    it('persists citations received in the SSE stream alongside the assistant reply', async () => {
+        const userMessage = { id: 'msg-user' };
+        const savedAssistant = { id: 'msg-assistant' };
+        const providerContext = createProviderContext();
+        const testCitations = [{ source: 'React Docs', page: 42, course_id: 'c1', course_material_id: 'm1' }];
+        mockAiChatService.addMessage
+            .mockResolvedValueOnce(userMessage)
+            .mockResolvedValueOnce(savedAssistant);
+        mockAiChatService.getChatWithUser.mockResolvedValue({ userName: 'Bob', messages: [] });
+        mockProviderResolutionService.resolveProviderContext.mockResolvedValue({
+            primary: { providerId: 'provider-openai', providerName: 'openai', providerContext },
+            fallbackChain: [],
+        });
+        mockAiEngineService.personalChatStream.mockResolvedValue({
+            ok: true,
+            body: {
+                getReader: () => {
+                    let calls = 0;
+                    return {
+                        read: vi.fn(async () => {
+                            calls++;
+                            if (calls === 1) {
+                                return { done: false, value: new TextEncoder().encode('data: {"content":"Answer with RAG"}\n') };
+                            }
+                            if (calls === 2) {
+                                return { done: false, value: new TextEncoder().encode(`data: ${JSON.stringify({ citations: testCitations })}\n`) };
+                            }
+                            return { done: true, value: undefined };
+                        }),
+                    };
+                },
+            },
+        });
+        const req = mockReq({ params: { id: 'chat-1' }, body: { content: 'question' } });
+        const res = mockRes();
+        const next = mockNext();
+
+        await AiChatController.streamMessage(req as Request, res as Response, next);
+
+        expect(mockAiChatService.addMessage).toHaveBeenNthCalledWith(2, 'chat-1', 'user-1', 'assistant', 'Answer with RAG', testCitations);
+        expect(res.write).toHaveBeenCalledWith(
+            `data: ${JSON.stringify({ type: 'assistant_saved', id: 'msg-assistant', citations: testCitations })}\n\n`
+        );
     });
 
     it('falls back to a canned assistant message when the stream is unavailable', async () => {

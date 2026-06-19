@@ -404,6 +404,8 @@ model AiChatMessage {
   id        String   @id @default(uuid())
   role      String // 'user' | 'assistant'
   content   String
+  /// AI RAG citations: [{ source, page?, course_id?, course_material_id? }]
+  citations Json? @map("citations")
   createdAt DateTime @default(now()) @map("created_at")
 
   // Relations

@@ -191,6 +191,7 @@ export class AiChatController {
             }
 
             let fullReply = '';
+            let collectedCitations: Array<{ source: string; page?: number; course_id?: string; course_material_id?: string }> = [];
             const reader = streamResp.body.getReader();
             const decoder = new TextDecoder();
 
@@ -211,6 +212,9 @@ export class AiChatController {
 
                     try {
                         const parsed = JSON.parse(payload);
+                        if (parsed.citations && Array.isArray(parsed.citations)) {
+                            collectedCitations = parsed.citations;
+                        }
                         if (parsed.content) {
                             fullReply += parsed.content;
                         }
@@ -219,10 +223,9 @@ export class AiChatController {
                     res.write(`${line}\n\n`);
                 }
             }
-
             if (fullReply) {
-                const saved = await AiChatService.addMessage(chatId, userId, 'assistant', fullReply);
-                res.write(`data: ${JSON.stringify({ type: 'assistant_saved', id: saved.id })}\n\n`);
+                const saved = await AiChatService.addMessage(chatId, userId, 'assistant', fullReply, collectedCitations.length > 0 ? collectedCitations : undefined);
+                res.write(`data: ${JSON.stringify({ type: 'assistant_saved', id: saved.id, citations: collectedCitations.length > 0 ? collectedCitations : undefined })}\n\n`);
             }
 
             res.write('data: [DONE]\n\n');
