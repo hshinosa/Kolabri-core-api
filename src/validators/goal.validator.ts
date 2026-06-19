@@ -13,7 +13,7 @@ export const createGoalSchema = z.object({
             week_index: z.number(),
             material_titles: z.array(z.string()),
         })
-        .optional(),
+        .nullish(),
 });
 
 export type CreateGoalInput = z.infer<typeof createGoalSchema>;

@@ -84,7 +84,7 @@ export class GoalService {
                 data.content,
                 userId,
                 chatSpaceId,
-                data.week_context,
+                data.week_context ?? undefined,
                 providerContext,
             ),
             {
