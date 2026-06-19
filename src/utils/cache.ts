@@ -1,3 +1,5 @@
+// PERF-CACHE-03: Stampede protection - deduplicate concurrent cache misses
+
 interface CacheEntry<T> {
     data: T;
     timestamp: number;
@@ -6,6 +8,7 @@ interface CacheEntry<T> {
 class SimpleCache {
     private cache: Map<string, CacheEntry<unknown>> = new Map();
     private defaultTTL: number = 5 * 60 * 1000;
+    private inFlightPromises: Map<string, Promise<unknown>> = new Map();
 
     set<T>(key: string, data: T, ttl?: number): void {
         this.cache.set(key, {
@@ -42,6 +45,37 @@ class SimpleCache {
 
     clear(): void {
         this.cache.clear();
+    }
+
+    // PERF-CACHE-03: Get value with stampede protection
+    async getOrFetch<T>(
+        key: string,
+        fetchFn: () => Promise<T>,
+        ttl?: number
+    ): Promise<T | null> {
+        const cached = this.get<T>(key);
+        if (cached !== null) return cached;
+
+        // Check if another request is already fetching this key
+        const existingPromise = this.inFlightPromises.get(key) as Promise<T> | undefined;
+        if (existingPromise) {
+            return existingPromise;
+        }
+
+        // Create new promise for this fetch
+        const fetchPromise = fetchFn()
+            .then((result) => {
+                if (result !== null) {
+                    this.set(key, result, ttl);
+                }
+                return result;
+            })
+            .finally(() => {
+                this.inFlightPromises.delete(key);
+            });
+
+        this.inFlightPromises.set(key, fetchPromise);
+        return fetchPromise;
     }
 }
 

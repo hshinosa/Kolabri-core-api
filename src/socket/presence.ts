@@ -3,7 +3,8 @@ import { logger } from '../utils/logger.js';
 import { socketRateLimiter } from '../utils/socketRateLimiter.js';
 import { typingSchema } from '../validators/socket.validator.js';
 import { getRedis } from '../config/redis.js';
-import { invalidateDashboardCache } from '../services/dashboard.service.js';
+import { clearSilenceTimer } from './index.js'; // PERF-WS-01: Timer cleanup
+import { debouncedInvalidateDashboard } from '../utils/debouncedInvalidation.js'; // HIGH-04
 import type { AuthenticatedSocket } from './types.js';
 
 export interface RoomUser {
@@ -66,10 +67,11 @@ async function removeUserFromRoom(socket: AuthenticatedSocket, roomId: string): 
         users.delete(socket.user.userId);
         if (users.size === 0) {
             roomUsers.delete(roomId);
+            clearSilenceTimer(roomId); // PERF-WS-01: Cleanup timer when room empty
         }
     }
     socket.to(roomId).emit('user_left', { userId: socket.user.userId });
-    invalidateDashboardCache();
+    debouncedInvalidateDashboard(); // HIGH-04: Debounced to prevent cache thrashing
 
     const redis = getRedis();
     if (redis) {

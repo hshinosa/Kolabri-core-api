@@ -16,6 +16,7 @@ import { setSocketEmitter } from '../utils/socketEmitter.js';
 import { getRedis } from '../config/redis.js';
 import { createAdapter } from '@socket.io/redis-adapter';
 import { invalidateDashboardCache } from '../services/dashboard.service.js';
+import { debouncedInvalidateDashboard } from '../utils/debouncedInvalidation.js';
 import type { AuthenticatedSocket, ChatHistoryItem } from './types.js';
 import { authMiddleware } from './auth.js';
 import { analyzeEngagement } from './engagement.js';
@@ -200,6 +201,7 @@ export function initSocketIO(server: HttpServer): Server {
                 // Use chatSpaceId as roomId for message separation per session
                 const roomId = chatSpaceId;
                 socket.join(roomId);
+                socket.join(`course:${courseId}`); // PERF: Join course-level room for scoped broadcasts (HIGH-03)
                 socket.currentRoom = roomId; // Track for disconnect cleanup
 
                 // Load chat history from MongoDB for this specific chat space
@@ -306,7 +308,7 @@ export function initSocketIO(server: HttpServer): Server {
                 // Send room joined confirmation
                 socket.emit('room_joined', { roomId, courseId, groupId, chatSpaceId });
 
-                invalidateDashboardCache();
+                debouncedInvalidateDashboard(); // HIGH-04: Debounced to prevent cache thrashing
 
                 // Start silence timer if not exists
                 startSilenceTimer(roomId, courseId, groupId, chatSpaceId);
@@ -531,9 +533,8 @@ export function initSocketIO(server: HttpServer): Server {
                 };
 
                 io.to(chatSpaceId).emit('receive_message', message);
-                invalidateDashboardCache();
-
-                io.emit('activity_feed', {
+                debouncedInvalidateDashboard(); // HIGH-04: Debounced to prevent cache thrashing
+                io.to(`course:${authoritativeCourseId}`).emit('activity_feed', {
                     id: chatLog._id?.toString(),
                     senderName: user.name,
                     senderType: user.role,
@@ -542,7 +543,7 @@ export function initSocketIO(server: HttpServer): Server {
                     groupId: authoritativeGroupId,
                     chatSpaceId,
                     createdAt: chatLog.createdAt.toISOString(),
-                });
+                }); // PERF: Scoped broadcast to course members only (HIGH-03)
 
                 resetSilenceTimer(chatSpaceId, authoritativeCourseId, authoritativeGroupId, chatSpaceId);
 
@@ -839,6 +840,16 @@ function resetSilenceTimer(roomId: string, courseId: string, groupId: string, ch
     silenceTimers.set(roomId, timer);
 }
 
+/**
+ * Clear silence timer for a room (cleanup on disconnect)
+ */
+export function clearSilenceTimer(roomId: string): void {
+    const timer = silenceTimers.get(roomId);
+    if (timer) {
+        clearTimeout(timer);
+        silenceTimers.delete(roomId);
+    }
+}
 /**
  * Trigger bot intervention after silence
  */
