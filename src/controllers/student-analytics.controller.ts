@@ -1,5 +1,6 @@
 import { Request, Response, NextFunction } from 'express';
 import { StudentAnalyticsService } from '../services/student-analytics.service.js';
+import { AnalyticsService } from '../services/analytics.service.js';
 import prisma from '../config/database.js';
 
 export class StudentAnalyticsController {
@@ -39,6 +40,22 @@ export class StudentAnalyticsController {
                     chatMessages,
                 },
             });
+        } catch (error) {
+            next(error);
+        }
+    }
+
+    static async getRecentActivity(req: Request, res: Response, next: NextFunction) {
+        try {
+            const userId = req.user?.userId;
+
+            if (!userId) {
+                return res.status(401).json({ error: 'Unauthorized' });
+            }
+
+            const limit = Math.min(Number(req.query.limit) || 5, 20);
+            const activity = await AnalyticsService.getStudentRecentActivity(userId, limit);
+            res.json({ data: activity });
         } catch (error) {
             next(error);
         }

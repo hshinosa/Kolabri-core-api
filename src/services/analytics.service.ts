@@ -647,6 +647,53 @@ export class AnalyticsService {
         });
     }
 
+    static async getStudentRecentActivity(userId: string, limit: number = 5) {
+        const memberships = await prisma.groupMember.findMany({
+            where: { userId },
+            select: {
+                group: {
+                    select: {
+                        id: true,
+                        name: true,
+                        course: { select: { name: true } },
+                    },
+                },
+            },
+        });
+
+        const groupMap = new Map(
+            memberships
+                .filter((m) => m.group)
+                .map((m) => [m.group.id, { name: m.group.name, courseName: m.group.course?.name || 'Unknown' }]),
+        );
+        const groupIds = [...groupMap.keys()];
+
+        if (groupIds.length === 0) return [];
+
+        const recentLogs = await ChatLog.find({
+            groupId: { $in: groupIds },
+            deletedAt: null,
+            senderType: { $in: ['student', 'lecturer'] },
+        })
+            .sort({ createdAt: -1 })
+            .limit(limit)
+            .select({ _id: 1, senderName: 1, senderType: 1, content: 1, createdAt: 1, groupId: 1 });
+
+        return recentLogs.map((log) => {
+            const group = groupMap.get(log.groupId);
+            return {
+                id: log._id.toString(),
+                type: 'message',
+                senderName: log.senderName,
+                senderType: log.senderType,
+                content: log.content.substring(0, 150),
+                createdAt: log.createdAt,
+                groupName: group?.name || 'Unknown',
+                courseName: group?.courseName || 'Unknown',
+            };
+        });
+    }
+
     static async getDashboardCharts(userId: string) {
         const courses = await prisma.course.findMany({
             where: { ownerId: userId, deletedAt: null },
