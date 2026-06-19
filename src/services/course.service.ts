@@ -112,6 +112,9 @@ export class CourseService {
             },
         });
 
+        // Invalidate student's course cache so the new course appears immediately
+        cache.invalidatePattern(`courses:${studentId}:`);
+
         return {
             id: course.id,
             code: course.code,
