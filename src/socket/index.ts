@@ -173,6 +173,30 @@ export function initSocketIO(server: HttpServer): Server {
                     return;
                 }
 
+                // Enforce pre-read + goal gates for students (mirrors the BFF chatRoom gate;
+                // lecturers/admins monitor freely). Closed sessions skip the gates.
+                if (socket.user.role === 'student' && !chatSpace.closedAt) {
+                    if (chatSpace.weekId) {
+                        const preRead = await prisma.chatSpacePreReadCompletion.findUnique({
+                            where: { userId_chatSpaceId: { userId: socket.user.userId, chatSpaceId } },
+                            select: { id: true },
+                        });
+                        if (!preRead) {
+                            socket.emit('server_error', { message: 'Selesaikan pre-read sebelum masuk sesi diskusi', code: 'PRE_READ_REQUIRED' });
+                            return;
+                        }
+                    }
+
+                    const goal = await prisma.learningGoal.findFirst({
+                        where: { chatSpaceId },
+                        select: { id: true },
+                    });
+                    if (!goal) {
+                        socket.emit('server_error', { message: 'Tetapkan tujuan pembelajaran sebelum masuk sesi diskusi', code: 'GOAL_REQUIRED' });
+                        return;
+                    }
+                }
+
                 // Use chatSpaceId as roomId for message separation per session
                 const roomId = chatSpaceId;
                 socket.join(roomId);
