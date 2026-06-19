@@ -116,6 +116,12 @@ export class ChatSpaceService {
                         where: { id: chatSpaceId },
                         data: { summary, summaryGeneratedAt },
                     });
+                } else {
+                    summaryError = summaryResult.error || 'AI Engine failed to generate summary';
+                    logger.warn('Summary generation returned no summary during session close', {
+                        chatSpaceId,
+                        error: summaryError,
+                    });
                 }
             }
         } catch (error) {
