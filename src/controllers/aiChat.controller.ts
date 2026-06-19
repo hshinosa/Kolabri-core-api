@@ -152,14 +152,14 @@ export class AiChatController {
                     content: m.content,
                 }));
 
-            // Fetch enrolled course codes for this user (RAG scope)
+            // Fetch enrolled course IDs (UUID) for this user (RAG scope)
             const enrollments = await prisma.courseStudent.findMany({
                 where: { userId },
                 select: {
-                    course: { select: { code: true } },
+                    course: { select: { id: true } },
                 },
             });
-            const courseIds = enrollments.map((e) => e.course.code);
+            const courseIds = enrollments.map((e) => e.course.id);
 
             res.setHeader('Content-Type', 'text/event-stream');
             res.setHeader('Cache-Control', 'no-cache');
