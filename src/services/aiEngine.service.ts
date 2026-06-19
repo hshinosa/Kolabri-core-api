@@ -217,6 +217,26 @@ interface OrchestrationResponse {
     citations?: CitationPayload[];
 }
 
+export interface StreamEvent {
+    type: 'token' | 'full' | 'done' | 'error';
+    content?: string;
+    sources?: Array<Record<string, unknown>>;
+    citations?: CitationPayload[];
+    outcome?: string;
+    reason?: string;
+    scaffolding_triggered?: boolean;
+    grounding_ratio?: number;
+    analytics?: Record<string, unknown>;
+    intervention?: string;
+    intervention_type?: string;
+    quality_score?: number;
+    should_notify_teacher?: boolean;
+    guardrail_outcome?: string;
+    guardrail_reason?: string;
+    scaffolding_level?: string;
+    scaffolding_outcome?: string;
+}
+
 interface GroupAnalyticsMeta {
     message_count: number;
     hot_percentage: number;
@@ -851,6 +871,55 @@ export class AIEngineService {
                 should_notify_teacher: false,
                 error: error instanceof Error ? error.message : 'Unknown error',
             };
+        }
+    }
+
+    /**
+     * Stream orchestrated chat via SSE (PERF-AI-01).
+     * Consumes POST /api/chat/stream from AI Engine, parses SSE events.
+     * NO_FETCH path streams tokens; FETCH path returns full result.
+     * Yields StreamEvent objects to caller (socket handler).
+     */
+    async *orchestratedChatStream(request: OrchestrationRequest): AsyncGenerator<StreamEvent> {
+        try {
+            const response = await this.fetchWithTimeout(`${this.baseUrl}/api/chat/stream`, {
+                method: 'POST',
+                headers: this.getHeaders(),
+                body: JSON.stringify(request),
+            }, LLM_TIMEOUT);
+
+            if (!response.ok) {
+                throw new Error(`AI Engine stream responded with ${response.status}`);
+            }
+            if (!response.body) {
+                throw new Error('AI Engine stream returned no body');
+            }
+
+            const reader = response.body.getReader();
+            const decoder = new TextDecoder();
+            let buffer = '';
+
+            while (true) {
+                const { done, value } = await reader.read();
+                if (done) break;
+                buffer += decoder.decode(value, { stream: true });
+                const lines = buffer.split('\n\n');
+                buffer = lines.pop() ?? '';
+                for (const line of lines) {
+                    const trimmed = line.trim();
+                    if (!trimmed.startsWith('data: ')) continue;
+                    const data = trimmed.slice(6);
+                    if (data === '[DONE]') return;
+                    try {
+                        yield JSON.parse(data) as StreamEvent;
+                    } catch {
+                        // Skip malformed SSE lines
+                    }
+                }
+            }
+        } catch (error) {
+            logger.error('AI Engine orchestrated chat stream failed:', sanitizeErrorForLog(error));
+            yield { type: 'error', content: 'Maaf, terjadi kesalahan sistem.' };
         }
     }
 

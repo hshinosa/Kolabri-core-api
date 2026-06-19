@@ -29,6 +29,26 @@ import { registerPresence, trackUserInRoom, listUsersInRoom } from './presence.j
 import { registerDeleteMessage } from './messages.js';
 import { runSilenceIntervention } from './interventions.js';
 import { isStagedEscalationEnabled, findOrCreateState, advanceStage, shouldNotifyLecturer, markNotificationSent } from '../services/escalation.service.js';
+import type { StreamEvent } from '../services/aiEngine.service.js';
+
+// PERF-AI-01: NO_FETCH eligibility — mirrors rag.py _should_retrieve() logic.
+// If true, the query skips retrieval and can be streamed token-by-token.
+const NO_FETCH_SKIP_PATTERNS = [
+    'halo', 'hai', 'hi', 'hello', 'terima kasih', 'thanks', 'ok', 'oke',
+    'baik', 'siap', 'mantap', 'good', 'nice', 'selamat pagi', 'selamat siang', 'selamat malam',
+];
+const NO_FETCH_MIN_WORDS = 3;
+
+export function isNoFetchEligible(query: string): boolean {
+    const queryLower = query.toLowerCase().trim();
+    if (NO_FETCH_SKIP_PATTERNS.includes(queryLower)) return true;
+    const wordCount = query.split(/\s+/).filter(Boolean).length;
+    if (wordCount < NO_FETCH_MIN_WORDS) return true;
+    for (const pattern of NO_FETCH_SKIP_PATTERNS) {
+        if (queryLower.startsWith(pattern) && wordCount <= 5) return true;
+    }
+    return false;
+}
 
 // Track last intervention time per room to avoid spamming
 const lastInterventionTime = new Map<string, number>();
@@ -1090,7 +1110,7 @@ async function handleAIQuestion(
 
         const isAvailable = await aiEngineService.isAvailable();
         
-        let response: string;
+        let response: string = "";
         let qualityScore: number | undefined;
         let shouldNotifyTeacher = false;
         let intervention: string | undefined;
@@ -1151,12 +1171,20 @@ async function handleAIQuestion(
                     content: m.content,
                 }));
 
-            const result = await providerResolutionService.executeWithFallback(
-                { featureFamily: 'orchestration' },
-                (providerContext) => aiEngineService.orchestratedChat({
+            const cleanQuestion = question.replace(/@ai/gi, '').trim();
+
+            if (isNoFetchEligible(cleanQuestion)) {
+                // PERF-AI-01: Streaming path for NO_FETCH queries (greetings, short follow-ups)
+                const resolution = await providerResolutionService.resolveProviderContext({ featureFamily: 'orchestration' });
+                const providerContext = resolution.primary.providerContext;
+
+                let fullContent = '';
+                let streamCompleted = false;
+
+                for await (const event of aiEngineService.orchestratedChatStream({
                     user_id: userId,
                     group_id: groupId,
-                    message: question.replace(/@ai/gi, '').trim(),
+                    message: cleanQuestion,
                     topic: weekCtx?.weekTitle ?? 'General Discussion',
                     collection_name: `course_${courseId}`,
                     course_id: courseId,
@@ -1174,53 +1202,156 @@ async function handleAIQuestion(
                         : undefined,
                     chat_history: chatHistory.length > 0 ? chatHistory : undefined,
                     provider_context: providerContext,
-                }),
-                {
-                    isSuccess: (response) => response.success,
-                    perProviderTimeoutMs: 30000,
-                },
-            );
-            orchestrationResult = result;
+                })) {
+                    if (event.type === 'token') {
+                        fullContent += event.content ?? '';
+                        io.to(roomId).emit('ai_chunk', {
+                            chatSpaceId,
+                            content: event.content,
+                            timestamp: new Date().toISOString(),
+                        });
+                    } else if (event.type === 'full') {
+                        fullContent = event.content ?? '';
+                        io.to(roomId).emit('ai_chunk', {
+                            chatSpaceId,
+                            content: event.content,
+                            replace: true,
+                            timestamp: new Date().toISOString(),
+                        });
+                    } else if (event.type === 'done') {
+                        response = event.content ?? fullContent;
+                        qualityScore = event.quality_score;
+                        shouldNotifyTeacher = event.should_notify_teacher ?? false;
+                        intervention = event.intervention;
+                        interventionType = event.intervention_type;
+                        const analytics = event.analytics as Record<string, unknown> | undefined;
+                        if (analytics) {
+                            engagementMeta = {
+                                hot_percentage: analytics.hot_percentage as number | undefined,
+                                engagement_distribution: analytics.engagement_distribution as Record<string, number> | undefined,
+                            };
+                        }
+                        orchestrationResult = {
+                            success: true,
+                            bot_response: response,
+                            system_intervention: intervention,
+                            intervention_type: interventionType,
+                            action_taken: 'NO_FETCH',
+                            should_notify_teacher: shouldNotifyTeacher,
+                            quality_score: qualityScore,
+                            meta: analytics as Record<string, unknown> | undefined,
+                            guardrail_outcome: event.guardrail_outcome,
+                            guardrail_reason: event.guardrail_reason,
+                            scaffolding_level: event.scaffolding_level,
+                            scaffolding_outcome: event.scaffolding_outcome,
+                            citations: event.citations,
+                        } as typeof orchestrationResult;
+                        const rawCitations = (event.citations ?? []) as CitationPayload[];
+                        if (rawCitations.length > 0 && sessionWeekIndex) {
+                            const allowed = await allowedMaterialsForCourseMaxWeek(courseId, sessionWeekIndex);
+                            filteredCitations = filterCitationsForSession(rawCitations, allowed, sessionWeekIndex);
+                        } else {
+                            filteredCitations = rawCitations;
+                        }
+                        io.to(roomId).emit('ai_done', {
+                            chatSpaceId,
+                            citations: filteredCitations.length > 0 ? filteredCitations : undefined,
+                            timestamp: new Date().toISOString(),
+                        });
+                        streamCompleted = true;
+                    } else if (event.type === 'error') {
+                        response = event.content ?? 'Maaf, terjadi kesalahan.';
+                        io.to(roomId).emit('ai_chunk', {
+                            chatSpaceId,
+                            content: response,
+                            replace: true,
+                            timestamp: new Date().toISOString(),
+                        });
+                        io.to(roomId).emit('ai_done', {
+                            chatSpaceId,
+                            error: true,
+                            timestamp: new Date().toISOString(),
+                        });
+                        streamCompleted = true;
+                    }
+                }
 
-            if (result.success) {
-                response = result.bot_response;
-                qualityScore = result.quality_score;
-                shouldNotifyTeacher = result.should_notify_teacher;
-                intervention = result.system_intervention;
-                interventionType = result.intervention_type;
-                engagementMeta = result.meta
-                    ? {
-                          hot_percentage: result.meta.hot_percentage,
-                          engagement_distribution: result.meta.engagement_distribution,
-                      }
-                    : undefined;
-
-                if (result.guardrail_outcome) {
-                    await prisma.auditLog.create({
-                        data: {
-                            action: 'course_ai_guardrail_triggered',
-                            entityType: 'course',
-                            entityId: courseId,
-                            userId,
-                            metadata: {
-                                outcome: result.guardrail_outcome,
-                                reason: result.guardrail_reason ?? null,
-                                surface: 'group-chat',
-                                chatSpaceId,
-                            },
-                        },
-                    });
+                if (!streamCompleted) {
+                    response = fullContent || 'Maaf, terjadi kesalahan saat memproses pesan.';
                 }
             } else {
-                response = result.bot_response || "Maaf, terjadi kesalahan saat memproses pertanyaan. Silakan coba lagi.";
-            }
+                // Existing FETCH path (non-streaming, grounding + guardrails)
+                const result = await providerResolutionService.executeWithFallback(
+                    { featureFamily: 'orchestration' },
+                    (providerContext) => aiEngineService.orchestratedChat({
+                        user_id: userId,
+                        group_id: groupId,
+                        message: question.replace(/@ai/gi, '').trim(),
+                        topic: weekCtx?.weekTitle ?? 'General Discussion',
+                        collection_name: `course_${courseId}`,
+                        course_id: courseId,
+                        chat_room_id: chatSpaceId,
+                        guardrail_policy: guardrailPolicy,
+                        scaffolding_config: scaffoldingConfig,
+                        session_week_index: sessionWeekIndex,
+                        max_week_index: maxWeekIndex,
+                        week_context: weekCtx
+                            ? {
+                                  week_title: weekCtx.weekTitle,
+                                  week_index: weekCtx.weekIndex,
+                                  material_titles: weekCtx.materials.map((m) => m.title),
+                              }
+                            : undefined,
+                        chat_history: chatHistory.length > 0 ? chatHistory : undefined,
+                        provider_context: providerContext,
+                    }),
+                    {
+                        isSuccess: (response) => response.success,
+                        perProviderTimeoutMs: 30000,
+                    },
+                );
+                orchestrationResult = result;
 
-            const rawCitations = result.citations ?? [];
-            if (rawCitations.length > 0 && sessionWeekIndex) {
-                const allowed = await allowedMaterialsForCourseMaxWeek(courseId, sessionWeekIndex);
-                filteredCitations = filterCitationsForSession(rawCitations, allowed, sessionWeekIndex);
-            } else {
-                filteredCitations = rawCitations;
+                if (result.success) {
+                    response = result.bot_response;
+                    qualityScore = result.quality_score;
+                    shouldNotifyTeacher = result.should_notify_teacher;
+                    intervention = result.system_intervention;
+                    interventionType = result.intervention_type;
+                    engagementMeta = result.meta
+                        ? {
+                              hot_percentage: result.meta.hot_percentage,
+                              engagement_distribution: result.meta.engagement_distribution,
+                          }
+                        : undefined;
+
+                    if (result.guardrail_outcome) {
+                        await prisma.auditLog.create({
+                            data: {
+                                action: 'course_ai_guardrail_triggered',
+                                entityType: 'course',
+                                entityId: courseId,
+                                userId,
+                                metadata: {
+                                    outcome: result.guardrail_outcome,
+                                    reason: result.guardrail_reason ?? null,
+                                    surface: 'group-chat',
+                                    chatSpaceId,
+                                },
+                            },
+                        });
+                    }
+                } else {
+                    response = result.bot_response || "Maaf, terjadi kesalahan saat memproses pertanyaan. Silakan coba lagi.";
+                }
+
+                const rawCitations = result.citations ?? [];
+                if (rawCitations.length > 0 && sessionWeekIndex) {
+                    const allowed = await allowedMaterialsForCourseMaxWeek(courseId, sessionWeekIndex);
+                    filteredCitations = filterCitationsForSession(rawCitations, allowed, sessionWeekIndex);
+                } else {
+                    filteredCitations = rawCitations;
+                }
             }
         }
 
