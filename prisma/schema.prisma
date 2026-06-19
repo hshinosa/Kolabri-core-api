@@ -107,6 +107,7 @@ model Course {
   aiAbTests      AiAbTest[]
   courseWeeks    CourseWeek[]
   courseMaterials CourseMaterial[]
+  reflections    Reflection[]
 
   @@index([ownerId])
   @@index([code])
@@ -327,10 +328,13 @@ model Reflection {
   user        User          @relation(fields: [userId], references: [id], onDelete: Cascade)
   chatSpaceId String?       @map("chat_space_id")
   chatSpace   ChatSpace?    @relation(fields: [chatSpaceId], references: [id], onDelete: SetNull)
+  courseId    String?       @map("course_id")
+  course      Course?       @relation(fields: [courseId], references: [id], onDelete: SetNull)
 
   @@index([userId])
   @@index([goalId])
   @@index([chatSpaceId, userId])
+  @@index([courseId, userId])
   @@index([userId, createdAt])
   @@map("reflections")
 }

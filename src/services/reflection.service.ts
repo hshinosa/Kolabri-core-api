@@ -8,47 +8,75 @@ export class ReflectionService {
      * Submit a reflection for a goal
      */
     static async createReflection(data: CreateReflectionInput, userId: string) {
-        // Verify goal exists and user has access
-        const goal = await prisma.learningGoal.findUnique({
-            where: { id: data.goalId },
-            include: {
-                chatSpace: {
-                    include: {
-                        group: {
-                            include: {
-                                members: {
-                                    select: { userId: true },
+        // Session reflection: tied to a learning goal (verify group membership)
+        if (data.goalId) {
+            const goal = await prisma.learningGoal.findUnique({
+                where: { id: data.goalId },
+                include: {
+                    chatSpace: {
+                        include: {
+                            group: {
+                                include: {
+                                    members: { select: { userId: true } },
                                 },
                             },
                         },
                     },
                 },
-            },
-        });
+            });
 
-        if (!goal) {
-            throw ApiError.notFound('Goal not found');
+            if (!goal) {
+                throw ApiError.notFound('Goal not found');
+            }
+
+            const isMember = !!(goal.chatSpace?.group?.members.some((m) => m.userId === userId));
+            if (!isMember) {
+                throw ApiError.forbidden('You are not a member of this group');
+            }
+
+            const reflection = await prisma.reflection.create({
+                data: {
+                    content: data.content,
+                    type: data.type ?? 'session',
+                    goalId: data.goalId,
+                    userId,
+                },
+                include: {
+                    user: { select: { id: true, name: true } },
+                    goal: { select: { id: true, content: true } },
+                },
+            });
+
+            invalidateDashboardCache();
+
+            return {
+                id: reflection.id,
+                content: reflection.content,
+                type: reflection.type,
+                goal: reflection.goal,
+                createdBy: reflection.user,
+                createdAt: reflection.createdAt,
+            };
         }
 
-        // Check if user is member of the goal's group (via goal.chatSpace.group)
-        const isMember = !!(goal.chatSpace && goal.chatSpace.group && goal.chatSpace.group.members.some((m) => m.userId === userId));
-        if (!isMember) {
-            throw ApiError.forbidden('You are not a member of this group');
+        // Weekly reflection: tied to a course (verify enrollment)
+        const enrollment = await prisma.courseStudent.findFirst({
+            where: { courseId: data.courseId!, userId },
+        });
+        if (!enrollment) {
+            throw ApiError.forbidden('You are not enrolled in this course');
         }
 
         const reflection = await prisma.reflection.create({
             data: {
                 content: data.content,
-                goalId: data.goalId,
+                type: 'weekly',
+                courseId: data.courseId,
                 userId,
             },
             include: {
-                user: {
-                    select: { id: true, name: true },
-                },
-                goal: {
-                    select: { id: true, content: true },
-                },
+                user: { select: { id: true, name: true } },
+                course: { select: { id: true, code: true, name: true } },
             },
         });
 
@@ -57,7 +85,8 @@ export class ReflectionService {
         return {
             id: reflection.id,
             content: reflection.content,
-            goal: reflection.goal,
+            type: reflection.type,
+            course: reflection.course,
             createdBy: reflection.user,
             createdAt: reflection.createdAt,
         };
@@ -106,6 +135,9 @@ export class ReflectionService {
                         },
                     },
                 },
+                course: {
+                    select: { id: true, code: true, name: true },
+                },
             },
             orderBy: { createdAt: 'desc' },
         });
@@ -113,7 +145,7 @@ export class ReflectionService {
         return reflections.map((r) => {
             const sourceChatSpace = r.chatSpace ?? r.goal?.chatSpace ?? null;
             const sourceGroup = sourceChatSpace?.group ?? null;
-            const sourceCourse = sourceGroup?.course ?? null;
+            const sourceCourse = r.course ?? sourceGroup?.course ?? null;
 
             return {
                 id: r.id,

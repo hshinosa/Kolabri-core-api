@@ -4,6 +4,7 @@ const { prismaMock, invalidateDashboardCacheMock } = vi.hoisted(() => ({
     prismaMock: {
         learningGoal: { findUnique: vi.fn() },
         reflection: { create: vi.fn(), findMany: vi.fn() },
+        courseStudent: { findFirst: vi.fn() },
     },
     invalidateDashboardCacheMock: vi.fn(),
 }));
@@ -36,6 +37,7 @@ describe('ReflectionService', () => {
         prismaMock.reflection.create.mockResolvedValue({
             id: 'reflection-1',
             content: 'I synthesized multiple viewpoints.',
+            type: 'session',
             goal: { id: 'goal-1', content: 'Synthesize arguments' },
             user: { id: 'student-1', name: 'Alya' },
             createdAt,
@@ -47,6 +49,7 @@ describe('ReflectionService', () => {
             expect.objectContaining({
                 data: {
                     content: 'I synthesized multiple viewpoints.',
+                    type: 'session',
                     goalId: 'goal-1',
                     userId: 'student-1',
                 },
@@ -55,6 +58,7 @@ describe('ReflectionService', () => {
         expect(result).toEqual({
             id: 'reflection-1',
             content: 'I synthesized multiple viewpoints.',
+            type: 'session',
             goal: { id: 'goal-1', content: 'Synthesize arguments' },
             createdBy: { id: 'student-1', name: 'Alya' },
             createdAt,
@@ -76,6 +80,54 @@ describe('ReflectionService', () => {
             statusCode: 403,
             message: 'You are not a member of this group',
         });
+    });
+
+    it('creates a weekly reflection when the user is enrolled in the course', async () => {
+        const createdAt = new Date('2026-05-02T00:00:00.000Z');
+        prismaMock.courseStudent.findFirst.mockResolvedValue({ id: 'enroll-1', courseId: 'course-1', userId: 'student-1' });
+        prismaMock.reflection.create.mockResolvedValue({
+            id: 'reflection-2',
+            content: 'This week I learned a lot about RAG.',
+            type: 'weekly',
+            course: { id: 'course-1', code: 'IF201', name: 'Web' },
+            user: { id: 'student-1', name: 'Alya' },
+            createdAt,
+        });
+
+        const result = await ReflectionService.createReflection(
+            { courseId: 'course-1', type: 'weekly', content: 'This week I learned a lot about RAG.' },
+            'student-1',
+        );
+
+        expect(prismaMock.learningGoal.findUnique).not.toHaveBeenCalled();
+        expect(prismaMock.reflection.create).toHaveBeenCalledWith(
+            expect.objectContaining({
+                data: {
+                    content: 'This week I learned a lot about RAG.',
+                    type: 'weekly',
+                    courseId: 'course-1',
+                    userId: 'student-1',
+                },
+            })
+        );
+        expect(result).toMatchObject({
+            id: 'reflection-2',
+            type: 'weekly',
+            course: { id: 'course-1', code: 'IF201', name: 'Web' },
+        });
+        expect(invalidateDashboardCacheMock).toHaveBeenCalledTimes(1);
+    });
+
+    it('rejects a weekly reflection when the user is not enrolled in the course', async () => {
+        prismaMock.courseStudent.findFirst.mockResolvedValue(null);
+
+        await expect(
+            ReflectionService.createReflection({ courseId: 'course-1', type: 'weekly', content: 'Reflection content here.' }, 'student-1'),
+        ).rejects.toMatchObject({
+            statusCode: 403,
+            message: 'You are not enrolled in this course',
+        });
+        expect(prismaMock.reflection.create).not.toHaveBeenCalled();
     });
 
     it('maps personal reflections using direct chat space data when available', async () => {
