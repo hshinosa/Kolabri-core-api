@@ -1,17 +1,26 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
-const { prismaMock, mockGroupService, mockValidateGoalContent } = vi.hoisted(() => ({
+const { prismaMock, mockGroupService, mockValidateGoalContent, mockProviderResolutionService } = vi.hoisted(() => ({
     prismaMock: {
         chatSpace: { findUnique: vi.fn(), findFirst: vi.fn() },
         learningGoal: { findFirst: vi.fn(), create: vi.fn(), findMany: vi.fn(), findUnique: vi.fn() },
+        courseStudent: { findMany: vi.fn().mockResolvedValue([]) },
     },
     mockGroupService: { isGroupMember: vi.fn() },
     mockValidateGoalContent: vi.fn(),
+    mockProviderResolutionService: {
+        resolveProviderContext: vi.fn(),
+        executeWithFallback: vi.fn(async (_input, operation) => {
+            const resolution = await mockProviderResolutionService.resolveProviderContext(_input);
+            return operation(resolution.primary.providerContext);
+        }),
+    },
 }));
 
 vi.mock('../config/database.js', () => ({ default: prismaMock }));
 vi.mock('./group.service.js', () => ({ GroupService: mockGroupService }));
 vi.mock('../utils/helpers.js', () => ({ validateGoalContent: mockValidateGoalContent }));
+vi.mock('./providerResolution.service.js', () => ({ providerResolutionService: mockProviderResolutionService }));
 
 vi.mock('./aiEngine.service.js', () => ({
     aiEngineService: {
@@ -49,6 +58,10 @@ describe('GoalService Integration — Flow 3: Goal Setting + Bloom Taxonomy', ()
         mockGroupService.isGroupMember.mockResolvedValue(true);
         prismaMock.learningGoal.findFirst.mockResolvedValue(null);
         mockValidateGoalContent.mockReturnValue({ isValid: true });
+        mockProviderResolutionService.resolveProviderContext.mockResolvedValue({
+            primary: { providerId: 'provider-openai', providerName: 'openai', providerContext: { auth: { type: 'api-key', credential: 'sk-test' }, execution: { model: 'gpt-4o-mini' } } },
+            fallbackChain: [],
+        });
         prismaMock.learningGoal.create.mockResolvedValue({
             id: 'goal-1',
             content: 'Menganalisis dampak perubahan iklim',

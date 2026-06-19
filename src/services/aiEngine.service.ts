@@ -764,6 +764,7 @@ export class AIEngineService {
         history: Array<{ role: 'user' | 'assistant'; content: string }>,
         userName?: string,
         providerContext?: ProviderContextV1,
+        courseIds: string[] = [],
     ): Promise<globalThis.Response> {
         return await this.resilient(() => this.fetchWithTimeout(
             `${this.baseUrl}/api/chat/personal/stream`,
@@ -775,6 +776,7 @@ export class AIEngineService {
                     history: history.slice(-20),
                     user_name: userName,
                     provider_context: providerContext,
+                    course_ids: courseIds,
                 }),
             },
             LLM_TIMEOUT

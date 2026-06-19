@@ -1,8 +1,11 @@
 import { Response, NextFunction } from 'express';
+import { PrismaClient } from '@prisma/client';
 import { AiChatService } from '../services/aiChat.service.js';
 import { aiEngineService } from '../services/aiEngine.service.js';
 import { providerResolutionService } from '../services/providerResolution.service.js';
 import { AuthenticatedRequest } from '../middleware/auth.js';
+
+const prisma = new PrismaClient();
 
 export class AiChatController {
     /**
@@ -149,6 +152,15 @@ export class AiChatController {
                     content: m.content,
                 }));
 
+            // Fetch enrolled course codes for this user (RAG scope)
+            const enrollments = await prisma.courseStudent.findMany({
+                where: { userId },
+                select: {
+                    course: { select: { code: true } },
+                },
+            });
+            const courseIds = enrollments.map((e) => e.course.code);
+
             res.setHeader('Content-Type', 'text/event-stream');
             res.setHeader('Cache-Control', 'no-cache');
             res.setHeader('Connection', 'keep-alive');
@@ -164,6 +176,7 @@ export class AiChatController {
                     history,
                     chat?.userName ?? undefined,
                     providerContext,
+                    courseIds,
                 ),
                 { perProviderTimeoutMs: 30000 },
             );

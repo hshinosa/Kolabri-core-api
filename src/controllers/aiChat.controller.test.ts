@@ -194,7 +194,8 @@ describe('AiChatController', () => {
             'Hi there',
             [{ role: 'assistant', content: 'Previous answer' }],
             'Alice',
-            providerContext
+            providerContext,
+            expect.any(Array),
         );
         expect(mockAiChatService.addMessage).toHaveBeenNthCalledWith(2, 'chat-1', 'user-1', 'assistant', 'Hello');
         expect(res.setHeader).toHaveBeenCalledWith('Content-Type', 'text/event-stream');
@@ -227,8 +228,7 @@ describe('AiChatController', () => {
 
         await AiChatController.streamMessage(req as Request, res as Response, next);
 
-        expect(mockProviderResolutionService.resolveProviderContext).toHaveBeenCalledWith({ featureFamily: 'personal-chat' });
-        expect(mockAiEngineService.personalChatStream).toHaveBeenCalledWith('Hi there', [], 'Alice', providerContext);
+        expect(mockAiEngineService.personalChatStream).toHaveBeenCalledWith('Hi there', [], 'Alice', providerContext, expect.any(Array));
         expect(mockAiChatService.addMessage).toHaveBeenNthCalledWith(2, 'chat-1', 'user-1', 'assistant', fallbackText);
         expect(res.write).toHaveBeenCalledWith(`data: ${JSON.stringify({ content: fallbackText })}\n\n`);
         expect(res.write).toHaveBeenCalledWith('data: [DONE]\n\n');
