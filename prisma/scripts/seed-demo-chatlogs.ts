@@ -93,6 +93,20 @@ const COURSE_MESSAGES: Record<string, Array<{ content: string; engagementType: s
     { content: 'Docker itu gimana cara pakai?', engagementType: 'behavioral', isHigherOrder: false, hotIndicators: [] },
     { content: 'Cloud computing itu mahal ya?', engagementType: 'emotional', isHigherOrder: false, hotIndicators: [] },
   ],
+  'DEVOPS102': [
+    { content: 'Berdasarkan analisis pipeline yang kita rancang, tahap build dan test sebaiknya dipisah supaya feedback cepat dan failure mudah dilacak.', engagementType: 'cognitive', isHigherOrder: true, hotIndicators: ['analisis', 'supaya'] },
+    { content: 'Aku membandingkan continuous delivery dan continuous deployment. Delivery butuh approval manual sebelum production, deployment full otomatis.', engagementType: 'cognitive', isHigherOrder: true, hotIndicators: ['membandingkan'] },
+    { content: 'Menurut evaluasi Dockerfile yang aku buat, multi-stage build mengurangi ukuran image karena build artifact tidak ikut ke image final.', engagementType: 'cognitive', isHigherOrder: true, hotIndicators: ['evaluasi', 'karena'] },
+    { content: 'Cara setup CI/CD dari nol gimana ya?', engagementType: 'behavioral', isHigherOrder: false, hotIndicators: [] },
+    { content: 'Deploy ke production masih bikin deg-degan sih.', engagementType: 'emotional', isHigherOrder: false, hotIndicators: [] },
+  ],
+  'IMK401': [
+    { content: 'Berdasarkan analisis usability test yang kita lakukan, task completion rate dan time-on-task lebih informatif daripada sekadar opini subjektif.', engagementType: 'cognitive', isHigherOrder: true, hotIndicators: ['analisis', 'daripada'] },
+    { content: 'Aku membandingkan UX dan UI. UX mencakup keseluruhan pengalaman dan alur, sedangkan UI fokus pada elemen visual yang dilihat pengguna.', engagementType: 'cognitive', isHigherOrder: true, hotIndicators: ['membandingkan', 'sedangkan'] },
+    { content: 'Menurut evaluasi heuristik antarmuka kita, prinsip visibility of system status sering dilanggar karena tidak ada feedback saat proses berjalan.', engagementType: 'cognitive', isHigherOrder: true, hotIndicators: ['evaluasi', 'karena'] },
+    { content: 'Cara nyusun user testing yang valid gimana?', engagementType: 'behavioral', isHigherOrder: false, hotIndicators: [] },
+    { content: 'Desain yang aku kira intuitif ternyata bingungin pas dites.', engagementType: 'emotional', isHigherOrder: false, hotIndicators: [] },
+  ],
 };
 
 function randomElement<T>(arr: T[]): T {
