@@ -626,6 +626,98 @@ const COURSES: CourseContent[] = [
       'Microservices bukan silver bullet, ada trade-off yang harus dipertimbangkan.',
     ],
   },
+  {
+    code: 'DEVOPS102', name: 'DevOps',
+    description: 'Praktik DevOps: otomasi pipeline, continuous integration/delivery, containerization, dan observability.',
+    topics: ['CI/CD', 'Docker', 'pipeline automation', 'infrastructure as code', 'monitoring', 'GitOps'],
+    assignmentQuestions: [
+      'Cara setup pipeline CI/CD dari nol gimana?',
+      'Perbedaan continuous delivery dan continuous deployment apa?',
+      'Docker image-ku kegedean, gimana ngecilinnya?',
+      'Infrastructure as Code itu kenapa penting?',
+      'Cara monitoring aplikasi production yang bener gimana?',
+      'Rollback otomatis kalau deploy gagal gimana caranya?',
+    ],
+    hotDiscussions: [
+      'Berdasarkan analisis pipeline yang kita rancang, tahap build dan test harus dipisah supaya feedback cepat dan failure mudah dilacak.',
+      'Aku membandingkan continuous delivery dan continuous deployment. CD delivery butuh approval manual sebelum production, sedangkan deployment full otomatis.',
+      'Menurut evaluasi Dockerfile yang aku buat, multi-stage build mengurangi ukuran image drastis karena build artifact tidak ikut ke image final.',
+      'Aku menyimpulkan Infrastructure as Code penting karena environment jadi reproducible dan perubahan ter-version control, bukan manual di server.',
+      'Alasan kenapa observability lebih dari sekadar monitoring adalah karena mencakup logging, metrics, dan tracing untuk memahami perilaku sistem secara menyeluruh.',
+    ],
+    aiPrompts: [
+      'Jelaskan tahapan pipeline CI/CD yang umum',
+      'Contoh Dockerfile multi-stage untuk aplikasi Node.js?',
+      'Bagaimana cara implementasi blue-green deployment?',
+      'Apa best practice untuk secret management di pipeline?',
+      'Bandingkan GitHub Actions vs GitLab CI',
+    ],
+    aiResponses: [
+      'Pipeline CI/CD umum: 1) Checkout kode, 2) Install dependency, 3) Lint & test, 4) Build artifact/image, 5) Push ke registry, 6) Deploy ke environment, 7) Smoke test.',
+      'Dockerfile multi-stage Node.js: stage builder untuk npm install + build, lalu stage runtime yang hanya menyalin hasil build dan dependency produksi sehingga image kecil.',
+      'Blue-green deployment: jalankan dua environment identik (blue aktif, green baru). Arahkan traffic ke green setelah verifikasi; rollback cukup balik ke blue.',
+      'Secret management: jangan hardcode. Gunakan secret store pipeline (GitHub Actions secrets, Vault), inject via environment variable saat runtime, rotasi berkala.',
+      'GitHub Actions terintegrasi erat dengan GitHub dan marketplace luas; GitLab CI menyatu dengan GitLab dan kuat untuk self-hosted. Pilih sesuai platform repo.',
+    ],
+    goals: [
+      'Memahami konsep continuous integration dan continuous delivery',
+      'Bisa membuat pipeline otomatis untuk build, test, dan deploy',
+      'Mampu melakukan containerization aplikasi dengan Docker',
+      'Memahami observability: logging, metrics, dan tracing',
+    ],
+    reflections: [
+      'Setelah bikin pipeline sendiri, jadi paham kenapa otomasi mengurangi human error saat deploy.',
+      'Multi-stage build ternyata ngaruh besar ke ukuran image, deploy jadi lebih cepat.',
+      'Masih perlu belajar lebih soal monitoring, alert yang terlalu banyak malah bikin noise.',
+      'GitOps menarik karena state infrastruktur jadi single source of truth di Git.',
+    ],
+  },
+  {
+    code: 'IMK401', name: 'Interaksi Manusia Komputer',
+    description: 'Prinsip desain interaksi, usability, dan evaluasi antarmuka yang berpusat pada pengguna.',
+    topics: ['usability', 'user-centered design', 'prototyping', 'heuristic evaluation', 'accessibility', 'interaction design'],
+    assignmentQuestions: [
+      'Cara mengukur usability sebuah antarmuka gimana?',
+      'Perbedaan UX dan UI sebenarnya apa?',
+      'Heuristic evaluation itu langkahnya gimana?',
+      'Bikin prototype low-fidelity vs high-fidelity kapan dipakai?',
+      'Accessibility yang sering kelewat apa aja?',
+      'Cara nyusun user testing yang valid gimana?',
+    ],
+    hotDiscussions: [
+      'Berdasarkan analisis usability test yang kita lakukan, task completion rate dan time-on-task lebih informatif daripada sekadar opini subjektif pengguna.',
+      'Aku membandingkan UX dan UI. UX mencakup keseluruhan pengalaman dan alur, sedangkan UI fokus pada elemen visual dan kontrol yang dilihat pengguna.',
+      'Menurut evaluasi heuristik antarmuka aplikasi, prinsip "visibility of system status" sering dilanggar karena tidak ada feedback saat proses berjalan.',
+      'Aku menyimpulkan bahwa prototype low-fidelity tepat untuk eksplorasi ide awal karena murah dan cepat diiterasi, high-fidelity untuk validasi detail interaksi.',
+      'Alasan kenapa accessibility penting adalah karena desain inklusif menguntungkan semua pengguna, bukan hanya yang memiliki keterbatasan.',
+    ],
+    aiPrompts: [
+      'Jelaskan 10 heuristik usability Nielsen',
+      'Contoh skenario user testing untuk aplikasi mobile?',
+      'Bagaimana cara membuat persona pengguna?',
+      'Apa prinsip dasar desain yang accessible?',
+      'Bandingkan metode evaluasi heuristik vs user testing',
+    ],
+    aiResponses: [
+      'Heuristik Nielsen mencakup antara lain: visibility of system status, match between system and real world, user control and freedom, consistency, error prevention, dan recognition rather than recall.',
+      'Skenario user testing mobile: tetapkan task konkret (mis. "pesan tiket"), amati tanpa mengarahkan, catat error dan kebingungan, ukur waktu dan tingkat keberhasilan.',
+      'Persona: kumpulkan data pengguna nyata, kelompokkan pola perilaku dan tujuan, buat tokoh representatif dengan nama, konteks, kebutuhan, dan frustrasi.',
+      'Desain accessible: kontras warna cukup, target sentuh memadai, alternatif teks untuk gambar, dukungan keyboard/screen reader, dan struktur heading yang jelas.',
+      'Evaluasi heuristik cepat dan murah oleh ahli namun bisa miss masalah nyata; user testing menangkap masalah aktual pengguna tapi lebih mahal. Keduanya saling melengkapi.',
+    ],
+    goals: [
+      'Memahami prinsip desain yang berpusat pada pengguna',
+      'Bisa melakukan evaluasi usability dengan metode heuristik',
+      'Mampu membuat prototype dan menjalankan user testing',
+      'Memahami pentingnya accessibility dalam desain antarmuka',
+    ],
+    reflections: [
+      'Ternyata desain yang aku kira intuitif belum tentu jelas buat pengguna lain saat user testing.',
+      'Evaluasi heuristik membantu menemukan masalah sebelum testing dengan pengguna sungguhan.',
+      'Accessibility sering aku abaikan, padahal dampaknya besar untuk inklusivitas.',
+      'Iterasi prototype low-fidelity hemat waktu dibanding langsung bikin high-fidelity.',
+    ],
+  },
 ];
 
 const STUDENTS: { email: string; name: string; engagement: ActivityLevel }[] = [
@@ -970,6 +1062,16 @@ export async function seedDemoData() {
         { title: 'Cloud Fundamentals', materials: ['IaaS, PaaS, SaaS Overview', 'Cloud Deployment Models'] },
         { title: 'Container & Orchestration', materials: ['Docker Container Basics', 'Kubernetes Architecture'] },
         { title: 'Microservices & Serverless', materials: ['Microservices Design Pattern', 'Serverless (Lambda, Cloud Functions)'] },
+      ],
+      DEVOPS102: [
+        { title: 'Konsep Dasar DevOps', materials: ['Pengantar DevOps', 'Fundamental DevOps'] },
+        { title: 'Studi Kasus DevOps', materials: ['Analisis Kasus DevOps', 'Latihan DevOps'] },
+        { title: 'Proyek Akhir DevOps', materials: ['Perancangan Proyek', 'Implementasi Evaluasi'] },
+      ],
+      IMK401: [
+        { title: 'Konsep Dasar Interaksi Manusia Komputer', materials: ['Pengantar Interaksi Manusia Komputer', 'Fundamental Interaksi Manusia Komputer'] },
+        { title: 'Studi Kasus Interaksi Manusia Komputer', materials: ['Analisis Kasus Interaksi Manusia Komputer', 'Latihan Interaksi Manusia Komputer'] },
+        { title: 'Proyek Akhir Interaksi Manusia Komputer', materials: ['Perancangan Proyek', 'Implementasi Evaluasi'] },
       ],
     };
 
