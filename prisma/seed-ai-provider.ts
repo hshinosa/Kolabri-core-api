@@ -11,72 +11,51 @@ const prisma = new PrismaClient();
  * OpenAI-compatible provider can be configured without reseeding
  * all demo data.
  *
- * User-specified config (for AI chat to work with local server):
- * - base: localhost:20128 (OpenAI-compatible)
- * - apiKey: dummy (sk-local, no real key)
- * - model: opencode/deepseek-v4-flash-free (via config.defaultModel)
+ * - base: http://43.228.214.145:8317 (OpenAI-compatible proxy)
+ * - apiKey: sk-ama
+ * - model: deepseek-v4-flash (via config.defaultModel)
  *
- * The provider uses name: 'openai' to route through OpenAIAdapter
+ * The provider uses name: 'cli-proxy-api-plus' to route through OpenAIAdapter
  * (which supports custom baseUrl).
  */
 async function main() {
-    console.log('🌱 Seeding local AI provider + test student for dev (separate seed)...');
-
-    // Seed a test student user so login works and JWT can be obtained for AI chat.
-    // Password: password123 (same as demo). Role student so requireStudent passes.
-    const hashed = await bcrypt.hash('password123', 10);
-    const testStudent = await prisma.user.upsert({
-        where: { email: 'test-student@kolabri.id' },
-        update: {
-            name: 'Test Student',
-            role: 'student',
-            isActive: true,
-            deletedAt: null,
-        },
-        create: {
-            email: 'test-student@kolabri.id',
-            password: hashed,
-            name: 'Test Student',
-            role: 'student',
-            isActive: true,
-        },
-    });
-    console.log('✅ Test student ready for login:', testStudent.email);
+    console.log('🌱 Seeding AI provider (standalone)...');
 
     // Upsert by name (unique in DB) so it can be run anytime
     // without depending on full demo clear/create.
     const provider = await prisma.aiProvider.upsert({
-        where: { name: 'openai' },
+        where: { name: 'cli-proxy-api-plus' },
         update: {
-            displayName: 'Local DeepSeek (20128)',
-            apiKey: 'sk-local',
-            baseUrl: 'http://localhost:20128/v1',
+            displayName: 'CLI Proxy API Plus',
+            apiKey: 'sk-ama',
+            baseUrl: 'http://43.228.214.145:8317/v1',
             isActive: true,
-            fallbackOrder: 1,
+            fallbackOrder: 0,
             config: {
-                defaultModel: 'opencode/deepseek-v4-flash-free',
+                defaultModel: 'deepseek-v4-flash',
                 temperature: 0.7,
-                maxTokens: 2048,
+                maxTokens: 8192,
             },
         },
         create: {
-            name: 'openai',
-            displayName: 'Local DeepSeek (20128)',
-            apiKey: 'sk-local',
-            baseUrl: 'http://localhost:20128/v1',
+            name: 'cli-proxy-api-plus',
+            displayName: 'CLI Proxy API Plus',
+            apiKey: 'sk-ama',
+            baseUrl: 'http://43.228.214.145:8317/v1',
             isActive: true,
-            fallbackOrder: 1,
+            fallbackOrder: 0,
             config: {
-                defaultModel: 'opencode/deepseek-v4-flash-free',
+                defaultModel: 'deepseek-v4-flash',
                 temperature: 0.7,
-                maxTokens: 2048,
+                maxTokens: 8192,
             },
         },
     });
 
-    console.log('✅ Local AI provider ready:', provider.name, provider.baseUrl, 'active:', provider.isActive);
-    console.log('→ Login with test-student@kolabri.id / password123 to get valid JWT for AI chat.');
+    console.log('✅ AI provider ready:', provider.name, provider.baseUrl, 'active:', provider.isActive);
+    console.log('→ Model:', (provider.config as any)?.defaultModel || 'deepseek-v4-flash');
 }
+
 
 main()
     .catch((e) => {

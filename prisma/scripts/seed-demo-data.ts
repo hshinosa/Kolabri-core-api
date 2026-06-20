@@ -911,6 +911,29 @@ export async function seedDemoData() {
   await prisma.course.deleteMany();
   await prisma.user.deleteMany();
   console.log('✅ Cleaned\n');
+  console.log('🤖 Ensuring AI provider...');
+  await prisma.aiProvider.upsert({
+    where: { name: 'cli-proxy-api-plus' },
+    update: {
+      displayName: 'CLI Proxy API Plus',
+      apiKey: 'sk-ama',
+      baseUrl: 'http://43.228.214.145:8317/v1',
+      isActive: true,
+      fallbackOrder: 0,
+      config: { defaultModel: 'deepseek-v4-flash', temperature: 0.7, maxTokens: 8192 },
+    },
+    create: {
+      name: 'cli-proxy-api-plus',
+      displayName: 'CLI Proxy API Plus',
+      apiKey: 'sk-ama',
+      baseUrl: 'http://43.228.214.145:8317/v1',
+      isActive: true,
+      fallbackOrder: 0,
+      config: { defaultModel: 'deepseek-v4-flash', temperature: 0.7, maxTokens: 8192 },
+    },
+  });
+  console.log('  ✅ AI provider: cli-proxy-api-plus (deepseek-v4-flash)\n');
+
 
   console.log('👥 Creating users...');
   const hashedPassword = await bcrypt.hash('password123', 10);
