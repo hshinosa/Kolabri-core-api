@@ -711,67 +711,55 @@ export class AnalyticsService {
             studentCount: c._count.students,
         }));
 
-        // PERF-DB-01: Batch all groups across all courses in a single query
-        const allGroupCourseMap = new Map<string, string>(); // groupId -> courseId
-        for (const course of courses) {
-            // Fetch groups for this course
+        if (courseIds.length === 0) {
+            return { classDistribution, qualityTrends: [] };
         }
 
-        // Fetch all groups for all courses at once
-        const allGroups = await prisma.group.findMany({
-            where: { courseId: { in: courses.map(c => c.id) }, deletedAt: null },
-            select: { id: true, courseId: true },
-        });
-        const groupsByCourse = new Map<string, string[]>();
-        for (const g of allGroups) {
-            const arr = groupsByCourse.get(g.courseId) || [];
-            arr.push(g.id);
-            groupsByCourse.set(g.courseId, arr);
+        // HIGH-05: Single aggregate across all courses (was N+1 per-course)
+        const thirtyDaysAgo = new Date(Date.now() - 30 * 24 * 60 * 60 * 1000);
+        const weeklyDataAll = await ChatLog.aggregate([
+            {
+                $match: {
+                    courseId: { $in: courseIds },
+                    deletedAt: null,
+                    createdAt: { $gte: thirtyDaysAgo },
+                },
+            },
+            {
+                $group: {
+                    _id: {
+                        courseId: '$courseId',
+                        week: { $week: '$createdAt' },
+                        year: { $year: '$createdAt' },
+                    },
+                    avgLexical: { $avg: { $ifNull: ['$engagement.lexicalVariety', 0] } },
+                    messageCount: { $sum: 1 },
+                    hotCount: {
+                        $sum: { $cond: [{ $ifNull: ['$engagement.isHigherOrder', false] }, 1, 0] },
+                    },
+                },
+            },
+            { $sort: { '_id.year': 1, '_id.week': 1 } },
+            { $limit: 520 },
+        ]);
+
+        const dataByCourse = new Map<string, Array<{ week: string; messageCount: number; lexicalVariety: number; hotPercentage: number }>>();
+        for (const w of weeklyDataAll) {
+            const cid = w._id.courseId;
+            if (!dataByCourse.has(cid)) dataByCourse.set(cid, []);
+            dataByCourse.get(cid)!.push({
+                week: `Minggu ${w._id.week}`,
+                messageCount: w.messageCount,
+                lexicalVariety: Math.round(w.avgLexical),
+                hotPercentage: w.messageCount > 0 ? Math.round((w.hotCount / w.messageCount) * 100) : 0,
+            });
         }
 
-        const qualityTrends = await Promise.all(
-            courses.map(async (course) => {
-                const groupIds = groupsByCourse.get(course.id) || [];
-
-                if (groupIds.length === 0) {
-                    return { courseName: course.name, courseCode: course.code, data: [] };
-                }
-
-                const weeklyData = await ChatLog.aggregate([
-                    {
-                        $match: {
-                            groupId: { $in: groupIds },
-                            deletedAt: null,
-                            createdAt: { $gte: new Date(Date.now() - 30 * 24 * 60 * 60 * 1000) },
-                        },
-                    },
-                    {
-                        $group: {
-                            _id: {
-                                week: { $week: '$createdAt' },
-                                year: { $year: '$createdAt' },
-                            },
-                            avgLexical: { $avg: { $ifNull: ['$engagement.lexicalVariety', 0] } },
-                            messageCount: { $sum: 1 },
-                            hotCount: {
-                                $sum: { $cond: [{ $ifNull: ['$engagement.isHigherOrder', false] }, 1, 0] },
-                            },
-                        },
-                    },
-                    { $sort: { '_id.year': 1, '_id.week': 1 } },
-                    { $limit: 52 }, // PERF-DB-05: Safety limit (max 52 weeks)
-                ]);
-
-                const data = weeklyData.map((w) => ({
-                    week: `Minggu ${w._id.week}`,
-                    messageCount: w.messageCount,
-                    lexicalVariety: Math.round(w.avgLexical),
-                    hotPercentage: w.messageCount > 0 ? Math.round((w.hotCount / w.messageCount) * 100) : 0,
-                }));
-
-                return { courseName: course.name, courseCode: course.code, data };
-            })
-        );
+        const qualityTrends = courses.map((course) => ({
+            courseName: course.name,
+            courseCode: course.code,
+            data: dataByCourse.get(course.id) || [],
+        }));
 
         return { classDistribution, qualityTrends };
     }
