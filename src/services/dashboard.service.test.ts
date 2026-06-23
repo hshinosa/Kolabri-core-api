@@ -5,7 +5,7 @@ const { prismaMock } = vi.hoisted(() => ({
         user: { count: vi.fn(), findMany: vi.fn() },
         course: { count: vi.fn(), findMany: vi.fn() },
         group: { count: vi.fn() },
-        chatSpace: { count: vi.fn(), findMany: vi.fn() },
+        sessionDiscussion: { count: vi.fn(), findMany: vi.fn() },
         chatMessage: { count: vi.fn(), groupBy: vi.fn(), findMany: vi.fn() },
     },
 }));
@@ -30,17 +30,17 @@ describe('DashboardService', () => {
             .mockResolvedValueOnce(3);
         prismaMock.course.count.mockResolvedValueOnce(5).mockResolvedValueOnce(4);
         prismaMock.group.count.mockResolvedValue(8);
-        prismaMock.chatSpace.count.mockResolvedValue(6);
+        prismaMock.sessionDiscussion.count.mockResolvedValue(6);
         prismaMock.chatMessage.count.mockResolvedValueOnce(100).mockResolvedValueOnce(7).mockResolvedValueOnce(18);
         prismaMock.chatMessage.groupBy
             .mockResolvedValueOnce([{ senderId: 'user-1' }, { senderId: 'user-2' }])
-            .mockResolvedValueOnce([{ chatSpaceId: 'cs-1', _count: { id: 2 } }])
+            .mockResolvedValueOnce([{ sessionDiscussionId: 'cs-1', _count: { id: 2 } }])
             .mockResolvedValueOnce([{ senderId: 'user-1', _count: { id: 1 } }, { senderId: 'user-2', _count: { id: 1 } }]);
         prismaMock.chatMessage.findMany
             .mockResolvedValueOnce([{ content: 'Explain why this argument works' }, { content: 'Plain status update' }])
             .mockResolvedValueOnce([{ createdAt: new Date('2026-05-01T00:00:00.000Z') }])
             .mockResolvedValueOnce([{ createdAt: new Date('2026-05-01T00:00:00.000Z') }]);
-        prismaMock.chatSpace.findMany.mockResolvedValue([
+        prismaMock.sessionDiscussion.findMany.mockResolvedValue([
             { id: 'cs-1', group: { course: { id: 'course-1', name: 'AI Basics' } } },
         ]);
         prismaMock.user.findMany
@@ -64,16 +64,16 @@ describe('DashboardService', () => {
         prismaMock.course.findMany.mockResolvedValue([
             { id: 'course-1', code: 'IF101', name: 'Intro AI', createdAt: new Date('2026-05-03T09:00:00.000Z'), owner: { name: 'Dr. AI' } },
         ]);
-        prismaMock.chatSpace.findMany.mockResolvedValue([
+        prismaMock.sessionDiscussion.findMany.mockResolvedValue([
             { id: 'chat-1', name: 'General', createdAt: new Date('2026-05-03T11:00:00.000Z'), group: { name: 'Group 1' }, _count: { messages: 8 } },
         ]);
         prismaMock.user.count.mockResolvedValue(1);
         prismaMock.course.count.mockResolvedValue(1);
-        prismaMock.chatSpace.count.mockResolvedValue(1);
+        prismaMock.sessionDiscussion.count.mockResolvedValue(1);
 
         const result = await DashboardService.getActivityFeed({ limit: 3, offset: 0 });
 
-        expect(result.data.map((item) => item.type)).toEqual(['chat_space', 'user', 'course']);
+        expect(result.data.map((item) => item.type)).toEqual(['session_discussion', 'user', 'course']);
         expect(result.meta).toEqual({ limit: 3, offset: 0, total: 3, hasMore: false });
     });
 

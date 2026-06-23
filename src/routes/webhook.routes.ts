@@ -28,7 +28,7 @@ router.post('/ai-intervention', async (req: Request, res: Response) => {
             where: { id: groupId, deletedAt: null },
             include: {
                 course: { select: { id: true } },
-                chatSpaces: {
+                sessionDiscussions: {
                     where: { closedAt: null },
                     select: { id: true },
                 },
@@ -40,13 +40,13 @@ router.post('/ai-intervention', async (req: Request, res: Response) => {
         }
 
         let delivered = 0;
-        for (const chatSpace of group.chatSpaces) {
-            const roomId = roomNames.chatSpace(chatSpace.id);
+        for (const sessionDiscussion of group.sessionDiscussions) {
+            const roomId = roomNames.sessionDiscussion(sessionDiscussion.id);
 
             const chatLog = new ChatLog({
                 courseId: group.course.id,
                 groupId,
-                chatSpaceId: chatSpace.id,
+                sessionDiscussionId: sessionDiscussion.id,
                 senderId: 'ai',
                 senderName: 'AI Assistant',
                 senderType: 'ai',
@@ -67,7 +67,7 @@ router.post('/ai-intervention', async (req: Request, res: Response) => {
             });
 
             emitter.emit(roomId, 'quality_intervention', {
-                chatSpaceId: chatSpace.id,
+                sessionDiscussionId: sessionDiscussion.id,
                 interventionType: type,
                 metadata: metadata || {},
                 timestamp: new Date().toISOString(),

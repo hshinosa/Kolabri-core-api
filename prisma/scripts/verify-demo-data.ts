@@ -52,7 +52,7 @@ export async function verifyDemoData() {
     courses,
     groups,
     groupMembers,
-    chatSpaces,
+    sessionDiscussions,
     chatMessages,
     learningGoals,
     reflections,
@@ -60,7 +60,7 @@ export async function verifyDemoData() {
     notifications,
     coursesWithoutGroups,
     groupsWithoutMembers,
-    chatSpacesWithoutMessages,
+    sessionDiscussionsWithoutMessages,
     courseStudents,
     postgresGroupIds,
   ] = await Promise.all([
@@ -69,7 +69,7 @@ export async function verifyDemoData() {
     prisma.course.count(),
     prisma.group.count(),
     prisma.groupMember.count(),
-    prisma.chatSpace.count(),
+    prisma.sessionDiscussion.count(),
     prisma.chatMessage.count(),
     prisma.learningGoal.count(),
     prisma.reflection.count(),
@@ -77,7 +77,7 @@ export async function verifyDemoData() {
     prisma.notification.count(),
     prisma.course.count({ where: { groups: { none: {} } } }),
     prisma.group.count({ where: { members: { none: {} } } }),
-    prisma.chatSpace.count({ where: { messages: { none: {} } } }),
+    prisma.sessionDiscussion.count({ where: { messages: { none: {} } } }),
     prisma.courseStudent.count(),
     prisma.group.findMany({ select: { id: true } }),
   ]);
@@ -106,7 +106,7 @@ export async function verifyDemoData() {
     { label: 'course students', value: courseStudents, minimum: 32 },
     { label: 'groups', value: groups, minimum: 8 },
     { label: 'group members', value: groupMembers, minimum: 24 },
-    { label: 'sesi diskusi', value: chatSpaces, minimum: 8 },
+    { label: 'sesi diskusi', value: sessionDiscussions, minimum: 8 },
     { label: 'chat messages', value: chatMessages, minimum: 120 },
     { label: 'learning goals', value: learningGoals, minimum: 24 },
     { label: 'reflections', value: reflections, minimum: 24 },
@@ -119,7 +119,7 @@ export async function verifyDemoData() {
     { label: 'Mongo graph groups matching Postgres groups', value: mongoGroupIdsMatchingPostgres, minimum: 8 },
     { label: 'no courses without groups', value: coursesWithoutGroups === 0 },
     { label: 'no groups without members', value: groupsWithoutMembers === 0 },
-    { label: 'no sesi diskusi without messages', value: chatSpacesWithoutMessages === 0 },
+    { label: 'no sesi diskusi without messages', value: sessionDiscussionsWithoutMessages === 0 },
   ];
 
   const passed = checks.map(assertCount).every(Boolean);

@@ -54,7 +54,7 @@ export function isNoFetchEligible(query: string): boolean {
 const lastInterventionTime = new Map<string, number>();
 const roomMessageCount = new Map<string, number>();
 
-// Track pending message classifications per chatSpace for batch processing
+// Track pending message classifications per sessionDiscussion for batch processing
 const pendingClassifications = new Map<string, {
     timer: NodeJS.Timeout | null;
     messages: Array<{ id: string; content: string }>;
@@ -68,15 +68,15 @@ import { INTERVENTION_MESSAGES, QUALITY_INTERVENTIONS, pickRandom } from './inte
 
 let io: Server;
 
-async function processBatchClassification(chatSpaceId: string): Promise<void> {
-    const pending = pendingClassifications.get(chatSpaceId);
+async function processBatchClassification(sessionDiscussionId: string): Promise<void> {
+    const pending = pendingClassifications.get(sessionDiscussionId);
     if (!pending || pending.messages.length === 0) {
         return;
     }
 
     try {
-        const chatSpace = await prisma.chatSpace.findUnique({
-            where: { id: chatSpaceId },
+        const sessionDiscussion = await prisma.sessionDiscussion.findUnique({
+            where: { id: sessionDiscussionId },
             select: {
                 goals: {
                     orderBy: { createdAt: 'desc' },
@@ -86,9 +86,9 @@ async function processBatchClassification(chatSpaceId: string): Promise<void> {
             },
         });
 
-        const goalText = chatSpace?.goals?.[0]?.content?.trim();
+        const goalText = sessionDiscussion?.goals?.[0]?.content?.trim();
         if (!goalText) {
-            pendingClassifications.delete(chatSpaceId);
+            pendingClassifications.delete(sessionDiscussionId);
             return;
         }
 
@@ -102,12 +102,12 @@ async function processBatchClassification(chatSpaceId: string): Promise<void> {
         );
         await Promise.all(updatePromises);
 
-        io.to(chatSpaceId).emit('message_classified', { classifications });
+        io.to(sessionDiscussionId).emit('message_classified', { classifications });
 
-        pendingClassifications.delete(chatSpaceId);
+        pendingClassifications.delete(sessionDiscussionId);
     } catch (error) {
         logger.error('Batch classification error:', error);
-        pendingClassifications.delete(chatSpaceId);
+        pendingClassifications.delete(sessionDiscussionId);
     }
 }
 
@@ -155,8 +155,8 @@ export function initSocketIO(server: HttpServer): Server {
     io.on('connection', (socket: AuthenticatedSocket) => {
         logger.info(`User connected: ${socket.user?.userId} (${socket.id})`);
 
-        // Join room (by chatSpace)
-        socket.on('join_room', async (data: { courseId: string; groupId: string; chatSpaceId: string }) => {
+        // Join room (by sessionDiscussion)
+        socket.on('join_room', async (data: { courseId: string; groupId: string; sessionDiscussionId: string }) => {
             if (!socketRateLimiter.isAllowed(socket.id, 'join_room')) {
                 const violations = socketRateLimiter.recordViolation(socket.id);
                 socket.emit('rate_limit_exceeded', { event: 'join_room', retryAfter: socketRateLimiter.getRetryAfter(socket.id, 'join_room'), message: 'Too many join requests.' });
@@ -169,7 +169,7 @@ export function initSocketIO(server: HttpServer): Server {
                 return;
             }
             try {
-                const { courseId, groupId, chatSpaceId } = joinParsed.data;
+                const { courseId, groupId, sessionDiscussionId } = joinParsed.data;
 
                 if (!socket.user) {
                     socket.emit('server_error', { message: 'Not authenticated' });
@@ -184,22 +184,22 @@ export function initSocketIO(server: HttpServer): Server {
                     return;
                 }
 
-                // Verify chat space belongs to the group
-                const chatSpace = await prisma.chatSpace.findFirst({
-                    where: { id: chatSpaceId, groupId },
+                // Verify session discussion belongs to the group
+                const sessionDiscussion = await prisma.sessionDiscussion.findFirst({
+                    where: { id: sessionDiscussionId, groupId },
                 });
 
-                if (!chatSpace) {
-                    socket.emit('server_error', { message: 'Chat space not found' });
+                if (!sessionDiscussion) {
+                    socket.emit('server_error', { message: 'Session discussion not found' });
                     return;
                 }
 
                 // Enforce pre-read + goal gates for students (mirrors the BFF chatRoom gate;
                 // lecturers/admins monitor freely). Closed sessions skip the gates.
-                if (socket.user.role === 'student' && !chatSpace.closedAt) {
-                    if (chatSpace.weekId) {
-                        const preRead = await prisma.chatSpacePreReadCompletion.findUnique({
-                            where: { userId_chatSpaceId: { userId: socket.user.userId, chatSpaceId } },
+                if (socket.user.role === 'student' && !sessionDiscussion.closedAt) {
+                    if (sessionDiscussion.weekId) {
+                        const preRead = await prisma.sessionDiscussionPreReadCompletion.findUnique({
+                            where: { userId_sessionDiscussionId: { userId: socket.user.userId, sessionDiscussionId } },
                             select: { id: true },
                         });
                         if (!preRead) {
@@ -209,7 +209,7 @@ export function initSocketIO(server: HttpServer): Server {
                     }
 
                     const goal = await prisma.learningGoal.findFirst({
-                        where: { chatSpaceId },
+                        where: { sessionDiscussionId },
                         select: { id: true },
                     });
                     if (!goal) {
@@ -218,31 +218,31 @@ export function initSocketIO(server: HttpServer): Server {
                     }
                 }
 
-                // Use chatSpaceId as roomId for message separation per session
-                const roomId = chatSpaceId;
+                // Use sessionDiscussionId as roomId for message separation per session
+                const roomId = sessionDiscussionId;
                 socket.join(roomId);
                 socket.join(`course:${courseId}`); // PERF: Join course-level room for scoped broadcasts (HIGH-03)
                 socket.currentRoom = roomId; // Track for disconnect cleanup
 
-                // Load chat history from MongoDB for this specific chat space
+                // Load chat history from MongoDB for this specific session discussion
                 const chatHistory = await ChatLog.find({
-                    chatSpaceId,
+                    sessionDiscussionId,
                     deletedAt: null
                 })
                     .sort({ createdAt: 1 })
                     .limit(100)
                     .lean<ChatHistoryItem[]>();
 
-                // If this is a fresh chat space (no messages yet), send welcome message with goal
+                // If this is a fresh session discussion (no messages yet), send welcome message with goal
                 if (chatHistory.length === 0) {
-                    // Get the single shared goal for this chat space
+                    // Get the single shared goal for this session discussion
                     const goal = await prisma.learningGoal.findFirst({
-                        where: { chatSpaceId },
+                        where: { sessionDiscussionId },
                         select: { content: true },
                     });
 
                     // Create welcome message content
-                    let welcomeContent = `🎯 **Selamat datang di sesi diskusi "${chatSpace.name}"!**\n\n`;
+                    let welcomeContent = `🎯 **Selamat datang di sesi diskusi "${sessionDiscussion.name}"!**\n\n`;
                     
                     if (goal) {
                         welcomeContent += `📚 **Tujuan Pembelajaran:**\n`;
@@ -256,7 +256,7 @@ export function initSocketIO(server: HttpServer): Server {
                     const welcomeMessage = new ChatLog({
                         courseId,
                         groupId,
-                        chatSpaceId,
+                        sessionDiscussionId,
                         senderId: 'system',
                         senderName: 'Kolabri',
                         senderType: 'system',
@@ -270,7 +270,7 @@ export function initSocketIO(server: HttpServer): Server {
                         _id: welcomeMessage._id,
                         courseId,
                         groupId,
-                        chatSpaceId,
+                        sessionDiscussionId,
                         senderId: 'system',
                         senderName: 'Kolabri',
                         senderType: 'system' as const,
@@ -326,12 +326,12 @@ export function initSocketIO(server: HttpServer): Server {
                 socket.emit('online_users', { users: await listUsersInRoom(roomId) });
 
                 // Send room joined confirmation
-                socket.emit('room_joined', { roomId, courseId, groupId, chatSpaceId });
+                socket.emit('room_joined', { roomId, courseId, groupId, sessionDiscussionId });
 
                 debouncedInvalidateDashboard(); // HIGH-04: Debounced to prevent cache thrashing
 
                 // Start silence timer if not exists
-                startSilenceTimer(roomId, courseId, groupId, chatSpaceId);
+                startSilenceTimer(roomId, courseId, groupId, sessionDiscussionId);
 
                 logger.info(`User ${socket.user.userId} joined room ${roomId}`);
             } catch (error) {
@@ -382,11 +382,11 @@ export function initSocketIO(server: HttpServer): Server {
                     return;
                 }
 
-                // roomId is chatSpaceId
-                const chatSpaceId = roomId;
+                // roomId is sessionDiscussionId
+                const sessionDiscussionId = roomId;
 
-                const chatSpaceRecord = await prisma.chatSpace.findFirst({
-                    where: { id: chatSpaceId, deletedAt: null },
+                const sessionDiscussionRecord = await prisma.sessionDiscussion.findFirst({
+                    where: { id: sessionDiscussionId, deletedAt: null },
                     select: {
                         id: true,
                         closedAt: true,
@@ -395,24 +395,24 @@ export function initSocketIO(server: HttpServer): Server {
                     },
                 });
 
-                if (!chatSpaceRecord || chatSpaceRecord.group?.deletedAt) {
-                    socket.emit('server_error', { message: 'Chat space not found' });
+                if (!sessionDiscussionRecord || sessionDiscussionRecord.group?.deletedAt) {
+                    socket.emit('server_error', { message: 'Session discussion not found' });
                     return;
                 }
 
-                const authoritativeGroupId = chatSpaceRecord.groupId;
-                const authoritativeCourseId = chatSpaceRecord.group.courseId;
+                const authoritativeGroupId = sessionDiscussionRecord.groupId;
+                const authoritativeCourseId = sessionDiscussionRecord.group.courseId;
 
                 if (
                     courseId !== authoritativeCourseId ||
                     groupId !== authoritativeGroupId
                 ) {
                     logger.warn(
-                        `send_message payload tampering: client claimed courseId=${courseId} groupId=${groupId} but chatSpace ${chatSpaceId} resolves to courseId=${authoritativeCourseId} groupId=${authoritativeGroupId}`,
+                        `send_message payload tampering: client claimed courseId=${courseId} groupId=${groupId} but sessionDiscussion ${sessionDiscussionId} resolves to courseId=${authoritativeCourseId} groupId=${authoritativeGroupId}`,
                     );
                 }
 
-                if (!socket.rooms.has(chatSpaceId)) {
+                if (!socket.rooms.has(sessionDiscussionId)) {
                     socket.emit('server_error', { message: 'You must join the room before sending messages' });
                     return;
                 }
@@ -428,10 +428,10 @@ export function initSocketIO(server: HttpServer): Server {
                     return;
                 }
 
-                if (chatSpaceRecord.closedAt) {
+                if (sessionDiscussionRecord.closedAt) {
                     socket.emit('session_closed', {
-                        chatSpaceId,
-                        closedAt: chatSpaceRecord.closedAt.toISOString(),
+                        sessionDiscussionId,
+                        closedAt: sessionDiscussionRecord.closedAt.toISOString(),
                         message: 'Sesi diskusi ini telah ditutup.',
                     });
                     return;
@@ -466,7 +466,7 @@ export function initSocketIO(server: HttpServer): Server {
                 const chatLog = new ChatLog({
                     courseId: authoritativeCourseId,
                     groupId: authoritativeGroupId,
-                    chatSpaceId,
+                    sessionDiscussionId,
                     senderId: user.id,
                     senderName: user.name,
                     senderType: user.role as 'student' | 'lecturer',
@@ -486,10 +486,10 @@ export function initSocketIO(server: HttpServer): Server {
 
                 const messageId = chatLog._id?.toString();
                 if (messageId) {
-                    let pending = pendingClassifications.get(chatSpaceId);
+                    let pending = pendingClassifications.get(sessionDiscussionId);
                     if (!pending) {
                         pending = { timer: null, messages: [] };
-                        pendingClassifications.set(chatSpaceId, pending);
+                        pendingClassifications.set(sessionDiscussionId, pending);
                     }
 
                     pending.messages.push({ id: messageId, content: safeContent });
@@ -499,7 +499,7 @@ export function initSocketIO(server: HttpServer): Server {
                     }
 
                     pending.timer = setTimeout(() => {
-                        processBatchClassification(chatSpaceId).catch((err) => {
+                        processBatchClassification(sessionDiscussionId).catch((err) => {
                             logger.error('Batch classification failed:', err);
                         });
                     }, 5000);
@@ -523,7 +523,7 @@ export function initSocketIO(server: HttpServer): Server {
                 }).catch((error) => {
                     logger.error('AI engagement analysis failed', {
                         userId: user.id,
-                        chatSpaceId,
+                        sessionDiscussionId,
                         error: error instanceof Error ? error.message : 'Unknown error',
                     });
                 });
@@ -532,7 +532,7 @@ export function initSocketIO(server: HttpServer): Server {
                     logger.error('AI activity tracking failed', {
                         userId: user.id,
                         groupId: authoritativeGroupId,
-                        chatSpaceId,
+                        sessionDiscussionId,
                         error: error instanceof Error ? error.message : 'Unknown error',
                         label: 'retry_failed',
                     });
@@ -552,7 +552,7 @@ export function initSocketIO(server: HttpServer): Server {
                     createdAt: chatLog.createdAt.toISOString(),
                 };
 
-                io.to(chatSpaceId).emit('receive_message', message);
+                io.to(sessionDiscussionId).emit('receive_message', message);
                 debouncedInvalidateDashboard(); // HIGH-04: Debounced to prevent cache thrashing
                 io.to(`course:${authoritativeCourseId}`).emit('activity_feed', {
                     id: chatLog._id?.toString(),
@@ -561,15 +561,15 @@ export function initSocketIO(server: HttpServer): Server {
                     content: safeContent.substring(0, 150),
                     courseId: authoritativeCourseId,
                     groupId: authoritativeGroupId,
-                    chatSpaceId,
+                    sessionDiscussionId,
                     createdAt: chatLog.createdAt.toISOString(),
                 }); // PERF: Scoped broadcast to course members only (HIGH-03)
 
-                resetSilenceTimer(chatSpaceId, authoritativeCourseId, authoritativeGroupId, chatSpaceId);
+                resetSilenceTimer(sessionDiscussionId, authoritativeCourseId, authoritativeGroupId, sessionDiscussionId);
 
                 if (isStagedEscalationEnabled() && user.role === 'student') {
                     try {
-                        const silenceState = await findOrCreateState(authoritativeCourseId, authoritativeGroupId, chatSpaceId, 'silence');
+                        const silenceState = await findOrCreateState(authoritativeCourseId, authoritativeGroupId, sessionDiscussionId, 'silence');
                         if (silenceState.currentStage !== 'resolved' && silenceState.currentStage !== 'new') {
                             await advanceStage(silenceState, 'resolved', 'Student resumed discussion after silence', 'quality_check');
                         }
@@ -579,15 +579,15 @@ export function initSocketIO(server: HttpServer): Server {
                 }
 
                 if (safeContent.toLowerCase().includes('@ai')) {
-                    handleAIQuestion(chatSpaceId, authoritativeCourseId, authoritativeGroupId, chatSpaceId, safeContent, user.id);
+                    handleAIQuestion(sessionDiscussionId, authoritativeCourseId, authoritativeGroupId, sessionDiscussionId, safeContent, user.id);
                 }
 
                 // Check discussion quality and intervene if needed (async, non-blocking)
-                checkAndIntervenForQuality(roomId, authoritativeCourseId, authoritativeGroupId, chatSpaceId).catch(err => {
+                checkAndIntervenForQuality(roomId, authoritativeCourseId, authoritativeGroupId, sessionDiscussionId).catch(err => {
                     const message = err instanceof Error ? err.message : 'Unknown error';
                     logger.error('Quality intervention check failed:', err);
                     io.to(roomId).emit('intervention_error', {
-                        chatSpaceId,
+                        sessionDiscussionId,
                         message,
                     });
                 });
@@ -600,7 +600,7 @@ export function initSocketIO(server: HttpServer): Server {
         });
 
         socket.on('load_more_messages', async (data: {
-            chatSpaceId: string;
+            sessionDiscussionId: string;
             beforeMessageId: string;
             limit?: number;
         }) => {
@@ -622,15 +622,15 @@ export function initSocketIO(server: HttpServer): Server {
             }
 
             try {
-                const { chatSpaceId, beforeMessageId, limit } = loadMoreParsed.data;
+                const { sessionDiscussionId, beforeMessageId, limit } = loadMoreParsed.data;
 
                 if (!socket.user) {
                     socket.emit('server_error', { message: 'Not authenticated' });
                     return;
                 }
 
-                const chatSpaceRecord = await prisma.chatSpace.findFirst({
-                    where: { id: chatSpaceId, deletedAt: null },
+                const sessionDiscussionRecord = await prisma.sessionDiscussion.findFirst({
+                    where: { id: sessionDiscussionId, deletedAt: null },
                     select: {
                         id: true,
                         groupId: true,
@@ -638,16 +638,16 @@ export function initSocketIO(server: HttpServer): Server {
                     },
                 });
 
-                if (!chatSpaceRecord || chatSpaceRecord.group?.deletedAt) {
-                    socket.emit('server_error', { message: 'Chat space not found' });
+                if (!sessionDiscussionRecord || sessionDiscussionRecord.group?.deletedAt) {
+                    socket.emit('server_error', { message: 'Session discussion not found' });
                     return;
                 }
 
                 const hasAccess = await verifyGroupAccess(
                     socket.user.userId,
                     socket.user.role,
-                    chatSpaceRecord.groupId,
-                    chatSpaceRecord.group.courseId,
+                    sessionDiscussionRecord.groupId,
+                    sessionDiscussionRecord.group.courseId,
                 );
 
                 if (!hasAccess) {
@@ -660,7 +660,7 @@ export function initSocketIO(server: HttpServer): Server {
                 const fetchSize = pageSize + 1;
 
                 const historyPage = await ChatLog.find({
-                    chatSpaceId,
+                    sessionDiscussionId,
                     deletedAt: null,
                     _id: { $lt: beforeObjectId },
                 })
@@ -733,7 +733,7 @@ export function initSocketIO(server: HttpServer): Server {
             }
             try {
                 const message = await ChatLog.findById(data.messageId);
-                if (!message || message.chatSpaceId !== data.conversationId) {
+                if (!message || message.sessionDiscussionId !== data.conversationId) {
                     socket.emit('server_error', { message: 'Message not found' });
                     return;
                 }
@@ -746,7 +746,7 @@ export function initSocketIO(server: HttpServer): Server {
                 const pinnedData = {
                     id: message._id.toString(),
                     message_id: message._id.toString(),
-                    conversation_id: message.chatSpaceId,
+                    conversation_id: message.sessionDiscussionId,
                     pinned_by: message.pinnedBy,
                     content: message.content,
                     sender_name: message.senderName,
@@ -778,7 +778,7 @@ export function initSocketIO(server: HttpServer): Server {
             }
             try {
                 const message = await ChatLog.findById(data.messageId);
-                if (!message || message.chatSpaceId !== data.conversationId) {
+                if (!message || message.sessionDiscussionId !== data.conversationId) {
                     socket.emit('server_error', { message: 'Message not found' });
                     return;
                 }
@@ -834,11 +834,11 @@ async function verifyGroupAccess(
 /**
  * Start silence timer for a room
  */
-function startSilenceTimer(roomId: string, courseId: string, groupId: string, chatSpaceId: string): void {
+function startSilenceTimer(roomId: string, courseId: string, groupId: string, sessionDiscussionId: string): void {
     if (silenceTimers.has(roomId)) return;
 
     const timer = setTimeout(() => {
-        triggerIntervention(roomId, courseId, groupId, chatSpaceId);
+        triggerIntervention(roomId, courseId, groupId, sessionDiscussionId);
     }, SILENCE_TIMEOUT_MS);
 
     silenceTimers.set(roomId, timer);
@@ -847,14 +847,14 @@ function startSilenceTimer(roomId: string, courseId: string, groupId: string, ch
 /**
  * Reset silence timer for a room
  */
-function resetSilenceTimer(roomId: string, courseId: string, groupId: string, chatSpaceId: string): void {
+function resetSilenceTimer(roomId: string, courseId: string, groupId: string, sessionDiscussionId: string): void {
     const existingTimer = silenceTimers.get(roomId);
     if (existingTimer) {
         clearTimeout(existingTimer);
     }
 
     const timer = setTimeout(() => {
-        triggerIntervention(roomId, courseId, groupId, chatSpaceId);
+        triggerIntervention(roomId, courseId, groupId, sessionDiscussionId);
     }, SILENCE_TIMEOUT_MS);
 
     silenceTimers.set(roomId, timer);
@@ -873,9 +873,9 @@ export function clearSilenceTimer(roomId: string): void {
 /**
  * Trigger bot intervention after silence
  */
-async function triggerIntervention(roomId: string, courseId: string, groupId: string, chatSpaceId: string): Promise<void> {
+async function triggerIntervention(roomId: string, courseId: string, groupId: string, sessionDiscussionId: string): Promise<void> {
     await runSilenceIntervention(
-        { roomId, courseId, groupId, chatSpaceId },
+        { roomId, courseId, groupId, sessionDiscussionId },
         {
             emit: (room, event, payload) => {
                 io.to(room).emit(event, payload);
@@ -895,7 +895,7 @@ async function checkAndIntervenForQuality(
     roomId: string,
     courseId: string,
     groupId: string,
-    chatSpaceId: string
+    sessionDiscussionId: string
 ): Promise<void> {
     try {
         const currentCount = incrementMessageCount(roomMessageCount, roomId);
@@ -907,7 +907,7 @@ async function checkAndIntervenForQuality(
 
         // Get recent messages with engagement data
                 const recentMessages = await ChatLog.find({
-                    chatSpaceId,
+                    sessionDiscussionId,
                     deletedAt: null,
                     senderType: { $in: ['student', 'lecturer'] },
                 })
@@ -951,7 +951,7 @@ async function checkAndIntervenForQuality(
             logger.debug(`Quality OK in ${roomId}: HOT=${hotPercentage.toFixed(0)}%, Cognitive=${cognitiveRatio.toFixed(0)}%, Lexical=${avgLexical.toFixed(0)}%`);
 
             if (isStagedEscalationEnabled()) {
-                const state = await findOrCreateState(courseId, groupId, chatSpaceId, 'low_quality');
+                const state = await findOrCreateState(courseId, groupId, sessionDiscussionId, 'low_quality');
                 if (state.currentStage !== 'resolved') {
                     await advanceStage(state, 'resolved', 'Discussion quality recovered', 'quality_check');
                 }
@@ -960,7 +960,7 @@ async function checkAndIntervenForQuality(
         }
 
         if (isStagedEscalationEnabled()) {
-            const state = await findOrCreateState(courseId, groupId, chatSpaceId, 'low_quality');
+            const state = await findOrCreateState(courseId, groupId, sessionDiscussionId, 'low_quality');
 
             if (state.currentStage === 'resolved') {
                 return;
@@ -991,7 +991,7 @@ async function checkAndIntervenForQuality(
                         sender_id: m.senderId,
                     })),
                     topic: qualityIssue,
-                    chat_room_id: chatSpaceId,
+                    chat_room_id: sessionDiscussionId,
                     intervention_type: interventionType,
                     force: true,
                     provider_context: providerContext,
@@ -1033,7 +1033,7 @@ async function checkAndIntervenForQuality(
         const chatLog = new ChatLog({
             courseId,
             groupId,
-            chatSpaceId,
+            sessionDiscussionId,
             senderId: 'bot',
             senderName: 'Kolabri',
             senderType: 'bot',
@@ -1056,7 +1056,7 @@ async function checkAndIntervenForQuality(
 
         // Emit quality alert for UI feedback
         io.to(roomId).emit('quality_intervention', {
-            chatSpaceId,
+            sessionDiscussionId,
             interventionType,
             qualityIssue,
             metrics: {
@@ -1084,7 +1084,7 @@ async function handleAIQuestion(
     roomId: string,
     courseId: string,
     groupId: string,
-    chatSpaceId: string,
+    sessionDiscussionId: string,
     question: string,
     userId: string
 ): Promise<void> {
@@ -1147,16 +1147,16 @@ async function handleAIQuestion(
                 enabled: courseRecord?.aiScaffoldingConfig?.enabled ?? true,
             };
 
-            const chatSpaceRow = await prisma.chatSpace.findFirst({
-                where: { id: chatSpaceId, deletedAt: null },
+            const sessionDiscussionRow = await prisma.sessionDiscussion.findFirst({
+                where: { id: sessionDiscussionId, deletedAt: null },
                 select: { weekId: true },
             });
-            const weekCtx = await WeekContextService.sessionWeekForChatSpace(chatSpaceRow?.weekId);
+            const weekCtx = await WeekContextService.sessionWeekForSessionDiscussion(sessionDiscussionRow?.weekId);
             const sessionWeekIndex = weekCtx?.weekIndex;
             const maxWeekIndex = sessionWeekIndex;
 
             const recentMessages = await ChatLog.find(
-                { chatSpaceId, deletedAt: null },
+                { sessionDiscussionId, deletedAt: null },
                 { senderType: 1, content: 1 }
             )
                 .sort({ createdAt: -1 })
@@ -1188,7 +1188,7 @@ async function handleAIQuestion(
                     topic: weekCtx?.weekTitle ?? 'General Discussion',
                     collection_name: `course_${courseId}`,
                     course_id: courseId,
-                    chat_room_id: chatSpaceId,
+                    chat_room_id: sessionDiscussionId,
                     guardrail_policy: guardrailPolicy,
                     scaffolding_config: scaffoldingConfig,
                     session_week_index: sessionWeekIndex,
@@ -1206,14 +1206,14 @@ async function handleAIQuestion(
                     if (event.type === 'token') {
                         fullContent += event.content ?? '';
                         io.to(roomId).emit('ai_chunk', {
-                            chatSpaceId,
+                            sessionDiscussionId,
                             content: event.content,
                             timestamp: new Date().toISOString(),
                         });
                     } else if (event.type === 'full') {
                         fullContent = event.content ?? '';
                         io.to(roomId).emit('ai_chunk', {
-                            chatSpaceId,
+                            sessionDiscussionId,
                             content: event.content,
                             replace: true,
                             timestamp: new Date().toISOString(),
@@ -1254,7 +1254,7 @@ async function handleAIQuestion(
                             filteredCitations = rawCitations;
                         }
                         io.to(roomId).emit('ai_done', {
-                            chatSpaceId,
+                            sessionDiscussionId,
                             citations: filteredCitations.length > 0 ? filteredCitations : undefined,
                             timestamp: new Date().toISOString(),
                         });
@@ -1262,13 +1262,13 @@ async function handleAIQuestion(
                     } else if (event.type === 'error') {
                         response = event.content ?? 'Maaf, terjadi kesalahan.';
                         io.to(roomId).emit('ai_chunk', {
-                            chatSpaceId,
+                            sessionDiscussionId,
                             content: response,
                             replace: true,
                             timestamp: new Date().toISOString(),
                         });
                         io.to(roomId).emit('ai_done', {
-                            chatSpaceId,
+                            sessionDiscussionId,
                             error: true,
                             timestamp: new Date().toISOString(),
                         });
@@ -1290,7 +1290,7 @@ async function handleAIQuestion(
                         topic: weekCtx?.weekTitle ?? 'General Discussion',
                         collection_name: `course_${courseId}`,
                         course_id: courseId,
-                        chat_room_id: chatSpaceId,
+                        chat_room_id: sessionDiscussionId,
                         guardrail_policy: guardrailPolicy,
                         scaffolding_config: scaffoldingConfig,
                         session_week_index: sessionWeekIndex,
@@ -1336,7 +1336,7 @@ async function handleAIQuestion(
                                     outcome: result.guardrail_outcome,
                                     reason: result.guardrail_reason ?? null,
                                     surface: 'group-chat',
-                                    chatSpaceId,
+                                    sessionDiscussionId,
                                 },
                             },
                         });
@@ -1358,7 +1358,7 @@ async function handleAIQuestion(
         const chatLog = new ChatLog({
             courseId,
             groupId,
-            chatSpaceId,
+            sessionDiscussionId,
             senderId: 'ai',
             senderName: 'AI Assistant',
             senderType: 'ai',
@@ -1392,7 +1392,7 @@ async function handleAIQuestion(
                 entityId: chatLog._id.toString(),
                 userId,
                 metadata: {
-                    chatSpaceId,
+                    sessionDiscussionId,
                     courseId,
                     guardrailOutcome: orchestrationResult?.guardrail_outcome ?? null,
                     guardrailReason: orchestrationResult?.guardrail_reason ?? null,
@@ -1423,7 +1423,7 @@ async function handleAIQuestion(
         // Emit quality feedback for real-time UI updates
         if (qualityScore !== undefined || engagementMeta) {
             io.to(roomId).emit('quality_update', {
-                chatSpaceId,
+                sessionDiscussionId,
                 qualityScore: qualityScore ?? 0,
                 engagementTypes: engagementMeta?.engagement_distribution ?? {},
                 hotPercentage: engagementMeta?.hot_percentage ?? 0,
@@ -1437,7 +1437,7 @@ async function handleAIQuestion(
             const interventionLog = new ChatLog({
                 courseId,
                 groupId,
-                chatSpaceId,
+                sessionDiscussionId,
                 senderId: 'bot',
                 senderName: 'Kolabri',
                 senderType: 'bot',
@@ -1461,7 +1461,7 @@ async function handleAIQuestion(
         // Notify lecturer if quality is critically low
         if (shouldNotifyTeacher) {
             if (isStagedEscalationEnabled()) {
-                const state = await findOrCreateState(courseId, groupId, chatSpaceId, 'low_quality');
+                const state = await findOrCreateState(courseId, groupId, sessionDiscussionId, 'low_quality');
                 if (state.currentStage !== 'flag-lecturer' && state.currentStage !== 'resolved') {
                     await advanceStage(state, 'flag-lecturer', 'AI Chat detected critical quality issue', 'ai_chat');
                 }
@@ -1470,7 +1470,7 @@ async function handleAIQuestion(
                         type: 'low_quality',
                         courseId,
                         groupId,
-                        chatSpaceId,
+                        sessionDiscussionId,
                         qualityScore,
                         message: `Kualitas diskusi di grup ${groupId} memerlukan perhatian.`,
                         timestamp: new Date().toISOString(),
@@ -1483,7 +1483,7 @@ async function handleAIQuestion(
                     type: 'low_quality',
                     courseId,
                     groupId,
-                    chatSpaceId,
+                    sessionDiscussionId,
                     qualityScore,
                     message: `Kualitas diskusi di grup ${groupId} memerlukan perhatian.`,
                     timestamp: new Date().toISOString(),

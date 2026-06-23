@@ -20,7 +20,7 @@ export class DiscussionHealthService {
           select: {
             id: true,
             name: true,
-            chatSpaces: {
+            sessionDiscussions: {
               where: { deletedAt: null, closedAt: null },
               select: {
                 id: true,
@@ -37,7 +37,7 @@ export class DiscussionHealthService {
       },
     });
 
-    const chatSpaces: Array<{
+    const sessionDiscussions: Array<{
       id: string;
       name: string;
       courseId: string;
@@ -53,9 +53,9 @@ export class DiscussionHealthService {
 
     for (const course of courses) {
       for (const group of course.groups) {
-        for (const space of group.chatSpaces) {
+        for (const space of group.sessionDiscussions) {
           const logs = await ChatLog.find({
-            chatSpaceId: space.id,
+            sessionDiscussionId: space.id,
             deletedAt: null,
             senderType: { $in: ['student', 'lecturer'] },
           })
@@ -84,7 +84,7 @@ export class DiscussionHealthService {
             );
           }
 
-          chatSpaces.push({
+          sessionDiscussions.push({
             id: space.id,
             name: space.name,
             courseId: course.id,
@@ -101,8 +101,8 @@ export class DiscussionHealthService {
       }
     }
 
-    chatSpaces.sort((a, b) => b.healthScore - a.healthScore);
-    return { chatSpaces };
+    sessionDiscussions.sort((a, b) => b.healthScore - a.healthScore);
+    return { sessionDiscussions };
   }
 
   static async assertLecturerAccess(lecturerId: string, role: string) {

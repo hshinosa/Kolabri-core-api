@@ -146,7 +146,7 @@ export class CourseAdminService {
                         _count: {
                             select: {
                                 members: true,
-                                chatSpaces: true,
+                                sessionDiscussions: true,
                             },
                         },
                     },
@@ -266,7 +266,7 @@ export class CourseAdminService {
 
         await prisma.$transaction(async (tx) => {
             if (groupIds.length > 0) {
-                await tx.chatSpace.updateMany({
+                await tx.sessionDiscussion.updateMany({
                     where: { groupId: { in: groupIds } },
                     data: { deletedAt: new Date() },
                 });
@@ -557,7 +557,7 @@ export class CourseAdminService {
                 groups: {
                     select: {
                         id: true,
-                        chatSpaces: {
+                        sessionDiscussions: {
                             where: {
                                 closedAt: null,
                             },
@@ -580,11 +580,11 @@ export class CourseAdminService {
 
         await this.ensureAdminUser(userId);
 
-        const activeChatSpacesCount = course.groups.reduce((sum, group) => sum + group.chatSpaces.length, 0);
+        const activeSessionDiscussionsCount = course.groups.reduce((sum, group) => sum + group.sessionDiscussions.length, 0);
 
-        if (activeChatSpacesCount > 0) {
-            throw ApiError.badRequest('Cannot archive course with active chat spaces', {
-                activeChatSpacesCount,
+        if (activeSessionDiscussionsCount > 0) {
+            throw ApiError.badRequest('Cannot archive course with active session discussions', {
+                activeSessionDiscussionsCount,
                 groupsCount: course._count.groups,
             });
         }

@@ -5,8 +5,8 @@ const { prismaMock, loggerMock, randomBytesMock } = vi.hoisted(() => ({
         group: { findFirst: vi.fn(), findUnique: vi.fn() },
         user: { findUnique: vi.fn() },
         courseStudent: { findUnique: vi.fn(), findMany: vi.fn() },
-        chatSpace: { create: vi.fn(), findMany: vi.fn(), findUnique: vi.fn(), update: vi.fn() },
-        chatSpacePreReadCompletion: { findUnique: vi.fn(), findMany: vi.fn() },
+        sessionDiscussion: { create: vi.fn(), findMany: vi.fn(), findUnique: vi.fn(), update: vi.fn() },
+        sessionDiscussionPreReadCompletion: { findUnique: vi.fn(), findMany: vi.fn() },
         groupMember: { findUnique: vi.fn(), findFirst: vi.fn(), create: vi.fn(), createMany: vi.fn(), delete: vi.fn() },
         $queryRaw: vi.fn(),
         $transaction: vi.fn(),
@@ -35,12 +35,12 @@ describe('GroupService week logging', () => {
                 joinCode: 'JOIN',
                 createdBy: 'user-1',
                 members: [],
-                chatSpaces: [{ id: 'chat-1', name: 'Chat', description: null, isDefault: false, weekId: 'week-1', goals: [] }],
+                sessionDiscussions: [{ id: 'chat-1', name: 'Chat', description: null, isDefault: false, weekId: 'week-1', goals: [] }],
             },
         });
         prismaMock.$queryRaw.mockRejectedValue(new Error('query failed'));
         prismaMock.user.findUnique.mockResolvedValue({ id: 'user-1', name: 'Owner', email: 'owner@test.dev' });
-        prismaMock.chatSpacePreReadCompletion.findMany.mockResolvedValue([]);
+        prismaMock.sessionDiscussionPreReadCompletion.findMany.mockResolvedValue([]);
 
         const result = await GroupService.getMyGroup('course-1', 'user-1');
 
@@ -48,6 +48,6 @@ describe('GroupService week logging', () => {
             'Failed to resolve week labels',
             expect.objectContaining({ weekIds: ['week-1'] }),
         );
-        expect(result?.chatSpaces[0]).toEqual(expect.objectContaining({ weekTitle: null, weekIndex: null }));
+        expect(result?.sessionDiscussions[0]).toEqual(expect.objectContaining({ weekTitle: null, weekIndex: null }));
     });
 });

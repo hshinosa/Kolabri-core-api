@@ -28,7 +28,7 @@ describe('ReflectionService', () => {
         const createdAt = new Date('2026-05-01T00:00:00.000Z');
         prismaMock.learningGoal.findUnique.mockResolvedValue({
             id: 'goal-1',
-            chatSpace: {
+            sessionDiscussion: {
                 group: {
                     members: [{ userId: 'student-1' }],
                 },
@@ -69,7 +69,7 @@ describe('ReflectionService', () => {
     it('rejects reflection creation for users outside the group', async () => {
         prismaMock.learningGoal.findUnique.mockResolvedValue({
             id: 'goal-1',
-            chatSpace: {
+            sessionDiscussion: {
                 group: {
                     members: [{ userId: 'student-2' }],
                 },
@@ -130,7 +130,7 @@ describe('ReflectionService', () => {
         expect(prismaMock.reflection.create).not.toHaveBeenCalled();
     });
 
-    it('maps personal reflections using direct chat space data when available', async () => {
+    it('maps personal reflections using direct session discussion data when available', async () => {
         const createdAt = new Date('2026-05-02T00:00:00.000Z');
         prismaMock.reflection.findMany.mockResolvedValue([
             {
@@ -138,7 +138,7 @@ describe('ReflectionService', () => {
                 content: 'Session reflection',
                 type: 'session',
                 goal: null,
-                chatSpace: {
+                sessionDiscussion: {
                     id: 'chat-1',
                     name: 'General',
                     group: {
@@ -159,7 +159,7 @@ describe('ReflectionService', () => {
                 content: 'Session reflection',
                 type: 'session',
                 goal: null,
-                chatSpace: { id: 'chat-1', name: 'General' },
+                sessionDiscussion: { id: 'chat-1', name: 'General' },
                 course: { id: 'course-1', code: 'IF101', name: 'Intro AI' },
                 group: { id: 'group-1', name: 'Group 1' },
                 createdAt,
@@ -172,7 +172,7 @@ describe('ReflectionService', () => {
         const createdAt = new Date('2026-05-03T00:00:00.000Z');
         prismaMock.learningGoal.findUnique.mockResolvedValue({
             id: 'goal-1',
-            chatSpace: {
+            sessionDiscussion: {
                 group: {
                     course: { ownerId: 'lecturer-1' },
                     members: [{ userId: 'student-1' }],
@@ -198,7 +198,7 @@ describe('ReflectionService', () => {
     it('rejects lecturers who do not own the course when reading goal reflections', async () => {
         prismaMock.learningGoal.findUnique.mockResolvedValue({
             id: 'goal-1',
-            chatSpace: {
+            sessionDiscussion: {
                 group: {
                     course: { ownerId: 'lecturer-1' },
                     members: [{ userId: 'student-1' }],

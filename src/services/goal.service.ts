@@ -9,16 +9,16 @@ import { WeekContextService } from './weekContext.service.js';
 
 export class GoalService {
     /**
-     * Submit a learning goal (student only) - ONE goal per ChatSpace shared by all members
+     * Submit a learning goal (student only) - ONE goal per SessionDiscussion shared by all members
      * When any member creates a goal, it becomes the goal for the entire group
      */
     static async createGoal(data: CreateGoalInput, userId: string) {
-        // Extract chatSpaceId from snake_case input
-        const chatSpaceId = data.chat_space_id;
+        // Extract sessionDiscussionId from snake_case input
+        const sessionDiscussionId = data.session_discussion_id;
         
-        // Get chat space with group info
-        const chatSpace = await prisma.chatSpace.findFirst({
-            where: { id: chatSpaceId, deletedAt: null },
+        // Get session discussion with group info
+        const sessionDiscussion = await prisma.sessionDiscussion.findFirst({
+            where: { id: sessionDiscussionId, deletedAt: null },
             include: {
                 group: {
                     select: { id: true, name: true, deletedAt: true },
@@ -26,25 +26,25 @@ export class GoalService {
             },
         });
 
-        if (!chatSpace || chatSpace.group?.deletedAt) {
-            throw ApiError.notFound('Chat space not found');
+        if (!sessionDiscussion || sessionDiscussion.group?.deletedAt) {
+            throw ApiError.notFound('Session discussion not found');
         }
 
         // Verify user is member of the group
-        const isMember = await GroupService.isGroupMember(chatSpace.groupId, userId);
+        const isMember = await GroupService.isGroupMember(sessionDiscussion.groupId, userId);
 
         if (!isMember) {
             throw ApiError.forbidden('You are not a member of this group');
         }
 
-        // Check if a goal already exists for this chat space
+        // Check if a goal already exists for this session discussion
         const existingGoal = await prisma.learningGoal.findFirst({
-            where: { chatSpaceId },
+            where: { sessionDiscussionId },
             include: {
                 user: {
                     select: { id: true, name: true },
                 },
-                chatSpace: {
+                sessionDiscussion: {
                     select: { 
                         id: true, 
                         name: true,
@@ -62,7 +62,7 @@ export class GoalService {
                 id: existingGoal.id,
                 content: existingGoal.content,
                 isValidated: existingGoal.isValidated,
-                chatSpace: existingGoal.chatSpace,
+                sessionDiscussion: existingGoal.sessionDiscussion,
                 createdBy: existingGoal.user,
                 createdAt: existingGoal.createdAt,
             };
@@ -83,10 +83,10 @@ export class GoalService {
             (providerContext) => aiEngineService.validateGoal(
                 data.content,
                 userId,
-                chatSpaceId,
+                sessionDiscussionId,
                 data.week_context ?? undefined,
                 providerContext,
-                chatSpace.groupId,
+                sessionDiscussion.groupId,
             ),
             {
                 isSuccess: (response) => response.success,
@@ -114,7 +114,7 @@ export class GoalService {
         const goal = await prisma.learningGoal.create({
             data: {
                 content: data.content,
-                chatSpaceId,
+                sessionDiscussionId,
                 userId,
                 isValidated,
             },
@@ -122,7 +122,7 @@ export class GoalService {
                 user: {
                     select: { id: true, name: true },
                 },
-                chatSpace: {
+                sessionDiscussion: {
                     select: { 
                         id: true, 
                         name: true,
@@ -138,7 +138,7 @@ export class GoalService {
             id: goal.id,
             content: goal.content,
             isValidated: goal.isValidated,
-            chatSpace: goal.chatSpace,
+            sessionDiscussion: goal.sessionDiscussion,
             createdBy: goal.user,
             createdAt: goal.createdAt,
             feedback: goalFeedback,
@@ -147,11 +147,11 @@ export class GoalService {
     }
 
     /**
-     * Get the goal for a chat space (single shared goal)
+     * Get the goal for a session discussion (single shared goal)
      */
-    static async getChatSpaceGoals(chatSpaceId: string, userId: string, role: string) {
-        const chatSpace = await prisma.chatSpace.findFirst({
-            where: { id: chatSpaceId, deletedAt: null },
+    static async getSessionDiscussionGoals(sessionDiscussionId: string, userId: string, role: string) {
+        const sessionDiscussion = await prisma.sessionDiscussion.findFirst({
+            where: { id: sessionDiscussionId, deletedAt: null },
             include: {
                 group: {
                     include: {
@@ -163,25 +163,25 @@ export class GoalService {
             },
         });
 
-        if (!chatSpace || chatSpace.group?.deletedAt || chatSpace.group?.course?.deletedAt) {
-            throw ApiError.notFound('Chat space not found');
+        if (!sessionDiscussion || sessionDiscussion.group?.deletedAt || sessionDiscussion.group?.course?.deletedAt) {
+            throw ApiError.notFound('Session discussion not found');
         }
 
         // Check access
         if (role === 'lecturer') {
-            if (chatSpace.group.course.ownerId !== userId) {
+            if (sessionDiscussion.group.course.ownerId !== userId) {
                 throw ApiError.forbidden('You do not own this course');
             }
         } else {
-            const isMember = await GroupService.isGroupMember(chatSpace.groupId, userId);
+            const isMember = await GroupService.isGroupMember(sessionDiscussion.groupId, userId);
             if (!isMember) {
                 throw ApiError.forbidden('You are not a member of this group');
             }
         }
 
-        // Get the single shared goal for this chat space
+        // Get the single shared goal for this session discussion
         const goal = await prisma.learningGoal.findFirst({
-            where: { chatSpaceId },
+            where: { sessionDiscussionId },
             include: {
                 user: {
                     select: { id: true, name: true },
@@ -208,13 +208,13 @@ export class GoalService {
     }
 
     /**
-     * Get user's goals across all chat spaces
+     * Get user's goals across all session discussions
      */
     static async getMyGoals(userId: string) {
         const goals = await prisma.learningGoal.findMany({
             where: { userId },
             include: {
-                chatSpace: {
+                sessionDiscussion: {
                     select: {
                         id: true,
                         name: true,
@@ -240,7 +240,7 @@ export class GoalService {
             id: goal.id,
             content: goal.content,
             isValidated: goal.isValidated,
-            chatSpace: goal.chatSpace,
+            sessionDiscussion: goal.sessionDiscussion,
             reflectionsCount: goal._count.reflections,
             createdAt: goal.createdAt,
         }));
@@ -256,7 +256,7 @@ export class GoalService {
                 user: {
                     select: { id: true, name: true },
                 },
-                chatSpace: {
+                sessionDiscussion: {
                     include: {
                         group: {
                             include: {
@@ -284,11 +284,11 @@ export class GoalService {
 
         // Check access
         if (role === 'lecturer') {
-            if (goal.chatSpace.group.course.ownerId !== userId) {
+            if (goal.sessionDiscussion.group.course.ownerId !== userId) {
                 throw ApiError.forbidden('You do not own this course');
             }
         } else {
-            const isMember = await GroupService.isGroupMember(goal.chatSpace.groupId, userId);
+            const isMember = await GroupService.isGroupMember(goal.sessionDiscussion.groupId, userId);
             if (!isMember && goal.userId !== userId) {
                 throw ApiError.forbidden('You do not have access to this goal');
             }
@@ -299,13 +299,13 @@ export class GoalService {
             content: goal.content,
             isValidated: goal.isValidated,
             createdBy: goal.user,
-            chatSpace: {
-                id: goal.chatSpace.id,
-                name: goal.chatSpace.name,
+            sessionDiscussion: {
+                id: goal.sessionDiscussion.id,
+                name: goal.sessionDiscussion.name,
                 group: {
-                    id: goal.chatSpace.group.id,
-                    name: goal.chatSpace.group.name,
-                    course: goal.chatSpace.group.course,
+                    id: goal.sessionDiscussion.group.id,
+                    name: goal.sessionDiscussion.group.name,
+                    course: goal.sessionDiscussion.group.course,
                 },
             },
             reflections: goal.reflections.map((r: typeof goal.reflections[number]) => ({
@@ -319,12 +319,12 @@ export class GoalService {
     }
 
     /**
-     * Get the shared goal for a specific chat space
+     * Get the shared goal for a specific session discussion
      */
-    static async getUserGoalInChatSpace(chatSpaceId: string, _userId: string) {
-        // Get the single shared goal for this chat space (not user-specific)
+    static async getUserGoalInSessionDiscussion(sessionDiscussionId: string, _userId: string) {
+        // Get the single shared goal for this session discussion (not user-specific)
         const goal = await prisma.learningGoal.findFirst({
-            where: { chatSpaceId },
+            where: { sessionDiscussionId },
             include: {
                 user: {
                     select: { id: true, name: true },
@@ -347,12 +347,12 @@ export class GoalService {
     }
 
     /**
-     * Get shared goal for a chat space (any member's goal)
+     * Get shared goal for a session discussion (any member's goal)
      * Used to check if goals have been set by any group member
      */
-    static async getChatSpaceSharedGoal(chatSpaceId: string, userId: string) {
-        const chatSpace = await prisma.chatSpace.findFirst({
-            where: { id: chatSpaceId, deletedAt: null },
+    static async getSessionDiscussionSharedGoal(sessionDiscussionId: string, userId: string) {
+        const sessionDiscussion = await prisma.sessionDiscussion.findFirst({
+            where: { id: sessionDiscussionId, deletedAt: null },
             include: {
                 group: {
                     select: { id: true, deletedAt: true },
@@ -360,19 +360,19 @@ export class GoalService {
             },
         });
 
-        if (!chatSpace || chatSpace.group?.deletedAt) {
-            throw ApiError.notFound('Chat space not found');
+        if (!sessionDiscussion || sessionDiscussion.group?.deletedAt) {
+            throw ApiError.notFound('Session discussion not found');
         }
 
         // Verify user is member of the group
-        const isMember = await GroupService.isGroupMember(chatSpace.groupId, userId);
+        const isMember = await GroupService.isGroupMember(sessionDiscussion.groupId, userId);
         if (!isMember) {
             throw ApiError.forbidden('You are not a member of this group');
         }
 
-        // Get the single shared goal for this chat space
+        // Get the single shared goal for this session discussion
         const goal = await prisma.learningGoal.findFirst({
-            where: { chatSpaceId },
+            where: { sessionDiscussionId },
             include: {
                 user: {
                     select: { id: true, name: true },

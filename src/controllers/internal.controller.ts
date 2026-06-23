@@ -98,10 +98,10 @@ export class InternalController {
         }
     }
 
-    static async backfillChatSpaceWeeks(req: Request, res: Response, next: NextFunction) {
+    static async backfillSessionDiscussionWeeks(req: Request, res: Response, next: NextFunction) {
         try {
             const courseId = typeof req.query.course_id === 'string' ? req.query.course_id : undefined;
-            const result = await GroupService.backfillChatSpaceWeekIds(courseId);
+            const result = await GroupService.backfillSessionDiscussionWeekIds(courseId);
             res.json({ data: result });
         } catch (error) {
             next(error);

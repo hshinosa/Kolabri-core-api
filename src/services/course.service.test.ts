@@ -305,8 +305,8 @@ describe('CourseService', () => {
                     id: 'group-1',
                     name: 'Group 1',
                     members: [{ user: { id: 'student-1', name: 'Student', email: 's@example.com' } }],
-                    chatSpaces: [{ _count: { goals: 2 } }, { _count: { goals: 1 } }],
-                    _count: { members: 1, chatSpaces: 2 },
+                    sessionDiscussions: [{ _count: { goals: 2 } }, { _count: { goals: 1 } }],
+                    _count: { members: 1, sessionDiscussions: 2 },
                 },
             ],
             knowledgeBases: [
@@ -346,7 +346,7 @@ describe('CourseService', () => {
                     name: 'Group 1',
                     members: [{ id: 'student-1', name: 'Student', email: 's@example.com' }],
                     goalsCount: 3,
-                    chatSpacesCount: 2,
+                    sessionDiscussionsCount: 2,
                 },
             ],
             knowledge_base: [

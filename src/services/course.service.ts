@@ -219,7 +219,7 @@ export class CourseService {
                                 },
                             },
                         },
-                        chatSpaces: {
+                        sessionDiscussions: {
                             include: {
                                 _count: {
                                     select: { goals: true },
@@ -227,7 +227,7 @@ export class CourseService {
                             },
                         },
                         _count: {
-                            select: { members: true, chatSpaces: true },
+                            select: { members: true, sessionDiscussions: true },
                         },
                     },
                 },
@@ -297,9 +297,9 @@ export class CourseService {
             ai_scaffolding_enabled: (aiScaffoldingConfig.enabled as boolean | undefined) ?? true,
             owner: course.owner,
             groups: course.groups.map((group: typeof course.groups[number]) => {
-                // Sum goals from all chatSpaces in this group
-                const totalGoals = group.chatSpaces.reduce(
-                    (sum: number, cs: typeof group.chatSpaces[number]) => sum + cs._count.goals, 
+                // Sum goals from all sessionDiscussions in this group
+                const totalGoals = group.sessionDiscussions.reduce(
+                    (sum: number, cs: typeof group.sessionDiscussions[number]) => sum + cs._count.goals, 
                     0
                 );
                 return {
@@ -307,7 +307,7 @@ export class CourseService {
                     name: group.name,
                     members: group.members.map((m: typeof group.members[number]) => m.user),
                     goalsCount: totalGoals,
-                    chatSpacesCount: group._count.chatSpaces,
+                    sessionDiscussionsCount: group._count.sessionDiscussions,
                 };
             }),
             knowledge_base: course.knowledgeBases.map((kb: typeof course.knowledgeBases[number]) => ({
@@ -327,7 +327,7 @@ export class CourseService {
     }
 
     /**
-     * Soft delete a course with cascade to groups and chat spaces
+     * Soft delete a course with cascade to groups and session discussions
      */
     static async softDeleteCourse(courseId: string, lecturerId: string) {
         const course = await prisma.course.findFirst({
@@ -348,7 +348,7 @@ export class CourseService {
         const groupIds = course.groups.map((g: { id: string }) => g.id);
 
         await prisma.$transaction([
-            prisma.chatSpace.updateMany({
+            prisma.sessionDiscussion.updateMany({
                 where: { groupId: { in: groupIds }, deletedAt: null },
                 data: { deletedAt: now },
             }),

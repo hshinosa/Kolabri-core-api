@@ -250,7 +250,7 @@ describe('Black-box API Tests', () => {
             const res = await request(app)
                 .post('/api/goals')
                 .set('Authorization', `Bearer ${studentToken}`)
-                .send({ chat_space_id: 'not-a-uuid', content: 'short goal' });
+                .send({ session_discussion_id: 'not-a-uuid', content: 'short goal' });
 
             expect(res.status).toBe(400);
         });

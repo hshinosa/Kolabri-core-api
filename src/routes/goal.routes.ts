@@ -12,7 +12,7 @@ router.use(verifyToken);
 // Goal routes
 router.post('/', requireStudent, validateBody(createGoalSchema), GoalController.create);
 router.get('/me', GoalController.getMyGoals);
-router.get('/chat-space/:chatSpaceId', GoalController.getChatSpaceGoals);
+router.get('/session-discussion/:sessionDiscussionId', GoalController.getSessionDiscussionGoals);
 router.get('/:id', GoalController.show);
 
 export default router;

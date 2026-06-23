@@ -904,7 +904,7 @@ export async function seedDemoData() {
   await prisma.reflection.deleteMany();
   await prisma.learningGoal.deleteMany();
   await prisma.chatMessage.deleteMany();
-  await prisma.chatSpace.deleteMany();
+  await prisma.sessionDiscussion.deleteMany();
   await prisma.groupMember.deleteMany();
   await prisma.group.deleteMany();
   await prisma.courseStudent.deleteMany();
@@ -1180,7 +1180,7 @@ export async function seedDemoData() {
         await prisma.groupMember.create({ data: { groupId: group.id, userId: member.id } });
       }
 
-      const chatSpace = await prisma.chatSpace.create({
+      const sessionDiscussion = await prisma.sessionDiscussion.create({
         data: {
           name: 'Diskusi Utama',
           description: null,
@@ -1218,7 +1218,7 @@ export async function seedDemoData() {
                 content: msg.content,
                 senderType: msg.senderType,
                 isIntervention: msg.isIntervention,
-                chatSpaceId: chatSpace.id,
+                sessionDiscussionId: sessionDiscussion.id,
                 senderId: msg.senderId,
                 createdAt: msgDate,
               },
@@ -1243,7 +1243,7 @@ export async function seedDemoData() {
                 content: randomElement(interventionMessages),
                 senderType: 'ai',
                 isIntervention: true,
-                chatSpaceId: chatSpace.id,
+                sessionDiscussionId: sessionDiscussion.id,
                 senderId: groupMembers[0].id,
                 createdAt: interventionDate,
               },
@@ -1260,7 +1260,7 @@ export async function seedDemoData() {
             content: `Mulai diskusi ${courseContent.name}: apa bagian materi yang paling perlu kita pahami bersama?`,
             senderType: 'user',
             isIntervention: false,
-            chatSpaceId: chatSpace.id,
+            sessionDiscussionId: sessionDiscussion.id,
             senderId: groupMembers[0].id,
             createdAt: randomDate(ONE_WEEK_AGO, NOW),
           },
@@ -1273,7 +1273,7 @@ export async function seedDemoData() {
           data: {
             content: randomElement(courseContent.goals),
             isValidated: Math.random() > 0.4,
-            chatSpaceId: chatSpace.id,
+            sessionDiscussionId: sessionDiscussion.id,
             userId: member.id,
             createdAt: randomDate(ONE_WEEK_AGO, NOW),
           },
@@ -1282,14 +1282,14 @@ export async function seedDemoData() {
       }
 
       for (const member of groupMembers) {
-        const goals = await prisma.learningGoal.findMany({ where: { chatSpaceId: chatSpace.id, userId: member.id } });
+        const goals = await prisma.learningGoal.findMany({ where: { sessionDiscussionId: sessionDiscussion.id, userId: member.id } });
         await prisma.reflection.create({
           data: {
             content: randomElement(courseContent.reflections),
             type: Math.random() > 0.7 ? 'weekly' : 'session',
             goalId: goals.length > 0 ? goals[0].id : null,
             userId: member.id,
-            chatSpaceId: chatSpace.id,
+            sessionDiscussionId: sessionDiscussion.id,
             createdAt: randomDate(ONE_WEEK_AGO, NOW),
           },
         });

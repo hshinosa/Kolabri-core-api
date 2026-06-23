@@ -30,7 +30,7 @@ export interface DemoGroup {
     createdByKey: string;
     memberKeys: string[];
 }
-export interface DemoChatSpace {
+export interface DemoSessionDiscussion {
     key: string;
     groupKey: string;
     name: string;
@@ -41,7 +41,7 @@ export interface DemoChatSpace {
 }
 export interface DemoGoal {
     key: string;
-    chatSpaceKey: string;
+    sessionDiscussionKey: string;
     userKey: string;
     content: string;
     isValidated?: boolean;
@@ -49,7 +49,7 @@ export interface DemoGoal {
 export interface DemoReflection {
     key: string;
     userKey: string;
-    chatSpaceKey: string;
+    sessionDiscussionKey: string;
     goalKey?: string;
     type: 'session' | 'weekly';
     content: string;
@@ -119,7 +119,7 @@ export interface DemoActivityLog {
 export interface DemoSilenceEvent {
     courseKey: string;
     groupKey: string;
-    chatSpaceKey: string;
+    sessionDiscussionKey: string;
     silenceDuration: number;
     interventionSent: boolean;
 }
@@ -142,7 +142,7 @@ export interface DemoDiscussion {
     key: string;
     courseKey: string;
     groupKey: string;
-    chatSpaceKey: string;
+    sessionDiscussionKey: string;
     profile: DiscussionProfile;
     messages: DemoDiscussionMessage[];
 }
@@ -168,7 +168,7 @@ export interface DemoBlueprint {
     courses: DemoCourse[];
     courseTemplates: DemoCourseTemplate[];
     groups: DemoGroup[];
-    chatSpaces: DemoChatSpace[];
+    sessionDiscussions: DemoSessionDiscussion[];
     learningGoals: DemoGoal[];
     reflections: DemoReflection[];
     knowledgeBases: DemoKnowledgeBase[];

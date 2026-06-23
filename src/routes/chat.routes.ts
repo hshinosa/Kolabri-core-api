@@ -22,7 +22,7 @@ router.get('/messages/search', async (req, res, next) => {
     }
 
     const messages = await ChatLog.find({
-      chatSpaceId: conversation_id,
+      sessionDiscussionId: conversation_id,
       content: { $regex: q.trim(), $options: 'i' },
       deletedAt: null,
     })
@@ -59,7 +59,7 @@ router.get('/messages/pinned', async (req, res, next) => {
     }
 
     const pinned = await ChatLog.find({
-      chatSpaceId: conversation_id,
+      sessionDiscussionId: conversation_id,
       isPinned: true,
       deletedAt: null,
     })
@@ -70,7 +70,7 @@ router.get('/messages/pinned', async (req, res, next) => {
     const data = pinned.map((m) => ({
       id: m._id.toString(),
       message_id: m._id.toString(),
-      conversation_id: m.chatSpaceId,
+      conversation_id: m.sessionDiscussionId,
       pinned_by: m.pinnedBy || 'unknown',
       content: m.content,
       sender_name: m.senderName,
@@ -91,7 +91,7 @@ router.post('/messages/:id/pin', async (req, res, next) => {
     const user = (req as any).user;
 
     const message = await ChatLog.findById(id);
-    if (!message || message.chatSpaceId !== conversation_id) {
+    if (!message || message.sessionDiscussionId !== conversation_id) {
       return res.status(404).json({ message: 'Message not found in this conversation' });
     }
 
@@ -103,7 +103,7 @@ router.post('/messages/:id/pin', async (req, res, next) => {
     const pinnedData = {
       id: message._id.toString(),
       message_id: message._id.toString(),
-      conversation_id: message.chatSpaceId,
+      conversation_id: message.sessionDiscussionId,
       pinned_by: message.pinnedBy,
       content: message.content,
       sender_name: message.senderName,
@@ -165,7 +165,7 @@ router.patch('/messages/:id/topic', async (req, res, next) => {
     const { topic, conversation_id } = req.body || {};
 
     const message = await ChatLog.findById(id);
-    if (!message || message.chatSpaceId !== conversation_id) {
+    if (!message || message.sessionDiscussionId !== conversation_id) {
       return res.status(404).json({ message: 'Message not found' });
     }
 

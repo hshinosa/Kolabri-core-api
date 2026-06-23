@@ -4,7 +4,7 @@ const { prismaMock, aiEngineServiceMock, ChatLogMock, SilenceEventMock, jwtMock 
     const saveFn = vi.fn().mockResolvedValue(undefined);
     return {
         prismaMock: {
-            chatSpace: { findFirst: vi.fn(), findUnique: vi.fn() },
+            sessionDiscussion: { findFirst: vi.fn(), findUnique: vi.fn() },
             course: { findFirst: vi.fn() },
             groupMember: { findUnique: vi.fn() },
             learningGoal: { findFirst: vi.fn() },
@@ -233,7 +233,7 @@ describe('Socket.IO Integration — Flow 2: Group Chat + AI Intervention', () =>
             const chatLogData = {
                 courseId: 'course-1',
                 groupId: 'group-1',
-                chatSpaceId: 'cs-1',
+                sessionDiscussionId: 'cs-1',
                 senderId: 'student-1',
                 senderName: 'Student',
                 senderType: 'student',

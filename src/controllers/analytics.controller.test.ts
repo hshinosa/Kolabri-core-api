@@ -8,7 +8,7 @@ const { mockAnalyticsService } = vi.hoisted(() => ({
         analyzeText: vi.fn(),
         exportProcessMining: vi.fn(),
         getAnalyticsSummary: vi.fn(),
-        getChatSpaceAnalytics: vi.fn(),
+        getSessionDiscussionAnalytics: vi.fn(),
         getGroupQualityStatus: vi.fn(),
         formatAnalyticsAsCSV: vi.fn(),
     },
@@ -57,7 +57,7 @@ describe('AnalyticsController', () => {
         vi.clearAllMocks();
     });
 
-    it('returns shaped group analytics with members, chat spaces, and recent activity', async () => {
+    it('returns shaped group analytics with members, session discussions, and recent activity', async () => {
         const payload = {
             success: true,
             group: {
@@ -65,13 +65,13 @@ describe('AnalyticsController', () => {
                 name: 'Alpha',
                 course: { ownerId: 'lecturer-1', name: 'Intro AI', code: 'IF101' },
                 memberCount: 2,
-                chatSpaceCount: 2,
+                sessionDiscussionCount: 2,
             },
             members: [
                 { id: 'student-1', name: 'Alice', email: 'alice@example.com' },
                 { id: 'student-2', name: 'Bob', email: 'bob@example.com' },
             ],
-            chatSpaces: [],
+            sessionDiscussions: [],
             analytics: { qualityScore: 82 },
             recentActivity: [],
         };

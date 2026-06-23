@@ -13,7 +13,7 @@ export class AnalyticsService {
             include: {
                 course: { select: { ownerId: true, name: true, code: true } },
                 members: { include: { user: { select: { id: true, name: true, email: true } } } },
-                chatSpaces: {
+                sessionDiscussions: {
                     select: { id: true, name: true, closedAt: true, createdAt: true },
                     orderBy: { createdAt: 'desc' },
                 },
@@ -36,10 +36,10 @@ export class AnalyticsService {
                 name: group.name,
                 course: group.course,
                 memberCount: group.members.length,
-                chatSpaceCount: group.chatSpaces.length,
+                sessionDiscussionCount: group.sessionDiscussions.length,
             },
             members: group.members.map((m) => ({ id: m.user.id, name: m.user.name, email: m.user.email })),
-            chatSpaces: group.chatSpaces.map((cs) => ({
+            sessionDiscussions: group.sessionDiscussions.map((cs) => ({
                 id: cs.id, name: cs.name, isClosed: !!cs.closedAt, closedAt: cs.closedAt, createdAt: cs.createdAt,
             })),
             analytics: {
@@ -78,7 +78,7 @@ export class AnalyticsService {
                 groups: {
                     include: {
                         members: { select: { userId: true } },
-                        chatSpaces: { select: { id: true, name: true, closedAt: true } },
+                        sessionDiscussions: { select: { id: true, name: true, closedAt: true } },
                     },
                 },
             },
@@ -94,7 +94,7 @@ export class AnalyticsService {
                     id: group.id,
                     name: group.name,
                     memberCount: group.members.length,
-                    chatSpaceCount: group.chatSpaces.length,
+                    sessionDiscussionCount: group.sessionDiscussions.length,
                     messageCount: analytics.messageCount,
                     qualityScore: analytics.qualityScore,
                     recommendation: analytics.recommendation,
@@ -464,9 +464,9 @@ export class AnalyticsService {
         };
     }
 
-    static async getChatSpaceAnalytics(chatSpaceId: string, userId: string | undefined, role: string | undefined) {
-        const chatSpace = await prisma.chatSpace.findUnique({
-            where: { id: chatSpaceId },
+    static async getSessionDiscussionAnalytics(sessionDiscussionId: string, userId: string | undefined, role: string | undefined) {
+        const sessionDiscussion = await prisma.sessionDiscussion.findUnique({
+            where: { id: sessionDiscussionId },
             include: {
                 group: {
                     include: {
@@ -479,13 +479,13 @@ export class AnalyticsService {
             },
         });
 
-        if (!chatSpace) throw ApiError.notFound('Chat space not found');
-        if (role === 'lecturer' && chatSpace.group.course.ownerId !== userId) {
+        if (!sessionDiscussion) throw ApiError.notFound('Session discussion not found');
+        if (role === 'lecturer' && sessionDiscussion.group.course.ownerId !== userId) {
             throw ApiError.forbidden('You do not own this course');
         }
 
-        const analytics = await chatAnalyticsService.getChatSpaceAnalytics(chatSpaceId);
-        const messages = await ChatLog.find({ chatSpaceId, deletedAt: null })
+        const analytics = await chatAnalyticsService.getSessionDiscussionAnalytics(sessionDiscussionId);
+        const messages = await ChatLog.find({ sessionDiscussionId, deletedAt: null })
             .sort({ createdAt: 1 }).lean();
 
         const studentMessages = messages.filter((m) => m.senderType === 'student');
@@ -508,21 +508,21 @@ export class AnalyticsService {
 
         return {
             success: true,
-            chatSpace: {
-                id: chatSpace.id,
-                name: chatSpace.name,
-                groupId: chatSpace.group.id,
-                groupName: chatSpace.group.name,
-                isClosed: !!chatSpace.closedAt,
-                closedAt: chatSpace.closedAt,
+            sessionDiscussion: {
+                id: sessionDiscussion.id,
+                name: sessionDiscussion.name,
+                groupId: sessionDiscussion.group.id,
+                groupName: sessionDiscussion.group.name,
+                isClosed: !!sessionDiscussion.closedAt,
+                closedAt: sessionDiscussion.closedAt,
             },
             metrics: {
                 totalMessages: messages.length,
                 studentMessages: studentMessages.length,
                 aiMentions: aiMentions.length,
                 interventions: interventions.length,
-                goalsCount: chatSpace.goals.length,
-                reflectionsCount: chatSpace.reflections.length,
+                goalsCount: sessionDiscussion.goals.length,
+                reflectionsCount: sessionDiscussion.reflections.length,
             },
             participantStats,
             groupAnalytics: {

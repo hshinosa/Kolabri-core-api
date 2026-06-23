@@ -58,15 +58,15 @@ describe('ChatAnalyticsService', () => {
             },
             engagementExamples: [],
             recommendation: 'Belum ada data diskusi untuk dianalisis.',
-            chatSpaceStats: [],
+            sessionDiscussionStats: [],
         });
     });
 
-    it('calculates analytics, participants, examples, and chat space stats for a group', async () => {
+    it('calculates analytics, participants, examples, and session discussion stats for a group', async () => {
         leanMock.mockResolvedValue([
             {
                 groupId: 'group-1',
-                chatSpaceId: 'chat-1',
+                sessionDiscussionId: 'chat-1',
                 senderName: 'Alice',
                 senderType: 'student',
                 content: 'A very long analytical message that explains concepts in depth and connects several course ideas together.',
@@ -85,7 +85,7 @@ describe('ChatAnalyticsService', () => {
             },
             {
                 groupId: 'group-1',
-                chatSpaceId: 'chat-2',
+                sessionDiscussionId: 'chat-2',
                 senderName: 'Bob',
                 senderType: 'student',
                 content: 'Let us split the tasks and schedule the next session.',
@@ -104,7 +104,7 @@ describe('ChatAnalyticsService', () => {
             },
             {
                 groupId: 'group-1',
-                chatSpaceId: 'chat-1',
+                sessionDiscussionId: 'chat-1',
                 senderName: 'Cara',
                 senderType: 'lecturer',
                 content: 'Great effort team, keep supporting each other.',
@@ -146,9 +146,9 @@ describe('ChatAnalyticsService', () => {
         expect(result.engagementExamples[0]).toEqual(
             expect.objectContaining({ type: 'cognitive', indicators: ['analysis'], isHot: true })
         );
-        expect(result.chatSpaceStats).toEqual([
-            { chatSpaceId: 'chat-1', messageCount: 2, lastActivity: new Date('2026-05-03T10:00:00.000Z') },
-            { chatSpaceId: 'chat-2', messageCount: 1, lastActivity: new Date('2026-05-03T09:00:00.000Z') },
+        expect(result.sessionDiscussionStats).toEqual([
+            { sessionDiscussionId: 'chat-1', messageCount: 2, lastActivity: new Date('2026-05-03T10:00:00.000Z') },
+            { sessionDiscussionId: 'chat-2', messageCount: 1, lastActivity: new Date('2026-05-03T09:00:00.000Z') },
         ]);
         expect(result.recommendation).toContain('Diskusi berjalan cukup baik');
     });
@@ -168,14 +168,14 @@ describe('ChatAnalyticsService', () => {
         );
     });
 
-    it('returns a safe empty payload for chat spaces without messages', async () => {
+    it('returns a safe empty payload for session discussions without messages', async () => {
         leanMock.mockResolvedValue([]);
 
-        const result = await service.getChatSpaceAnalytics('chat-1');
+        const result = await service.getSessionDiscussionAnalytics('chat-1');
 
         expect(result).toEqual({
             success: true,
-            chatSpaceId: 'chat-1',
+            sessionDiscussionId: 'chat-1',
             messageCount: 0,
             qualityScore: 0,
             qualityBreakdown: {
@@ -195,15 +195,15 @@ describe('ChatAnalyticsService', () => {
         });
     });
 
-    it('returns a safe error payload when chat space analytics fails', async () => {
+    it('returns a safe error payload when session discussion analytics fails', async () => {
         leanMock.mockRejectedValue(new Error('query failed'));
 
-        const result = await service.getChatSpaceAnalytics('chat-1');
+        const result = await service.getSessionDiscussionAnalytics('chat-1');
 
         expect(result).toEqual(
             expect.objectContaining({
                 success: false,
-                chatSpaceId: 'chat-1',
+                sessionDiscussionId: 'chat-1',
                 error: 'query failed',
             })
         );

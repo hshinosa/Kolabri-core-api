@@ -5,7 +5,7 @@ const { prismaMock, aiEngineServiceMock, emitterMock, chatLogFindMock } = vi.hoi
         aiChat: { findUnique: vi.fn(), update: vi.fn() },
         aiChatMessage: { create: vi.fn(), count: vi.fn() },
         aiProvider: { findMany: vi.fn() },
-        chatSpace: { findFirst: vi.fn(), update: vi.fn() },
+        sessionDiscussion: { findFirst: vi.fn(), update: vi.fn() },
     },
     aiEngineServiceMock: {
         personalChat: vi.fn(),
@@ -32,7 +32,7 @@ vi.mock('../models/ChatLog.js', () => ({
 }));
 
 import { AiChatService } from './aiChat.service.js';
-import { ChatSpaceService } from './chatSpace.service.js';
+import { SessionDiscussionService } from './sessionDiscussion.service.js';
 
 const NOW = new Date('2026-06-01T00:00:00.000Z');
 
@@ -82,7 +82,7 @@ describe('Unified provider source of truth — integration', () => {
                 })),
             })),
         });
-        prismaMock.chatSpace.findFirst.mockResolvedValue({
+        prismaMock.sessionDiscussion.findFirst.mockResolvedValue({
             id: 'chat-1',
             name: 'Group Discussion',
             closedAt: null,
@@ -92,7 +92,7 @@ describe('Unified provider source of truth — integration', () => {
                 members: [{ userId: 'student-1' }],
             },
         });
-        prismaMock.chatSpace.update.mockResolvedValue({
+        prismaMock.sessionDiscussion.update.mockResolvedValue({
             id: 'chat-1',
             name: 'Group Discussion',
             closedAt: NOW,
@@ -100,7 +100,7 @@ describe('Unified provider source of truth — integration', () => {
         });
         aiEngineServiceMock.generateSummary.mockResolvedValue({ success: true, summary: 'Ringkasan diskusi.' });
 
-        await ChatSpaceService.closeSession('chat-1', 'lecturer-1', 'lecturer');
+        await SessionDiscussionService.closeSession('chat-1', 'lecturer-1', 'lecturer');
 
         const personalChatContext = aiEngineServiceMock.personalChat.mock.calls[0][3];
         const summaryContext = aiEngineServiceMock.generateSummary.mock.calls[0][2];

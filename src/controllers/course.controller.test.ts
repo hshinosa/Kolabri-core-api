@@ -326,11 +326,11 @@ describe('CourseController', () => {
     it('returns the goal belonging to the requested course', async () => {
         const matchingGoal = {
             id: 'goal-1',
-            chatSpace: { group: { course: { id: 'course-1' } } },
+            sessionDiscussion: { group: { course: { id: 'course-1' } } },
         };
         mockGroupService.getMyGroup.mockResolvedValue({ id: 'group-1' });
         mockGoalService.getMyGoals.mockResolvedValue([
-            { id: 'goal-2', chatSpace: { group: { course: { id: 'course-2' } } } },
+            { id: 'goal-2', sessionDiscussion: { group: { course: { id: 'course-2' } } } },
             matchingGoal,
         ]);
         const req = mockReq({ params: { id: 'course-1' }, user: { userId: 'student-1', role: 'student' } as Request['user'] });

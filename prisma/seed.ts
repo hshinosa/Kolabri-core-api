@@ -8,7 +8,7 @@ import { SilenceEvent } from '../src/models/SilenceEvent.js';
 import { createDemoBlueprint, DemoDiscussionMessage } from './seed-blueprint.js';
 
 const prisma = new PrismaClient();
-const MONGO_URI = process.env.MONGO_URI || process.env.MONGODB_URI || 'mongodb://localhost:27017/kolabri';
+const MONGO_URI = process.env.MONGODB_URL || process.env.MONGO_URI || process.env.MONGODB_URI || 'mongodb://localhost:27017/kolabri';
 
 type KeyMap = Map<string, string>;
 
@@ -35,10 +35,6 @@ async function clearMongo() {
 }
 
 async function clearPostgres() {
-    await prisma.aiAbTestResult.deleteMany();
-    await prisma.aiAbTest.deleteMany();
-    await prisma.aiModelComparisonResult.deleteMany();
-    await prisma.aiModelComparison.deleteMany();
     await prisma.aiUsage.deleteMany();
     await prisma.aiChatMessage.deleteMany();
     await prisma.aiChat.deleteMany();
@@ -47,7 +43,7 @@ async function clearPostgres() {
     await prisma.reflection.deleteMany();
     await prisma.learningGoal.deleteMany();
     await prisma.chatMessage.deleteMany();
-    await prisma.chatSpace.deleteMany();
+    await prisma.sessionDiscussion.deleteMany();
     await prisma.groupMember.deleteMany();
     await prisma.group.deleteMany();
     await prisma.courseStudent.deleteMany();
@@ -72,7 +68,7 @@ async function main() {
     const userIds: KeyMap = new Map();
     const courseIds: KeyMap = new Map();
     const groupIds: KeyMap = new Map();
-    const chatSpaceIds: KeyMap = new Map();
+    const sessionDiscussionIds: KeyMap = new Map();
     const goalIds: KeyMap = new Map();
     const providerIds: KeyMap = new Map();
     const aiChatIds: KeyMap = new Map();
@@ -159,22 +155,22 @@ async function main() {
         }
     }
 
-    for (const [index, chatSpace] of blueprint.chatSpaces.entries()) {
-        const group = blueprint.groups.find((item) => item.key === chatSpace.groupKey)!;
-        const created = await prisma.chatSpace.create({
+    for (const [index, sessionDiscussion] of blueprint.sessionDiscussions.entries()) {
+        const group = blueprint.groups.find((item) => item.key === sessionDiscussion.groupKey)!;
+        const created = await prisma.sessionDiscussion.create({
             data: {
-                name: chatSpace.name,
-                description: chatSpace.description,
-                type: chatSpace.type,
-                isDefault: chatSpace.isDefault ?? false,
-                summary: chatSpace.summary,
-                summaryGeneratedAt: chatSpace.summary ? isoDaysAgo(6 - (index % 3), 16) : null,
-                groupId: groupIds.get(chatSpace.groupKey)!,
+                name: sessionDiscussion.name,
+                description: sessionDiscussion.description,
+                type: sessionDiscussion.type,
+                isDefault: sessionDiscussion.isDefault ?? false,
+                summary: sessionDiscussion.summary,
+                summaryGeneratedAt: sessionDiscussion.summary ? isoDaysAgo(6 - (index % 3), 16) : null,
+                groupId: groupIds.get(sessionDiscussion.groupKey)!,
                 createdBy: userIds.get(group.createdByKey)!,
                 createdAt: isoDaysAgo(24 - index, 14),
             },
         });
-        chatSpaceIds.set(chatSpace.key, created.id);
+        sessionDiscussionIds.set(sessionDiscussion.key, created.id);
     }
 
     for (const [index, goal] of blueprint.learningGoals.entries()) {
@@ -182,7 +178,7 @@ async function main() {
             data: {
                 content: goal.content,
                 isValidated: goal.isValidated ?? false,
-                chatSpaceId: chatSpaceIds.get(goal.chatSpaceKey)!,
+                sessionDiscussionId: sessionDiscussionIds.get(goal.sessionDiscussionKey)!,
                 userId: userIds.get(goal.userKey)!,
                 createdAt: isoDaysAgo(18 - index, 15),
             },
@@ -197,7 +193,7 @@ async function main() {
                 type: reflection.type,
                 goalId: reflection.goalKey ? goalIds.get(reflection.goalKey)! : null,
                 userId: userIds.get(reflection.userKey)!,
-                chatSpaceId: chatSpaceIds.get(reflection.chatSpaceKey)!,
+                sessionDiscussionId: sessionDiscussionIds.get(reflection.sessionDiscussionKey)!,
                 createdAt: isoDaysAgo(16 - (index % 8), 18),
             },
         });
@@ -346,7 +342,7 @@ async function main() {
         for (const [messageIndex, message] of discussion.messages.entries()) {
             const created = await prisma.chatMessage.create({
                 data: {
-                    chatSpaceId: chatSpaceIds.get(discussion.chatSpaceKey)!,
+                    sessionDiscussionId: sessionDiscussionIds.get(discussion.sessionDiscussionKey)!,
                     senderId: userIds.get(message.senderKey)!,
                     senderType: normalizeChatMessageSenderType(message),
                     content: message.content,
@@ -360,7 +356,7 @@ async function main() {
             await ChatLog.create({
                 courseId: courseIds.get(discussion.courseKey)!,
                 groupId: groupIds.get(discussion.groupKey)!,
-                chatSpaceId: chatSpaceIds.get(discussion.chatSpaceKey)!,
+                sessionDiscussionId: sessionDiscussionIds.get(discussion.sessionDiscussionKey)!,
                 senderId: userIds.get(message.senderKey)!,
                 senderName: allUsers.find((user) => user.key === message.senderKey)?.name ?? message.senderKey,
                 senderType: message.senderType,
@@ -403,7 +399,7 @@ async function main() {
         await SilenceEvent.create({
             courseId: courseIds.get(silence.courseKey)!,
             groupId: groupIds.get(silence.groupKey)!,
-            chatSpaceId: chatSpaceIds.get(silence.chatSpaceKey)!,
+            sessionDiscussionId: sessionDiscussionIds.get(silence.sessionDiscussionKey)!,
             silenceDuration: silence.silenceDuration,
             interventionSent: silence.interventionSent,
             createdAt: isoDaysAgo(3 - index, 7),
@@ -416,7 +412,7 @@ async function main() {
     console.log(`   Students: ${blueprint.users.students.length}`);
     console.log(`   Courses: ${blueprint.courses.length}`);
     console.log(`   Groups: ${blueprint.groups.length}`);
-    console.log(`   Sesi diskusi: ${blueprint.chatSpaces.length}`);
+    console.log(`   Sesi diskusi: ${blueprint.sessionDiscussions.length}`);
     console.log(`   Learning goals: ${blueprint.learningGoals.length}`);
     console.log(`   Reflections: ${blueprint.reflections.length}`);
     console.log(`   AI chats: ${blueprint.aiChats.length}`);

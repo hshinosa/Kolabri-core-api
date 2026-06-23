@@ -1,15 +1,15 @@
 import { Response, NextFunction } from 'express';
-import { ChatSpaceService } from '../services/chatSpace.service.js';
+import { SessionDiscussionService } from '../services/sessionDiscussion.service.js';
 import { AuthenticatedRequest } from '../middleware/auth.js';
 
-export class ChatSpaceController {
+export class SessionDiscussionController {
     /**
-     * POST /api/chat-spaces/:id/close
+     * POST /api/session-discussions/:id/close
      * Close a chat session (lecturer only)
      */
     static async close(req: AuthenticatedRequest, res: Response, next: NextFunction) {
         try {
-            const result = await ChatSpaceService.closeSession(
+            const result = await SessionDiscussionService.closeSession(
                 req.params.id,
                 req.user!.userId,
                 req.user!.role
@@ -27,12 +27,12 @@ export class ChatSpaceController {
     }
 
     /**
-     * POST /api/chat-spaces/:id/reopen
+     * POST /api/session-discussions/:id/reopen
      * Reopen a chat session (lecturer only)
      */
     static async reopen(req: AuthenticatedRequest, res: Response, next: NextFunction) {
         try {
-            const result = await ChatSpaceService.reopenSession(
+            const result = await SessionDiscussionService.reopenSession(
                 req.params.id,
                 req.user!.userId,
                 req.user!.role
@@ -50,12 +50,12 @@ export class ChatSpaceController {
     }
 
     /**
-     * GET /api/chat-spaces/:id/status
-     * Get chat space status including reflection requirement
+     * GET /api/session-discussions/:id/status
+     * Get session discussion status including reflection requirement
      */
     static async getStatus(req: AuthenticatedRequest, res: Response, next: NextFunction) {
         try {
-            const status = await ChatSpaceService.getChatSpaceStatus(
+            const status = await SessionDiscussionService.getSessionDiscussionStatus(
                 req.params.id,
                 req.user!.userId,
                 req.user!.role
@@ -70,12 +70,12 @@ export class ChatSpaceController {
     }
 
     /**
-     * POST /api/chat-spaces/:id/reflection
+     * POST /api/session-discussions/:id/reflection
      * Submit session reflection
      */
     static async submitReflection(req: AuthenticatedRequest, res: Response, next: NextFunction) {
         try {
-            const reflection = await ChatSpaceService.submitSessionReflection(
+            const reflection = await SessionDiscussionService.submitSessionReflection(
                 req.params.id,
                 req.body.content,
                 req.user!.userId
@@ -94,7 +94,7 @@ export class ChatSpaceController {
 
     static async getSummary(req: AuthenticatedRequest, res: Response, next: NextFunction) {
         try {
-            const result = await ChatSpaceService.getSummary(
+            const result = await SessionDiscussionService.getSummary(
                 req.params.id,
                 req.user!.userId,
                 req.user!.role
@@ -109,12 +109,12 @@ export class ChatSpaceController {
     }
 
     /**
-     * POST /api/chat-spaces/:id/regenerate-summary
+     * POST /api/session-discussions/:id/regenerate-summary
      * Regenerate summary when initial generation failed
      */
     static async regenerateSummary(req: AuthenticatedRequest, res: Response, next: NextFunction) {
         try {
-            const result = await ChatSpaceService.regenerateSummary(
+            const result = await SessionDiscussionService.regenerateSummary(
                 req.params.id,
                 req.user!.userId,
                 req.user!.role

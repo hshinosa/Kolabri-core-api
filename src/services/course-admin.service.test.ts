@@ -103,12 +103,12 @@ describe('CourseAdminService', () => {
         });
     });
 
-    it('archives a course when there are no active chat spaces', async () => {
+    it('archives a course when there are no active session discussions', async () => {
         prismaMock.course.findUnique.mockResolvedValue({
             id: 'course-1',
             isArchived: false,
             _count: { groups: 2 },
-            groups: [{ id: 'group-1', chatSpaces: [] }, { id: 'group-2', chatSpaces: [] }],
+            groups: [{ id: 'group-1', sessionDiscussions: [] }, { id: 'group-2', sessionDiscussions: [] }],
         });
         prismaMock.user.findUnique.mockResolvedValue({ id: 'admin-1', role: 'admin', isActive: true });
         prismaMock.course.update.mockResolvedValue({ id: 'course-1', isArchived: true });

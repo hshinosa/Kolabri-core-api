@@ -1,6 +1,6 @@
 export const roomNames = {
-    chatSpace(chatSpaceId: string): string {
-        return chatSpaceId;
+    sessionDiscussion(sessionDiscussionId: string): string {
+        return sessionDiscussionId;
     },
     user(userId: string): string {
         return `user_${userId}`;

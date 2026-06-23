@@ -13,7 +13,7 @@ interface RecentActivity {
     type: 'message' | 'reflection' | 'goal';
     description: string;
     timestamp: Date;
-    chatSpaceName?: string;
+    sessionDiscussionName?: string;
     groupName?: string;
 }
 
@@ -70,25 +70,25 @@ export class StudentAnalyticsService {
                 senderId: userId,
             },
             select: {
-                chatSpace: {
+                sessionDiscussion: {
                     select: {
                         groupId: true,
                     },
                 },
             },
-            distinct: ['chatSpaceId'],
+            distinct: ['sessionDiscussionId'],
         });
 
-        const groupIds = new Set(uniqueGroups.map((msg) => msg.chatSpace.groupId));
+        const groupIds = new Set(uniqueGroups.map((msg) => msg.sessionDiscussion.groupId));
         return groupIds.size;
     }
 
     /**
-     * Calculate sessions joined: count of distinct chat spaces the student has messages in
+     * Calculate sessions joined: count of distinct session discussions the student has messages in
      */
     private static async calculateSessionsJoined(userId: string): Promise<number> {
         const count = await prisma.chatMessage.groupBy({
-            by: ['chatSpaceId'],
+            by: ['sessionDiscussionId'],
             where: {
                 senderId: userId,
             },
@@ -209,7 +209,7 @@ export class StudentAnalyticsService {
 
         const count = await prisma.chatMessage.count({
             where: {
-                chatSpace: {
+                sessionDiscussion: {
                     groupId: { in: groupIds },
                 },
                 createdAt: { gte: since },
@@ -250,7 +250,7 @@ export class StudentAnalyticsService {
                 orderBy: { createdAt: 'desc' },
                 take: 5,
                 include: {
-                    chatSpace: {
+                    sessionDiscussion: {
                         include: {
                             group: true,
                         },
@@ -262,7 +262,7 @@ export class StudentAnalyticsService {
                 orderBy: { createdAt: 'desc' },
                 take: 5,
                 include: {
-                    chatSpace: {
+                    sessionDiscussion: {
                         include: {
                             group: true,
                         },
@@ -278,10 +278,10 @@ export class StudentAnalyticsService {
             activities.push({
                 id: msg.id,
                 type: 'message',
-                description: `Mengirim pesan di ${msg.chatSpace.name}`,
+                description: `Mengirim pesan di ${msg.sessionDiscussion.name}`,
                 timestamp: msg.createdAt,
-                chatSpaceName: msg.chatSpace.name,
-                groupName: msg.chatSpace.group.name,
+                sessionDiscussionName: msg.sessionDiscussion.name,
+                groupName: msg.sessionDiscussion.group.name,
             });
         });
 
@@ -290,12 +290,12 @@ export class StudentAnalyticsService {
             activities.push({
                 id: ref.id,
                 type: 'reflection',
-                description: ref.chatSpace
-                    ? `Menulis refleksi untuk ${ref.chatSpace.name}`
+                description: ref.sessionDiscussion
+                    ? `Menulis refleksi untuk ${ref.sessionDiscussion.name}`
                     : 'Menulis refleksi',
                 timestamp: ref.createdAt,
-                chatSpaceName: ref.chatSpace?.name,
-                groupName: ref.chatSpace?.group?.name,
+                sessionDiscussionName: ref.sessionDiscussion?.name,
+                groupName: ref.sessionDiscussion?.group?.name,
             });
         });
 

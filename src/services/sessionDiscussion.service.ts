@@ -6,8 +6,8 @@ import { ChatLog } from '../models/ChatLog.js';
 import { aiEngineService } from './aiEngine.service.js';
 import { providerResolutionService } from './providerResolution.service.js';
 
-// Type for ChatSpace with session fields
-interface ChatSpaceWithSession {
+// Type for SessionDiscussion with session fields
+interface SessionDiscussionWithSession {
     id: string;
     name: string;
     closedAt: Date | null;
@@ -18,13 +18,13 @@ interface ChatSpaceWithSession {
     };
 }
 
-export class ChatSpaceService {
+export class SessionDiscussionService {
     /**
-     * Close a chat space session (lecturer/admin owner or group member)
+     * Close a session discussion session (lecturer/admin owner or group member)
      */
-    static async closeSession(chatSpaceId: string, userId: string, userRole: 'student' | 'lecturer' | 'admin') {
-        const chatSpace = await prisma.chatSpace.findFirst({
-            where: { id: chatSpaceId, deletedAt: null },
+    static async closeSession(sessionDiscussionId: string, userId: string, userRole: 'student' | 'lecturer' | 'admin') {
+        const sessionDiscussion = await prisma.sessionDiscussion.findFirst({
+            where: { id: sessionDiscussionId, deletedAt: null },
             include: {
                 group: {
                     include: {
@@ -35,29 +35,29 @@ export class ChatSpaceService {
                     },
                 },
             },
-        }) as ChatSpaceWithSession | null;
+        }) as SessionDiscussionWithSession | null;
 
-        if (!chatSpace) {
-            throw ApiError.notFound('Chat space not found');
+        if (!sessionDiscussion) {
+            throw ApiError.notFound('Session discussion not found');
         }
 
-        if (chatSpace.closedAt) {
+        if (sessionDiscussion.closedAt) {
             throw ApiError.badRequest('This session is already closed');
         }
 
         if (userRole === 'lecturer') {
-            if (chatSpace.group.course.ownerId !== userId) {
+            if (sessionDiscussion.group.course.ownerId !== userId) {
                 throw ApiError.forbidden('You do not own this course');
             }
         } else if (userRole === 'student') {
-            const isMember = (chatSpace.group.members ?? []).some((member) => member.userId === userId);
+            const isMember = (sessionDiscussion.group.members ?? []).some((member) => member.userId === userId);
             if (!isMember) {
                 throw ApiError.forbidden('You are not a member of this group');
             }
         }
 
-        const updatedChatSpace = await prisma.chatSpace.update({
-            where: { id: chatSpaceId },
+        const updatedSessionDiscussion = await prisma.sessionDiscussion.update({
+            where: { id: sessionDiscussionId },
             data: {
                 closedAt: new Date(),
                 closedBy: userId,
@@ -73,9 +73,9 @@ export class ChatSpaceService {
         const closeMessage = `Sesi diskusi ini telah ditutup oleh ${actorLabel}.`;
 
         try {
-            getSocketEmitter()?.emit(chatSpaceId, 'session_closed', {
-                chatSpaceId,
-                closedAt: updatedChatSpace.closedAt?.toISOString(),
+            getSocketEmitter()?.emit(sessionDiscussionId, 'session_closed', {
+                sessionDiscussionId,
+                closedAt: updatedSessionDiscussion.closedAt?.toISOString(),
                 message: closeMessage,
             });
         } catch (error) {
@@ -87,7 +87,7 @@ export class ChatSpaceService {
         let summaryError: string | null = null;
         try {
             const recentMessages = await ChatLog.find({
-                chatSpaceId,
+                sessionDiscussionId,
                 deletedAt: null,
                 senderType: { $in: ['student', 'lecturer'] },
             }).sort({ createdAt: -1 }).limit(30).lean();
@@ -101,7 +101,7 @@ export class ChatSpaceService {
                             content: m.content,
                             timestamp: new Date(m.createdAt).toISOString(),
                         })),
-                        chatSpaceId,
+                        sessionDiscussionId,
                         providerContext,
                     ),
                     {
@@ -112,31 +112,31 @@ export class ChatSpaceService {
                 if (summaryResult.success && summaryResult.summary) {
                     summary = summaryResult.summary;
                     summaryGeneratedAt = new Date();
-                    await prisma.chatSpace.update({
-                        where: { id: chatSpaceId },
+                    await prisma.sessionDiscussion.update({
+                        where: { id: sessionDiscussionId },
                         data: { summary, summaryGeneratedAt },
                     });
                 } else {
                     summaryError = summaryResult.error || 'AI Engine failed to generate summary';
                     logger.warn('Summary generation returned no summary during session close', {
-                        chatSpaceId,
+                        sessionDiscussionId,
                         error: summaryError,
                     });
                 }
             }
         } catch (error) {
             logger.warn('Summary generation failed during session close', {
-                chatSpaceId,
+                sessionDiscussionId,
                 error: error instanceof Error ? error.message : String(error),
                 stack: error instanceof Error ? error.stack : undefined,
             });
             summaryError = error instanceof Error ? error.message : 'Failed to generate summary';
         }
         return {
-            id: updatedChatSpace.id,
-            name: updatedChatSpace.name,
-            closedAt: updatedChatSpace.closedAt,
-            closedBy: updatedChatSpace.closedBy,
+            id: updatedSessionDiscussion.id,
+            name: updatedSessionDiscussion.name,
+            closedAt: updatedSessionDiscussion.closedAt,
+            closedBy: updatedSessionDiscussion.closedBy,
             summary,
             summaryGeneratedAt,
             summaryError,
@@ -144,15 +144,15 @@ export class ChatSpaceService {
     }
 
     /**
-     * Reopen a chat space session (lecturer only)
+     * Reopen a session discussion session (lecturer only)
      */
-    static async reopenSession(chatSpaceId: string, userId: string, userRole: string) {
+    static async reopenSession(sessionDiscussionId: string, userId: string, userRole: string) {
         if (userRole !== 'lecturer') {
             throw ApiError.forbidden('Only lecturers can reopen chat sessions');
         }
 
-        const chatSpace = await prisma.chatSpace.findFirst({
-            where: { id: chatSpaceId, deletedAt: null },
+        const sessionDiscussion = await prisma.sessionDiscussion.findFirst({
+            where: { id: sessionDiscussionId, deletedAt: null },
             include: {
                 group: {
                     include: {
@@ -160,22 +160,22 @@ export class ChatSpaceService {
                     },
                 },
             },
-        }) as ChatSpaceWithSession | null;
+        }) as SessionDiscussionWithSession | null;
 
-        if (!chatSpace) {
-            throw ApiError.notFound('Chat space not found');
+        if (!sessionDiscussion) {
+            throw ApiError.notFound('Session discussion not found');
         }
 
-        if (chatSpace.group.course.ownerId !== userId) {
+        if (sessionDiscussion.group.course.ownerId !== userId) {
             throw ApiError.forbidden('You do not own this course');
         }
 
-        if (!chatSpace.closedAt) {
+        if (!sessionDiscussion.closedAt) {
             throw ApiError.badRequest('This session is not closed');
         }
 
-        const updatedChatSpace = await prisma.chatSpace.update({
-            where: { id: chatSpaceId },
+        const updatedSessionDiscussion = await prisma.sessionDiscussion.update({
+            where: { id: sessionDiscussionId },
             data: {
                 closedAt: null,
                 closedBy: null,
@@ -183,28 +183,28 @@ export class ChatSpaceService {
         }) as unknown as { id: string; name: string; closedAt: Date | null; closedBy: string | null };
 
         try {
-            getSocketEmitter()?.emit(chatSpaceId, 'session_reopened', {
-                chatSpaceId,
+            getSocketEmitter()?.emit(sessionDiscussionId, 'session_reopened', {
+                sessionDiscussionId,
             });
         } catch (error) {
             logger.warn('Failed to broadcast session reopen', { error });
         }
 
         return {
-            id: updatedChatSpace.id,
-            name: updatedChatSpace.name,
-            closedAt: updatedChatSpace.closedAt,
-            closedBy: updatedChatSpace.closedBy,
+            id: updatedSessionDiscussion.id,
+            name: updatedSessionDiscussion.name,
+            closedAt: updatedSessionDiscussion.closedAt,
+            closedBy: updatedSessionDiscussion.closedBy,
         };
     }
 
     /**
      * Check if user has submitted reflection for a closed session
      */
-    static async hasSubmittedReflection(chatSpaceId: string, userId: string): Promise<boolean> {
+    static async hasSubmittedReflection(sessionDiscussionId: string, userId: string): Promise<boolean> {
         const reflection = await prisma.reflection.findFirst({
             where: {
-                chatSpaceId,
+                sessionDiscussionId,
                 userId,
             } as Record<string, unknown>,
         });
@@ -213,11 +213,11 @@ export class ChatSpaceService {
     }
 
     /**
-     * Get chat space status including reflection requirement
+     * Get session discussion status including reflection requirement
      */
-    static async getChatSpaceStatus(chatSpaceId: string, userId: string, userRole: string) {
-        const chatSpace = await prisma.chatSpace.findFirst({
-            where: { id: chatSpaceId, deletedAt: null },
+    static async getSessionDiscussionStatus(sessionDiscussionId: string, userId: string, userRole: string) {
+        const sessionDiscussion = await prisma.sessionDiscussion.findFirst({
+            where: { id: sessionDiscussionId, deletedAt: null },
             include: {
                 group: {
                     include: {
@@ -234,36 +234,36 @@ export class ChatSpaceService {
                     take: 1,
                 },
             } as Record<string, unknown>,
-        }) as unknown as (ChatSpaceWithSession & { goals: unknown[]; reflections: unknown[] }) | null;
+        }) as unknown as (SessionDiscussionWithSession & { goals: unknown[]; reflections: unknown[] }) | null;
 
-        if (!chatSpace) {
-            throw ApiError.notFound('Chat space not found');
+        if (!sessionDiscussion) {
+            throw ApiError.notFound('Session discussion not found');
         }
 
         // Check permission
         if (userRole === 'lecturer') {
-            if (chatSpace.group.course.ownerId !== userId) {
+            if (sessionDiscussion.group.course.ownerId !== userId) {
                 throw ApiError.forbidden('You do not own this course');
             }
         } else {
-            const isMember = chatSpace.group.members.some((m: { userId: string }) => m.userId === userId);
+            const isMember = sessionDiscussion.group.members.some((m: { userId: string }) => m.userId === userId);
             if (!isMember) {
                 throw ApiError.forbidden('You are not a member of this group');
             }
         }
 
-        const isClosed = !!chatSpace.closedAt;
-        const hasReflection = chatSpace.reflections.length > 0;
+        const isClosed = !!sessionDiscussion.closedAt;
+        const hasReflection = sessionDiscussion.reflections.length > 0;
         const needsReflection = isClosed && !hasReflection && userRole === 'student';
 
         return {
-            id: chatSpace.id,
-            name: chatSpace.name,
+            id: sessionDiscussion.id,
+            name: sessionDiscussion.name,
             isClosed,
-            closedAt: chatSpace.closedAt,
+            closedAt: sessionDiscussion.closedAt,
             hasReflection,
             needsReflection,
-            hasGoal: chatSpace.goals.length > 0,
+            hasGoal: sessionDiscussion.goals.length > 0,
         };
     }
 
@@ -271,12 +271,12 @@ export class ChatSpaceService {
      * Submit session reflection
      */
     static async submitSessionReflection(
-        chatSpaceId: string, 
+        sessionDiscussionId: string, 
         content: string, 
         userId: string
     ) {
-        const chatSpace = await prisma.chatSpace.findFirst({
-            where: { id: chatSpaceId, deletedAt: null },
+        const sessionDiscussion = await prisma.sessionDiscussion.findFirst({
+            where: { id: sessionDiscussionId, deletedAt: null },
             include: {
                 group: {
                     include: {
@@ -289,27 +289,27 @@ export class ChatSpaceService {
                     take: 1,
                 },
             },
-        }) as (ChatSpaceWithSession & { goals: { id: string }[] }) | null;
+        }) as (SessionDiscussionWithSession & { goals: { id: string }[] }) | null;
 
-        if (!chatSpace) {
-            throw ApiError.notFound('Chat space not found');
+        if (!sessionDiscussion) {
+            throw ApiError.notFound('Session discussion not found');
         }
 
         // Verify user is member
-        const isMember = chatSpace.group.members.some((m: { userId: string }) => m.userId === userId);
+        const isMember = sessionDiscussion.group.members.some((m: { userId: string }) => m.userId === userId);
         if (!isMember) {
             throw ApiError.forbidden('You are not a member of this group');
         }
 
         // Check if session is closed
-        if (!chatSpace.closedAt) {
+        if (!sessionDiscussion.closedAt) {
             throw ApiError.badRequest('Session must be closed before submitting reflection');
         }
 
         // Check if already submitted
         const existingReflection = await prisma.reflection.findFirst({
             where: {
-                chatSpaceId,
+                sessionDiscussionId,
                 userId,
             } as Record<string, unknown>,
         });
@@ -318,22 +318,22 @@ export class ChatSpaceService {
             throw ApiError.badRequest('You have already submitted a reflection for this session');
         }
 
-        // Get user's goal for this chat space if exists
-        const goalId = chatSpace.goals.length > 0 ? chatSpace.goals[0].id : undefined;
+        // Get user's goal for this session discussion if exists
+        const goalId = sessionDiscussion.goals.length > 0 ? sessionDiscussion.goals[0].id : undefined;
 
         const reflection = await prisma.reflection.create({
             data: {
                 content,
                 type: 'session',
                 userId,
-                chatSpaceId,
+                sessionDiscussionId,
                 goalId,
             },
             include: {
                 user: {
                     select: { id: true, name: true },
                 },
-                chatSpace: {
+                sessionDiscussion: {
                     select: { 
                         id: true, 
                         name: true,
@@ -347,7 +347,7 @@ export class ChatSpaceService {
             id: string;
             content: string;
             type: string;
-            chatSpace: { id: string; name: string } | null;
+            sessionDiscussion: { id: string; name: string } | null;
             goal: { id: string; content: string } | null;
             user: { id: string; name: string };
             createdAt: Date;
@@ -357,16 +357,16 @@ export class ChatSpaceService {
             id: reflection.id,
             content: reflection.content,
             type: reflection.type,
-            chatSpace: reflection.chatSpace,
+            sessionDiscussion: reflection.sessionDiscussion,
             goal: reflection.goal,
             createdBy: reflection.user,
             createdAt: reflection.createdAt,
         };
     }
 
-    static async getSummary(chatSpaceId: string, userId: string, userRole: string) {
-        const chatSpace = await prisma.chatSpace.findFirst({
-            where: { id: chatSpaceId, deletedAt: null },
+    static async getSummary(sessionDiscussionId: string, userId: string, userRole: string) {
+        const sessionDiscussion = await prisma.sessionDiscussion.findFirst({
+            where: { id: sessionDiscussionId, deletedAt: null },
             select: {
                 id: true,
                 summary: true,
@@ -380,33 +380,33 @@ export class ChatSpaceService {
             },
         });
 
-        if (!chatSpace) {
-            throw ApiError.notFound('Chat space not found');
+        if (!sessionDiscussion) {
+            throw ApiError.notFound('Session discussion not found');
         }
 
         if (userRole === 'student') {
-            const isMember = chatSpace.group.members.some((m) => m.userId === userId);
+            const isMember = sessionDiscussion.group.members.some((m) => m.userId === userId);
             if (!isMember) {
                 throw ApiError.forbidden('You are not a member of this group');
             }
         } else if (userRole === 'lecturer') {
-            if (chatSpace.group.course.ownerId !== userId) {
+            if (sessionDiscussion.group.course.ownerId !== userId) {
                 throw ApiError.forbidden('You do not own this course');
             }
         }
 
         return {
-            summary: chatSpace.summary,
-            generatedAt: chatSpace.summaryGeneratedAt,
+            summary: sessionDiscussion.summary,
+            generatedAt: sessionDiscussion.summaryGeneratedAt,
         };
     }
 
     /**
-     * Regenerate summary for a chat space (when initial generation failed)
+     * Regenerate summary for a session discussion (when initial generation failed)
      */
-    static async regenerateSummary(chatSpaceId: string, userId: string, userRole: string) {
-        const chatSpace = await prisma.chatSpace.findFirst({
-            where: { id: chatSpaceId, deletedAt: null },
+    static async regenerateSummary(sessionDiscussionId: string, userId: string, userRole: string) {
+        const sessionDiscussion = await prisma.sessionDiscussion.findFirst({
+            where: { id: sessionDiscussionId, deletedAt: null },
             include: {
                 group: {
                     include: {
@@ -417,23 +417,23 @@ export class ChatSpaceService {
             },
         });
 
-        if (!chatSpace) {
-            throw ApiError.notFound('Chat space not found');
+        if (!sessionDiscussion) {
+            throw ApiError.notFound('Session discussion not found');
         }
 
         if (userRole === 'student') {
-            const isMember = chatSpace.group.members.some((m) => m.userId === userId);
+            const isMember = sessionDiscussion.group.members.some((m) => m.userId === userId);
             if (!isMember) {
                 throw ApiError.forbidden('You are not a member of this group');
             }
         } else if (userRole === 'lecturer') {
-            if (chatSpace.group.course.ownerId !== userId) {
+            if (sessionDiscussion.group.course.ownerId !== userId) {
                 throw ApiError.forbidden('You do not own this course');
             }
         }
 
         const recentMessages = await ChatLog.find({
-            chatSpaceId,
+            sessionDiscussionId,
             deletedAt: null,
             senderType: { $in: ['student', 'lecturer'] },
         }).sort({ createdAt: -1 }).limit(30).lean();
@@ -455,7 +455,7 @@ export class ChatSpaceService {
                     content: m.content,
                     timestamp: new Date(m.createdAt).toISOString(),
                 })),
-                chatSpaceId,
+                sessionDiscussionId,
                 providerContext,
             ),
             {
@@ -466,8 +466,8 @@ export class ChatSpaceService {
 
         if (summaryResult.success && summaryResult.summary) {
             const summaryGeneratedAt = new Date();
-            await prisma.chatSpace.update({
-                where: { id: chatSpaceId },
+            await prisma.sessionDiscussion.update({
+                where: { id: sessionDiscussionId },
                 data: { summary: summaryResult.summary, summaryGeneratedAt },
             });
             return {

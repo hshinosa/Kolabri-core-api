@@ -10,7 +10,7 @@ vi.mock('../services/analytics.service.js', () => ({
         getCourseAnalytics: vi.fn(),
         analyzeText: vi.fn(),
         getGroupQualityStatus: vi.fn(),
-        getChatSpaceAnalytics: vi.fn(),
+        getSessionDiscussionAnalytics: vi.fn(),
         exportProcessMining: vi.fn(),
     },
 }));

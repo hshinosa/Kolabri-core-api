@@ -97,7 +97,7 @@ export class DataExportService {
             }),
             prisma.chatMessage.findMany({
                 where: { senderId: userId },
-                select: { content: true, senderType: true, createdAt: true, chatSpaceId: true }
+                select: { content: true, senderType: true, createdAt: true, sessionDiscussionId: true }
             }),
             prisma.aiChat.findMany({
                 where: { userId },
@@ -130,12 +130,12 @@ export class DataExportService {
             userData.course = course;
 
             userData.courseReflections = await prisma.reflection.findMany({
-                where: { chatSpace: { group: { courseId } } },
+                where: { sessionDiscussion: { group: { courseId } } },
                 select: { content: true, type: true, createdAt: true }
             });
 
             userData.courseGoals = await prisma.learningGoal.findMany({
-                where: { chatSpace: { group: { courseId } } },
+                where: { sessionDiscussion: { group: { courseId } } },
                 select: { content: true, isValidated: true, createdAt: true }
             });
         }

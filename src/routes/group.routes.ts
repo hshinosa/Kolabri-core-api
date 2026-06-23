@@ -23,14 +23,14 @@ const inviteMembersSchema = z.object({
     member_ids: z.array(z.string().uuid()).min(1, 'At least one member required'),
 });
 
-// Schema for chat space
-const createChatSpaceSchema = z.object({
+// Schema for session discussion
+const createSessionDiscussionSchema = z.object({
     name: z.string().min(1).max(50).trim(),
     description: z.string().max(200).nullish(),
     week_id: z.string().uuid('Invalid week ID').optional(),
 });
 
-const updateChatSpaceWeekSchema = z.object({
+const updateSessionDiscussionWeekSchema = z.object({
     week_id: z.string().uuid('Invalid week ID'),
 });
 
@@ -50,19 +50,19 @@ router.delete('/:id/members/:memberId', GroupController.removeMember);
 // Group member management
 router.post('/:id/invite', validateBody(inviteMembersSchema), GroupController.inviteMembers);
 
-// Chat spaces
-router.get('/chat-spaces/:chatSpaceId', GroupController.getChatSpaceById);
+// Session discussions
+router.get('/session-discussions/:sessionDiscussionId', GroupController.getSessionDiscussionById);
 router.patch(
-    '/chat-spaces/:chatSpaceId/week',
-    validateBody(updateChatSpaceWeekSchema),
-    GroupController.updateChatSpaceWeek
+    '/session-discussions/:sessionDiscussionId/week',
+    validateBody(updateSessionDiscussionWeekSchema),
+    GroupController.updateSessionDiscussionWeek
 );
 router.post(
-    '/chat-spaces/:chatSpaceId/pre-read/complete',
+    '/session-discussions/:sessionDiscussionId/pre-read/complete',
     requireStudent,
     GroupController.completePreRead
 );
-router.get('/:id/chat-spaces', GroupController.getChatSpaces);
-router.post('/:id/chat-spaces', validateBody(createChatSpaceSchema), GroupController.createChatSpace);
+router.get('/:id/session-discussions', GroupController.getSessionDiscussions);
+router.post('/:id/session-discussions', validateBody(createSessionDiscussionSchema), GroupController.createSessionDiscussion);
 
 export default router;

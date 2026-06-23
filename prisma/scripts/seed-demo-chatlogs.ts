@@ -126,7 +126,7 @@ export async function seedDemoChatlogs() {
   const chatLogSchema = new mongoose.Schema({
     courseId: String,
     groupId: String,
-    chatSpaceId: String,
+    sessionDiscussionId: String,
     senderId: String,
     senderName: String,
     senderType: String,
@@ -149,7 +149,7 @@ export async function seedDemoChatlogs() {
   console.log('🧹 Cleaned existing ChatLogs');
 
   const groups = await prisma.group.findMany({
-    include: { course: true, members: { include: { user: true } }, chatSpaces: true },
+    include: { course: true, members: { include: { user: true } }, sessionDiscussions: true },
   });
 
   const NOW = new Date();
@@ -159,8 +159,8 @@ export async function seedDemoChatlogs() {
   for (const group of groups) {
     const courseCode = group.course.code;
     const messages = COURSE_MESSAGES[courseCode] || COURSE_MESSAGES['IF201'];
-    const chatSpace = group.chatSpaces[0];
-    if (!chatSpace) continue;
+    const sessionDiscussion = group.sessionDiscussions[0];
+    if (!sessionDiscussion) continue;
 
     const members = group.members.map(m => ({ id: m.user.id, name: m.user.name }));
 
@@ -178,7 +178,7 @@ export async function seedDemoChatlogs() {
         await ChatLog.create({
           courseId: group.courseId,
           groupId: group.id,
-          chatSpaceId: chatSpace.id,
+          sessionDiscussionId: sessionDiscussion.id,
           senderId: sender.id,
           senderName: sender.name,
           senderType: 'student',

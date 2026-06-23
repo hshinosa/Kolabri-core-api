@@ -55,7 +55,7 @@ describe('sendMessageSchema', () => {
 describe('loadMoreMessagesSchema', () => {
     it('accepts valid payload and applies default limit', () => {
         const result = loadMoreMessagesSchema.safeParse({
-            chatSpaceId: '3dcaea8b-5fd1-44c5-b547-70e3e6f5d3e1',
+            sessionDiscussionId: '3dcaea8b-5fd1-44c5-b547-70e3e6f5d3e1',
             beforeMessageId: '507f1f77bcf86cd799439011',
         });
 
@@ -67,7 +67,7 @@ describe('loadMoreMessagesSchema', () => {
 
     it('rejects invalid beforeMessageId format', () => {
         const result = loadMoreMessagesSchema.safeParse({
-            chatSpaceId: '3dcaea8b-5fd1-44c5-b547-70e3e6f5d3e1',
+            sessionDiscussionId: '3dcaea8b-5fd1-44c5-b547-70e3e6f5d3e1',
             beforeMessageId: 'not-an-object-id',
             limit: 10,
         });
@@ -77,7 +77,7 @@ describe('loadMoreMessagesSchema', () => {
 
     it('rejects limit over maximum', () => {
         const result = loadMoreMessagesSchema.safeParse({
-            chatSpaceId: '3dcaea8b-5fd1-44c5-b547-70e3e6f5d3e1',
+            sessionDiscussionId: '3dcaea8b-5fd1-44c5-b547-70e3e6f5d3e1',
             beforeMessageId: '507f1f77bcf86cd799439011',
             limit: 101,
         });

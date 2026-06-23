@@ -5,7 +5,7 @@ const { prismaMock, cacheMock } = vi.hoisted(() => ({
         user: { count: vi.fn(), findMany: vi.fn() },
         course: { count: vi.fn(), findMany: vi.fn() },
         group: { count: vi.fn() },
-        chatSpace: { count: vi.fn(), findMany: vi.fn() },
+        sessionDiscussion: { count: vi.fn(), findMany: vi.fn() },
         chatMessage: { count: vi.fn(), groupBy: vi.fn(), findMany: vi.fn() },
     },
     cacheMock: {
@@ -29,7 +29,7 @@ import { DashboardService, invalidateDashboardCache } from './dashboard.service.
 
 /**
  * Set up all prisma mocks for a single computeStats call.
- * computeStats runs ~17 parallel queries + 2 follow-up queries (chatSpace.findMany, user.findMany).
+ * computeStats runs ~17 parallel queries + 2 follow-up queries (sessionDiscussion.findMany, user.findMany).
  */
 function mockComputeStatsOnce(opts: { totalUsers?: number } = {}) {
     const totalUsers = opts.totalUsers ?? 10;
@@ -43,14 +43,14 @@ function mockComputeStatsOnce(opts: { totalUsers?: number } = {}) {
         .mockResolvedValueOnce(1);            // usersCreatedInRange
     prismaMock.course.count.mockResolvedValueOnce(2).mockResolvedValueOnce(1);
     prismaMock.group.count.mockResolvedValue(4);
-    prismaMock.chatSpace.count.mockResolvedValue(3);
+    prismaMock.sessionDiscussion.count.mockResolvedValue(3);
     prismaMock.chatMessage.count
         .mockResolvedValueOnce(50)           // totalMessages
         .mockResolvedValueOnce(5)            // messagesToday
         .mockResolvedValueOnce(10);          // aiInteractionsInRange
     prismaMock.chatMessage.groupBy
         .mockResolvedValueOnce([{ senderId: 'user-1' }])                          // activeMessageSenders
-        .mockResolvedValueOnce([{ chatSpaceId: 'cs-1', _count: { id: 5 } }])      // chatSpaceMessageCounts
+        .mockResolvedValueOnce([{ sessionDiscussionId: 'cs-1', _count: { id: 5 } }])      // sessionDiscussionMessageCounts
         .mockResolvedValueOnce([{ senderId: 'user-1', _count: { id: 3 } }]);      // senderMessageCounts
     prismaMock.chatMessage.findMany
         .mockResolvedValueOnce([{ content: 'hello' }])   // recentMessagesForHotCheck
@@ -58,7 +58,7 @@ function mockComputeStatsOnce(opts: { totalUsers?: number } = {}) {
         .mockResolvedValueOnce([]);                       // buildMessageActivityData (2nd call)
 
     // Follow-up queries after Promise.all
-    prismaMock.chatSpace.findMany.mockResolvedValue([
+    prismaMock.sessionDiscussion.findMany.mockResolvedValue([
         { id: 'cs-1', group: { course: { id: 'course-1', name: 'Test Course' } } },
     ]);
     prismaMock.user.findMany.mockResolvedValue([{ id: 'user-1', name: 'Test User' }]);

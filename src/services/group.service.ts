@@ -80,10 +80,10 @@ async function assertCourseWeekBelongsToCourse(weekId: string, courseId: string)
  }
 
 
-async function hasPreReadCompleted(userId: string, chatSpaceId: string): Promise<boolean> {
-    const row = await prisma.chatSpacePreReadCompletion.findUnique({
+async function hasPreReadCompleted(userId: string, sessionDiscussionId: string): Promise<boolean> {
+    const row = await prisma.sessionDiscussionPreReadCompletion.findUnique({
         where: {
-            userId_chatSpaceId: { userId, chatSpaceId },
+            userId_sessionDiscussionId: { userId, sessionDiscussionId },
         },
     });
     return !!row;
@@ -91,24 +91,24 @@ async function hasPreReadCompleted(userId: string, chatSpaceId: string): Promise
 
 async function preReadFlagsForUser(
     userId: string,
-    chatSpaceIds: string[]
+    sessionDiscussionIds: string[]
 ): Promise<Map<string, boolean>> {
     const map = new Map<string, boolean>();
-    if (chatSpaceIds.length === 0) {
+    if (sessionDiscussionIds.length === 0) {
         return map;
     }
-    const rows = await prisma.chatSpacePreReadCompletion.findMany({
+    const rows = await prisma.sessionDiscussionPreReadCompletion.findMany({
         where: {
             userId,
-            chatSpaceId: { in: chatSpaceIds },
+            sessionDiscussionId: { in: sessionDiscussionIds },
         },
-        select: { chatSpaceId: true },
+        select: { sessionDiscussionId: true },
     });
-    for (const id of chatSpaceIds) {
+    for (const id of sessionDiscussionIds) {
         map.set(id, false);
     }
     for (const row of rows) {
-        map.set(row.chatSpaceId, true);
+        map.set(row.sessionDiscussionId, true);
     }
     return map;
 }
@@ -133,7 +133,7 @@ export class GroupService {
     }
 
     /**
-     * Delete a group (lecturer only, cascade deletes members/chat spaces)
+     * Delete a group (lecturer only, cascade deletes members/session discussions)
      */
     static async deleteGroup(groupId: string, userId: string, userRole: string) {
         if (userRole !== 'lecturer') {
@@ -502,7 +502,7 @@ export class GroupService {
                         },
                     },
                 },
-                chatSpaces: {
+                sessionDiscussions: {
                     include: {
                         _count: {
                             select: {
@@ -515,7 +515,7 @@ export class GroupService {
                 _count: {
                     select: {
                         members: true,
-                        chatSpaces: true,
+                        sessionDiscussions: true,
                     },
                 },
             },
@@ -540,13 +540,13 @@ export class GroupService {
             course: group.course,
             creator,
             members: group.members.map((m) => m.user),
-            chatSpaces: group.chatSpaces.map((cs) => ({
+            sessionDiscussions: group.sessionDiscussions.map((cs) => ({
                 id: cs.id,
                 name: cs.name,
                 description: cs.description,
                 isDefault: cs.isDefault,
             })),
-            goalsCount: group.chatSpaces.reduce((sum, cs) => sum + (cs._count?.goals ?? 0), 0),
+            goalsCount: group.sessionDiscussions.reduce((sum, cs) => sum + (cs._count?.goals ?? 0), 0),
             createdAt: group.createdAt,
         };
     }
@@ -656,7 +656,7 @@ export class GroupService {
                         },
                     },
                 },
-                chatSpaces: {
+                sessionDiscussions: {
                     include: {
                         _count: {
                             select: {
@@ -669,7 +669,7 @@ export class GroupService {
                 _count: {
                     select: {
                         members: true,
-                        chatSpaces: true,
+                        sessionDiscussions: true,
                     },
                 },
             },
@@ -690,12 +690,12 @@ export class GroupService {
             members: group.members.map((m) => m.user),
             members_count: group.members.length,
             creator: creatorMap.get(group.createdBy) ?? null,
-            chatSpaces: group.chatSpaces.map((cs) => ({
+            sessionDiscussions: group.sessionDiscussions.map((cs) => ({
                 id: cs.id,
                 name: cs.name,
                 isDefault: cs.isDefault,
             })),
-            goalsCount: group.chatSpaces.reduce((sum, cs) => sum + (cs._count?.goals ?? 0), 0),
+            goalsCount: group.sessionDiscussions.reduce((sum, cs) => sum + (cs._count?.goals ?? 0), 0),
             createdAt: group.createdAt,
         }));
     }
@@ -717,7 +717,7 @@ export class GroupService {
                         },
                     },
                 },
-                chatSpaces: {
+                sessionDiscussions: {
                     include: {
                         goals: {
                             include: {
@@ -749,16 +749,16 @@ export class GroupService {
             }
         }
 
-        // Flatten all goals from all chat spaces
-        const allGoals = group.chatSpaces.flatMap((cs) => 
+        // Flatten all goals from all session discussions
+        const allGoals = group.sessionDiscussions.flatMap((cs) => 
             cs.goals.map((g) => ({
                 id: g.id,
                 content: g.content,
                 isValidated: g.isValidated,
                 createdBy: g.user,
                 createdAt: g.createdAt,
-                chatSpaceId: cs.id,
-                chatSpaceName: cs.name,
+                sessionDiscussionId: cs.id,
+                sessionDiscussionName: cs.name,
             }))
         );
 
@@ -775,7 +775,7 @@ export class GroupService {
             members: group.members.map((m) => m.user),
             members_count: group.members.length,
             creator: creator,
-            chatSpaces: group.chatSpaces.map((cs) => ({
+            sessionDiscussions: group.sessionDiscussions.map((cs) => ({
                 id: cs.id,
                 name: cs.name,
                 description: cs.description,
@@ -823,9 +823,9 @@ export class GroupService {
                                 },
                             },
                         },
-                        chatSpaces: {
+                        sessionDiscussions: {
                             include: {
-                                // Get first goal for this chat space (any member's goal)
+                                // Get first goal for this session discussion (any member's goal)
                                 // This enables shared goals - if any member set a goal, all can use it
                                 goals: {
                                     include: {
@@ -849,10 +849,10 @@ export class GroupService {
         }
 
         const group = groupMembership.group;
-        const { map: weekLabels, warnings } = await resolveWeekLabelsByIds(group.chatSpaces.map((cs) => cs.weekId));
+        const { map: weekLabels, warnings } = await resolveWeekLabelsByIds(group.sessionDiscussions.map((cs) => cs.weekId));
         const preReadMap = await preReadFlagsForUser(
             userId,
-            group.chatSpaces.map((cs) => cs.id)
+            group.sessionDiscussions.map((cs) => cs.id)
         );
 
         const creator = await prisma.user.findUnique({
@@ -867,7 +867,7 @@ export class GroupService {
             members: group.members.map((m) => m.user),
             members_count: group.members.length,
             creator: creator,
-            chatSpaces: group.chatSpaces.map((cs) => ({
+            sessionDiscussions: group.sessionDiscussions.map((cs) => ({
                 id: cs.id,
                 name: cs.name,
                 description: cs.description,
@@ -889,9 +889,9 @@ export class GroupService {
     }
 
     /**
-     * Create a new chat space in a group
+     * Create a new session discussion in a group
      */
-    static async createChatSpace(
+    static async createSessionDiscussion(
         groupId: string,
         data: { name: string; description?: string; week_id?: string },
         userId: string,
@@ -927,7 +927,7 @@ export class GroupService {
         }
         const week = await assertCourseWeekBelongsToCourse(weekId, group.courseId);
 
-        const chatSpace = await prisma.chatSpace.create({
+        const sessionDiscussion = await prisma.sessionDiscussion.create({
             data: {
                 name: data.name,
                 description: data.description,
@@ -938,17 +938,17 @@ export class GroupService {
         });
 
         return {
-            id: chatSpace.id,
-            name: chatSpace.name,
-            description: chatSpace.description,
-            isDefault: chatSpace.isDefault,
-            weekId: chatSpace.weekId,
+            id: sessionDiscussion.id,
+            name: sessionDiscussion.name,
+            description: sessionDiscussion.description,
+            isDefault: sessionDiscussion.isDefault,
+            weekId: sessionDiscussion.weekId,
             weekTitle: week.title,
             weekIndex: week.week_index,
         };
     }
 
-    static async getChatSpaces(
+    static async getSessionDiscussions(
         groupId: string,
         userId: string,
         userRole: string,
@@ -1035,9 +1035,9 @@ export class GroupService {
         const perPage = Math.min(50, Math.max(1, parseInt(String(query?.per_page || '12'), 10) || 12));
         const skip = (page - 1) * perPage;
 
-        const total = await prisma.chatSpace.count({ where });
+        const total = await prisma.sessionDiscussion.count({ where });
 
-        const chatSpaces = await prisma.chatSpace.findMany({
+        const sessionDiscussions = await prisma.sessionDiscussion.findMany({
             where,
             orderBy,
             skip,
@@ -1055,9 +1055,9 @@ export class GroupService {
             },
         });
 
-        let sortedSpaces = chatSpaces;
+        let sortedSpaces = sessionDiscussions;
         if (sort === 'paling-aktif') {
-            sortedSpaces = [...chatSpaces].sort((a, b) => {
+            sortedSpaces = [...sessionDiscussions].sort((a, b) => {
                 const dateA = a.messages[0]?.createdAt?.getTime() || 0;
                 const dateB = b.messages[0]?.createdAt?.getTime() || 0;
                 if (dateA !== dateB) return dateB - dateA;
@@ -1106,11 +1106,11 @@ export class GroupService {
 
 
     /**
-     * Mark pre-read complete for the current user on a chat space (student members only).
+     * Mark pre-read complete for the current user on a session discussion (student members only).
      */
-    static async completePreRead(chatSpaceId: string, userId: string, userRole: string) {
-        const chatSpace = await prisma.chatSpace.findFirst({
-            where: { id: chatSpaceId, deletedAt: null },
+    static async completePreRead(sessionDiscussionId: string, userId: string, userRole: string) {
+        const sessionDiscussion = await prisma.sessionDiscussion.findFirst({
+            where: { id: sessionDiscussionId, deletedAt: null },
             include: {
                 group: {
                     include: {
@@ -1121,57 +1121,57 @@ export class GroupService {
             },
         });
 
-        if (!chatSpace) {
-            throw ApiError.notFound('Chat space not found');
+        if (!sessionDiscussion) {
+            throw ApiError.notFound('Session discussion not found');
         }
 
         if (userRole !== 'student') {
             throw ApiError.forbidden('Only students complete pre-read');
         }
 
-        const isMember = chatSpace.group.members.some((m) => m.userId === userId);
+        const isMember = sessionDiscussion.group.members.some((m) => m.userId === userId);
         if (!isMember) {
             throw ApiError.forbidden('You are not a member of this group');
         }
 
-        if (!chatSpace.weekId) {
-            throw ApiError.badRequest('Chat space has no week binding; pre-read not applicable');
+        if (!sessionDiscussion.weekId) {
+            throw ApiError.badRequest('Session discussion has no week binding; pre-read not applicable');
         }
 
-        const existing = await prisma.chatSpacePreReadCompletion.findUnique({
+        const existing = await prisma.sessionDiscussionPreReadCompletion.findUnique({
             where: {
-                userId_chatSpaceId: { userId, chatSpaceId },
+                userId_sessionDiscussionId: { userId, sessionDiscussionId },
             },
         });
 
         if (existing) {
             return {
-                chatSpaceId,
+                sessionDiscussionId,
                 completedAt: existing.completedAt,
                 alreadyCompleted: true,
             };
         }
 
-        const created = await prisma.chatSpacePreReadCompletion.create({
+        const created = await prisma.sessionDiscussionPreReadCompletion.create({
             data: {
                 userId,
-                chatSpaceId,
+                sessionDiscussionId,
             },
         });
 
         return {
-            chatSpaceId,
+            sessionDiscussionId,
             completedAt: created.completedAt,
             alreadyCompleted: false,
         };
     }
 
     /**
-     * Get a specific chat space by ID
+     * Get a specific session discussion by ID
      */
-    static async getChatSpaceById(chatSpaceId: string, userId: string, userRole: string) {
-        const chatSpace = await prisma.chatSpace.findUnique({
-            where: { id: chatSpaceId },
+    static async getSessionDiscussionById(sessionDiscussionId: string, userId: string, userRole: string) {
+        const sessionDiscussion = await prisma.sessionDiscussion.findUnique({
+            where: { id: sessionDiscussionId },
             include: {
                 group: {
                     include: {
@@ -1179,7 +1179,7 @@ export class GroupService {
                         members: true,
                     },
                 },
-                // Get first goal for this chat space (any member's goal)
+                // Get first goal for this session discussion (any member's goal)
                 // This enables shared goals - if any member set a goal, all can use it
                 goals: {
                     include: {
@@ -1197,60 +1197,60 @@ export class GroupService {
             },
         });
 
-        if (!chatSpace) {
-            throw ApiError.notFound('Chat space not found');
+        if (!sessionDiscussion) {
+            throw ApiError.notFound('Session discussion not found');
         }
 
         // Check permission
         if (userRole === 'lecturer') {
-            if (chatSpace.group.course.ownerId !== userId) {
+            if (sessionDiscussion.group.course.ownerId !== userId) {
                 throw ApiError.forbidden('You do not own this course');
             }
         } else {
-            const isMember = chatSpace.group.members.some((m) => m.userId === userId);
+            const isMember = sessionDiscussion.group.members.some((m) => m.userId === userId);
             if (!isMember) {
                 throw ApiError.forbidden('You are not a member of this group');
             }
         }
 
-        const isClosed = !!chatSpace.closedAt;
-        const hasReflection = chatSpace.reflections.length > 0;
-        const { map: weekLabels, warnings } = await resolveWeekLabelsByIds([chatSpace.weekId]);
-        const weekMeta = weekFieldsFromMap(chatSpace.weekId, weekLabels);
+        const isClosed = !!sessionDiscussion.closedAt;
+        const hasReflection = sessionDiscussion.reflections.length > 0;
+        const { map: weekLabels, warnings } = await resolveWeekLabelsByIds([sessionDiscussion.weekId]);
+        const weekMeta = weekFieldsFromMap(sessionDiscussion.weekId, weekLabels);
         const preReadDone =
             userRole === 'student'
-                ? await hasPreReadCompleted(userId, chatSpaceId)
+                ? await hasPreReadCompleted(userId, sessionDiscussionId)
                 : true;
 
         return {
-            id: chatSpace.id,
-            name: chatSpace.name,
-            description: chatSpace.description,
-            isDefault: chatSpace.isDefault,
-            groupId: chatSpace.groupId,
+            id: sessionDiscussion.id,
+            name: sessionDiscussion.name,
+            description: sessionDiscussion.description,
+            isDefault: sessionDiscussion.isDefault,
+            groupId: sessionDiscussion.groupId,
             weekId: weekMeta.weekId,
             weekTitle: weekMeta.weekTitle,
             weekIndex: weekMeta.weekIndex,
             isClosed,
-            closedAt: chatSpace.closedAt,
+            closedAt: sessionDiscussion.closedAt,
             hasReflection,
             needsReflection: isClosed && !hasReflection && userRole === 'student',
             hasPreReadCompleted: preReadDone,
-            myGoal: chatSpace.goals.length > 0 ? {
-                id: chatSpace.goals[0].id,
-                content: chatSpace.goals[0].content,
-                isValidated: chatSpace.goals[0].isValidated,
-                createdBy: chatSpace.goals[0].user,
-                createdAt: chatSpace.goals[0].createdAt,
+            myGoal: sessionDiscussion.goals.length > 0 ? {
+                id: sessionDiscussion.goals[0].id,
+                content: sessionDiscussion.goals[0].content,
+                isValidated: sessionDiscussion.goals[0].isValidated,
+                createdBy: sessionDiscussion.goals[0].user,
+                createdAt: sessionDiscussion.goals[0].createdAt,
             } : null,
             ...(warnings.length > 0 ? { warnings } : {}),
         };
     }
 
     /**
-     * Assign week_id to chat spaces missing binding (per course, lowest week_index default).
+     * Assign week_id to session discussions missing binding (per course, lowest week_index default).
      */
-    static async backfillChatSpaceWeekIds(courseId?: string) {
+    static async backfillSessionDiscussionWeekIds(courseId?: string) {
         const groups = await prisma.group.findMany({
             where: {
                 deletedAt: null,
@@ -1261,7 +1261,7 @@ export class GroupService {
 
         let updated = 0;
         let skipped = 0;
-        const details: Array<{ chatSpaceId: string; weekId: string }> = [];
+        const details: Array<{ sessionDiscussionId: string; weekId: string }> = [];
 
         for (const group of groups) {
             let defaultWeekId: string | undefined;
@@ -1281,7 +1281,7 @@ export class GroupService {
                 continue;
             }
 
-            const spaces = await prisma.chatSpace.findMany({
+            const spaces = await prisma.sessionDiscussion.findMany({
                 where: {
                     groupId: group.id,
                     deletedAt: null,
@@ -1291,26 +1291,26 @@ export class GroupService {
             });
 
             for (const space of spaces) {
-                await prisma.chatSpace.update({
+                await prisma.sessionDiscussion.update({
                     where: { id: space.id },
                     data: { weekId: defaultWeekId },
                 });
                 updated += 1;
-                details.push({ chatSpaceId: space.id, weekId: defaultWeekId });
+                details.push({ sessionDiscussionId: space.id, weekId: defaultWeekId });
             }
         }
 
         return { updated, skippedCoursesWithoutWeeks: skipped, assignments: details };
     }
 
-    static async updateChatSpaceWeek(
-        chatSpaceId: string,
+    static async updateSessionDiscussionWeek(
+        sessionDiscussionId: string,
         weekId: string,
         userId: string,
         userRole: string
     ) {
-        const chatSpace = await prisma.chatSpace.findFirst({
-            where: { id: chatSpaceId, deletedAt: null },
+        const sessionDiscussion = await prisma.sessionDiscussion.findFirst({
+            where: { id: sessionDiscussionId, deletedAt: null },
             include: {
                 group: {
                     include: {
@@ -1320,22 +1320,22 @@ export class GroupService {
             },
         });
 
-        if (!chatSpace) {
-            throw ApiError.notFound('Chat space not found');
+        if (!sessionDiscussion) {
+            throw ApiError.notFound('Session discussion not found');
         }
 
         if (userRole !== 'lecturer' && userRole !== 'admin') {
             throw ApiError.forbidden('Only lecturers can reassign session week');
         }
 
-        if (chatSpace.group.course.ownerId !== userId && userRole !== 'admin') {
+        if (sessionDiscussion.group.course.ownerId !== userId && userRole !== 'admin') {
             throw ApiError.forbidden('You do not own this course');
         }
 
-        await assertCourseWeekBelongsToCourse(weekId, chatSpace.group.courseId);
+        await assertCourseWeekBelongsToCourse(weekId, sessionDiscussion.group.courseId);
 
-        const updated = await prisma.chatSpace.update({
-            where: { id: chatSpaceId },
+        const updated = await prisma.sessionDiscussion.update({
+            where: { id: sessionDiscussionId },
             data: { weekId },
         });
 

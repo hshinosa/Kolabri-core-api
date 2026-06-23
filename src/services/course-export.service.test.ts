@@ -113,7 +113,7 @@ describe('CourseExportService', () => {
             {
                 id: 'group-1',
                 name: 'Group One',
-                chatSpaces: [{ id: 'chat-1', name: 'Week 1', type: 'discussion', createdAt: new Date('2026-01-03T00:00:00.000Z'), closedAt: null }],
+                sessionDiscussions: [{ id: 'chat-1', name: 'Week 1', type: 'discussion', createdAt: new Date('2026-01-03T00:00:00.000Z'), closedAt: null }],
                 members: [{ userId: 'student-1', user: { id: 'student-1', name: 'Student One' } }],
             },
         ]);

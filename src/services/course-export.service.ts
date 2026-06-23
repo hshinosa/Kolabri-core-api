@@ -165,7 +165,7 @@ export class CourseExportService {
             const groups = await prisma.group.findMany({
                 where: { courseId, deletedAt: null },
                 include: {
-                    chatSpaces: {
+                    sessionDiscussions: {
                         select: {
                             id: true,
                             name: true,
@@ -186,20 +186,20 @@ export class CourseExportService {
             const interactionData: any[] = [];
 
             for (const group of groups) {
-                for (const chatSpace of group.chatSpaces) {
+                for (const sessionDiscussion of group.sessionDiscussions) {
                     const messageCount = await ChatLog.countDocuments({
-                        chatSpaceId: chatSpace.id,
+                        sessionDiscussionId: sessionDiscussion.id,
                         deletedAt: null
                     });
 
                     sessionData.push({
                         groupId: group.id,
                         groupName: group.name,
-                        chatSpaceId: chatSpace.id,
-                        chatSpaceName: chatSpace.name,
-                        chatSpaceType: chatSpace.type || '',
-                        createdAt: chatSpace.createdAt.toISOString(),
-                        closedAt: chatSpace.closedAt?.toISOString() || '',
+                        sessionDiscussionId: sessionDiscussion.id,
+                        sessionDiscussionName: sessionDiscussion.name,
+                        sessionDiscussionType: sessionDiscussion.type || '',
+                        createdAt: sessionDiscussion.createdAt.toISOString(),
+                        closedAt: sessionDiscussion.closedAt?.toISOString() || '',
                         totalMessages: messageCount,
                         memberCount: group.members.length
                     });
@@ -207,7 +207,7 @@ export class CourseExportService {
                     const messageCounts = await ChatLog.aggregate([
                         {
                             $match: {
-                                chatSpaceId: chatSpace.id,
+                                sessionDiscussionId: sessionDiscussion.id,
                                 deletedAt: null,
                                 senderType: 'student'
                             }
@@ -223,8 +223,8 @@ export class CourseExportService {
                     for (const mc of messageCounts) {
                         const member = group.members.find(m => m.userId === mc._id);
                         interactionData.push({
-                            chatSpaceId: chatSpace.id,
-                            chatSpaceName: chatSpace.name,
+                            sessionDiscussionId: sessionDiscussion.id,
+                            sessionDiscussionName: sessionDiscussion.name,
                             groupId: group.id,
                             groupName: group.name,
                             studentId: mc._id,
@@ -240,7 +240,7 @@ export class CourseExportService {
                 const sessionsCsv = parser.parse(sessionData);
                 archive.append(sessionsCsv, { name: 'sessions.csv' });
             } else {
-                archive.append('groupId,groupName,chatSpaceId,chatSpaceName,chatSpaceType,createdAt,closedAt,totalMessages,memberCount\n', { name: 'sessions.csv' });
+                archive.append('groupId,groupName,sessionDiscussionId,sessionDiscussionName,sessionDiscussionType,createdAt,closedAt,totalMessages,memberCount\n', { name: 'sessions.csv' });
             }
 
             if (interactionData.length > 0) {
@@ -248,7 +248,7 @@ export class CourseExportService {
                 const interactionsCsv = parser.parse(interactionData);
                 archive.append(interactionsCsv, { name: 'interactions.csv' });
             } else {
-                archive.append('chatSpaceId,chatSpaceName,groupId,groupName,studentId,studentName,messageCount\n', { name: 'interactions.csv' });
+                archive.append('sessionDiscussionId,sessionDiscussionName,groupId,groupName,studentId,studentName,messageCount\n', { name: 'interactions.csv' });
             }
 
             const totalMessages = sessionData.reduce((sum, s) => sum + s.totalMessages, 0);
@@ -260,7 +260,7 @@ export class CourseExportService {
                 courseCode: course?.code,
                 totalStudents: enrollmentData.length,
                 totalGroups: groups.length,
-                totalChatSpaces: sessionData.length,
+                totalSessionDiscussions: sessionData.length,
                 totalMessages,
                 averageMessagesPerSession: Math.round(avgMessagesPerSession * 10) / 10,
                 exportedAt: new Date().toISOString()

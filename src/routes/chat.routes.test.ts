@@ -100,7 +100,7 @@ describe('chat.routes', () => {
             expect(res.body.data[0].sender_name).toBe('Alice');
             expect(res.body.pagination.has_more).toBe(false);
             expect(chatLogMock.find).toHaveBeenCalledWith({
-                chatSpaceId: 'cs-1',
+                sessionDiscussionId: 'cs-1',
                 content: { $regex: 'hello', $options: 'i' },
                 deletedAt: null,
             });
@@ -135,7 +135,7 @@ describe('chat.routes', () => {
                     senderName: 'Lecturer',
                     pinnedAt,
                     pinnedBy: 'lecturer-1',
-                    chatSpaceId: 'cs-1',
+                    sessionDiscussionId: 'cs-1',
                     createdAt: new Date('2026-01-01'),
                 },
             ];
@@ -155,7 +155,7 @@ describe('chat.routes', () => {
             expect(res.body.data[0].content).toBe('Important note');
             expect(res.body.data[0].pinned_by).toBe('lecturer-1');
             expect(chatLogMock.find).toHaveBeenCalledWith({
-                chatSpaceId: 'cs-1',
+                sessionDiscussionId: 'cs-1',
                 isPinned: true,
                 deletedAt: null,
             });
@@ -169,7 +169,7 @@ describe('chat.routes', () => {
                     senderName: 'Alice',
                     pinnedAt: null,
                     pinnedBy: null as string | null,
-                    chatSpaceId: 'cs-1',
+                    sessionDiscussionId: 'cs-1',
                     createdAt: new Date('2026-01-01'),
                 },
             ];
@@ -204,7 +204,7 @@ describe('chat.routes', () => {
                 _id: { toString: () => '507f1f77bcf86cd799439011' },
                 content: 'Pin me',
                 senderName: 'Bob',
-                chatSpaceId: 'cs-1',
+                sessionDiscussionId: 'cs-1',
                 isPinned: false,
                 pinnedAt: null as Date | null,
                 pinnedBy: null as string | null,
@@ -233,7 +233,7 @@ describe('chat.routes', () => {
 
         it('returns 404 when message does not belong to conversation', async () => {
             chatLogMock.findById.mockResolvedValue({
-                chatSpaceId: 'cs-other',
+                sessionDiscussionId: 'cs-other',
             });
 
             const res = await request(app)
@@ -318,7 +318,7 @@ describe('chat.routes', () => {
         it('sets topic on a message', async () => {
             const mockMessage = {
                 _id: { toString: () => '507f1f77bcf86cd799439011' },
-                chatSpaceId: 'cs-1',
+                sessionDiscussionId: 'cs-1',
                 topic: undefined as string | undefined,
                 save: vi.fn().mockImplementation(function (this: any) {
                     this.topic = 'Q1 Analysis';
@@ -341,7 +341,7 @@ describe('chat.routes', () => {
         it('clears topic when given empty string', async () => {
             const mockMessage = {
                 _id: { toString: () => '507f1f77bcf86cd799439011' },
-                chatSpaceId: 'cs-1',
+                sessionDiscussionId: 'cs-1',
                 topic: 'Old Topic',
                 save: vi.fn().mockImplementation(function (this: any) {
                     this.topic = undefined;

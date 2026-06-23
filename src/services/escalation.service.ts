@@ -23,11 +23,11 @@ export function getThresholds(escalationConfig?: { nudgeAfterMs?: number; probeA
 export async function findOrCreateState(
     courseId: string,
     groupId: string,
-    chatSpaceId: string,
+    sessionDiscussionId: string,
     issueType: IssueType,
 ): Promise<IEscalationState> {
     const existing = await EscalationState.findOne({
-        chatSpaceId,
+        sessionDiscussionId,
         issueType,
         currentStage: { $ne: 'resolved' },
     });
@@ -41,7 +41,7 @@ export async function findOrCreateState(
     const state = new EscalationState({
         courseId,
         groupId,
-        chatSpaceId,
+        sessionDiscussionId,
         issueType,
         currentStage: 'new',
         history: [{

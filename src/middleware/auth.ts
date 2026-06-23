@@ -12,7 +12,7 @@ export interface JwtPayload {
 
  export interface AuthenticatedRequest extends Request {
      user?: JwtPayload;
-     chatSpaceId?: string;
+     sessionDiscussionId?: string;
      groupId?: string;
  }
 

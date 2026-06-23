@@ -2,7 +2,7 @@ import { beforeEach, describe, expect, it, vi } from 'vitest';
 
 const { prismaMock, isGroupMemberMock, validateGoalContentMock, providerResolutionServiceMock } = vi.hoisted(() => ({
     prismaMock: {
-        chatSpace: { findUnique: vi.fn(), findFirst: vi.fn() },
+        sessionDiscussion: { findUnique: vi.fn(), findFirst: vi.fn() },
         learningGoal: { findFirst: vi.fn(), findMany: vi.fn(), findUnique: vi.fn(), create: vi.fn() },
     },
     isGroupMemberMock: vi.fn(),
@@ -60,7 +60,7 @@ vi.mock('./providerResolution.service.js', () => ({
 
 vi.mock('./weekContext.service.js', () => ({
     WeekContextService: {
-        sessionWeekForChatSpace: vi.fn(() =>
+        sessionWeekForSessionDiscussion: vi.fn(() =>
             Promise.resolve({
                 weekTitle: 'Minggu 1',
                 weekIndex: 1,
@@ -91,8 +91,8 @@ describe('GoalService', () => {
         });
     });
 
-    it('creates a shared goal for a chat space when validation passes', async () => {
-        prismaMock.chatSpace.findFirst.mockResolvedValue({
+    it('creates a shared goal for a session discussion when validation passes', async () => {
+        prismaMock.sessionDiscussion.findFirst.mockResolvedValue({
             id: 'chat-1',
             groupId: 'group-1',
             group: { id: 'group-1', name: 'Group 1' },
@@ -106,12 +106,12 @@ describe('GoalService', () => {
             isValidated: true,
             createdAt: new Date('2026-05-01T00:00:00.000Z'),
             user: { id: 'user-1', name: 'Student One' },
-            chatSpace: { id: 'chat-1', name: 'Chat 1', group: { id: 'group-1', name: 'Group 1' } },
+            sessionDiscussion: { id: 'chat-1', name: 'Chat 1', group: { id: 'group-1', name: 'Group 1' } },
         });
 
         const result = await GoalService.createGoal(
             {
-                chat_space_id: 'chat-1',
+                session_discussion_id: 'chat-1',
                 content: 'Menganalisis data pembelajaran secara kolaboratif.',
             },
             'user-1'
@@ -131,7 +131,7 @@ describe('GoalService', () => {
             expect.objectContaining({
                 data: {
                     content: 'Menganalisis data pembelajaran secara kolaboratif.',
-                    chatSpaceId: 'chat-1',
+                    sessionDiscussionId: 'chat-1',
                     userId: 'user-1',
                     isValidated: true,
                 },
@@ -141,14 +141,14 @@ describe('GoalService', () => {
             id: 'goal-1',
             content: 'Menganalisis data pembelajaran secara kolaboratif.',
             isValidated: true,
-            chatSpace: { id: 'chat-1', name: 'Chat 1', group: { id: 'group-1', name: 'Group 1' } },
+            sessionDiscussion: { id: 'chat-1', name: 'Chat 1', group: { id: 'group-1', name: 'Group 1' } },
             createdBy: { id: 'user-1', name: 'Student One' },
             createdAt: new Date('2026-05-01T00:00:00.000Z'),
         });
     });
 
     it('returns the existing shared goal instead of creating a duplicate', async () => {
-        prismaMock.chatSpace.findFirst.mockResolvedValue({ id: 'chat-1', groupId: 'group-1' });
+        prismaMock.sessionDiscussion.findFirst.mockResolvedValue({ id: 'chat-1', groupId: 'group-1' });
         isGroupMemberMock.mockResolvedValue(true);
         prismaMock.learningGoal.findFirst.mockResolvedValue({
             id: 'goal-1',
@@ -156,32 +156,32 @@ describe('GoalService', () => {
             isValidated: true,
             createdAt: new Date('2026-05-01T00:00:00.000Z'),
             user: { id: 'user-1', name: 'Student One' },
-            chatSpace: { id: 'chat-1', name: 'Chat 1', group: { id: 'group-1', name: 'Group 1' } },
+            sessionDiscussion: { id: 'chat-1', name: 'Chat 1', group: { id: 'group-1', name: 'Group 1' } },
         });
 
-        const result = await GoalService.createGoal({ chat_space_id: 'chat-1', content: 'Existing goal' }, 'user-1');
+        const result = await GoalService.createGoal({ session_discussion_id: 'chat-1', content: 'Existing goal' }, 'user-1');
 
         expect(prismaMock.learningGoal.create).not.toHaveBeenCalled();
         expect(result.id).toBe('goal-1');
     });
 
-    it('rejects goal creation for unknown chat spaces', async () => {
-        prismaMock.chatSpace.findFirst.mockResolvedValue(null);
+    it('rejects goal creation for unknown session discussions', async () => {
+        prismaMock.sessionDiscussion.findFirst.mockResolvedValue(null);
 
         await expect(
-            GoalService.createGoal({ chat_space_id: 'chat-1', content: 'Menganalisis topik pembelajaran bersama-sama.' }, 'user-1')
+            GoalService.createGoal({ session_discussion_id: 'chat-1', content: 'Menganalisis topik pembelajaran bersama-sama.' }, 'user-1')
         ).rejects.toMatchObject({
             statusCode: 404,
-            message: 'Chat space not found',
+            message: 'Session discussion not found',
         });
     });
 
     it('rejects goal creation when the user is not a group member', async () => {
-        prismaMock.chatSpace.findFirst.mockResolvedValue({ id: 'chat-1', groupId: 'group-1' });
+        prismaMock.sessionDiscussion.findFirst.mockResolvedValue({ id: 'chat-1', groupId: 'group-1' });
         isGroupMemberMock.mockResolvedValue(false);
 
         await expect(
-            GoalService.createGoal({ chat_space_id: 'chat-1', content: 'Menganalisis topik pembelajaran bersama-sama.' }, 'user-1')
+            GoalService.createGoal({ session_discussion_id: 'chat-1', content: 'Menganalisis topik pembelajaran bersama-sama.' }, 'user-1')
         ).rejects.toMatchObject({
             statusCode: 403,
             message: 'You are not a member of this group',
@@ -189,7 +189,7 @@ describe('GoalService', () => {
     });
 
     it('rejects goal creation when SMART/Bloom validation fails', async () => {
-        prismaMock.chatSpace.findFirst.mockResolvedValue({ id: 'chat-1', groupId: 'group-1' });
+        prismaMock.sessionDiscussion.findFirst.mockResolvedValue({ id: 'chat-1', groupId: 'group-1' });
         isGroupMemberMock.mockResolvedValue(true);
         prismaMock.learningGoal.findFirst.mockResolvedValue(null);
         validateGoalContentMock.mockReturnValue({
@@ -198,7 +198,7 @@ describe('GoalService', () => {
         });
 
         await expect(
-            GoalService.createGoal({ chat_space_id: 'chat-1', content: 'Belajar lebih baik saja.' }, 'user-1')
+            GoalService.createGoal({ session_discussion_id: 'chat-1', content: 'Belajar lebih baik saja.' }, 'user-1')
         ).rejects.toMatchObject({
             statusCode: 400,
             message: 'Tujuan harus mengandung kata kerja aksi dari Taksonomi Bloom',
@@ -206,7 +206,7 @@ describe('GoalService', () => {
     });
 
     it('rejects with socratic_hint details when AI week validation returns revise', async () => {
-        prismaMock.chatSpace.findFirst.mockResolvedValue({
+        prismaMock.sessionDiscussion.findFirst.mockResolvedValue({
             id: 'chat-1',
             groupId: 'group-1',
             weekId: 'week-1',
@@ -226,7 +226,7 @@ describe('GoalService', () => {
 
         await expect(
             GoalService.createGoal(
-                { chat_space_id: 'chat-1', content: 'Menganalisis topik yang tidak terkait minggu ini sama sekali.' },
+                { session_discussion_id: 'chat-1', content: 'Menganalisis topik yang tidak terkait minggu ini sama sekali.' },
                 'user-1',
             ),
         ).rejects.toMatchObject({
@@ -237,8 +237,8 @@ describe('GoalService', () => {
         expect(prismaMock.learningGoal.create).not.toHaveBeenCalled();
     });
 
-    it('returns empty goals for a chat space with no shared goal', async () => {
-        prismaMock.chatSpace.findFirst.mockResolvedValue({
+    it('returns empty goals for a session discussion with no shared goal', async () => {
+        prismaMock.sessionDiscussion.findFirst.mockResolvedValue({
             id: 'chat-1',
             groupId: 'group-1',
             group: { course: { ownerId: 'lecturer-1' } },
@@ -246,13 +246,13 @@ describe('GoalService', () => {
         isGroupMemberMock.mockResolvedValue(true);
         prismaMock.learningGoal.findFirst.mockResolvedValue(null);
 
-        const result = await GoalService.getChatSpaceGoals('chat-1', 'user-1', 'student');
+        const result = await GoalService.getSessionDiscussionGoals('chat-1', 'user-1', 'student');
 
         expect(result).toEqual([]);
     });
 
-    it('returns shared chat space goals for lecturers who own the course', async () => {
-        prismaMock.chatSpace.findFirst.mockResolvedValue({
+    it('returns shared session discussion goals for lecturers who own the course', async () => {
+        prismaMock.sessionDiscussion.findFirst.mockResolvedValue({
             id: 'chat-1',
             groupId: 'group-1',
             group: { course: { ownerId: 'lecturer-1' } },
@@ -266,7 +266,7 @@ describe('GoalService', () => {
             _count: { reflections: 2 },
         });
 
-        const result = await GoalService.getChatSpaceGoals('chat-1', 'lecturer-1', 'lecturer');
+        const result = await GoalService.getSessionDiscussionGoals('chat-1', 'lecturer-1', 'lecturer');
 
         expect(result).toEqual([
             {
@@ -280,27 +280,27 @@ describe('GoalService', () => {
         ]);
     });
 
-    it('rejects lecturers who do not own the course when viewing chat space goals', async () => {
-        prismaMock.chatSpace.findFirst.mockResolvedValue({
+    it('rejects lecturers who do not own the course when viewing session discussion goals', async () => {
+        prismaMock.sessionDiscussion.findFirst.mockResolvedValue({
             id: 'chat-1',
             groupId: 'group-1',
             group: { course: { ownerId: 'lecturer-1' } },
         });
 
-        await expect(GoalService.getChatSpaceGoals('chat-1', 'lecturer-2', 'lecturer')).rejects.toMatchObject({
+        await expect(GoalService.getSessionDiscussionGoals('chat-1', 'lecturer-2', 'lecturer')).rejects.toMatchObject({
             statusCode: 403,
             message: 'You do not own this course',
         });
     });
 
-    it('maps the current user goals across chat spaces', async () => {
+    it('maps the current user goals across session discussions', async () => {
         prismaMock.learningGoal.findMany.mockResolvedValue([
             {
                 id: 'goal-1',
                 content: 'Goal 1',
                 isValidated: true,
                 createdAt: new Date('2026-05-01T00:00:00.000Z'),
-                chatSpace: {
+                sessionDiscussion: {
                     id: 'chat-1',
                     name: 'Chat 1',
                     group: {
@@ -320,7 +320,7 @@ describe('GoalService', () => {
                 id: 'goal-1',
                 content: 'Goal 1',
                 isValidated: true,
-                chatSpace: {
+                sessionDiscussion: {
                     id: 'chat-1',
                     name: 'Chat 1',
                     group: {
@@ -348,7 +348,7 @@ describe('GoalService', () => {
         prismaMock.learningGoal.findUnique.mockResolvedValue({
             id: 'goal-1',
             userId: 'owner-1',
-            chatSpace: { groupId: 'group-1', group: { course: { ownerId: 'lecturer-1' } } },
+            sessionDiscussion: { groupId: 'group-1', group: { course: { ownerId: 'lecturer-1' } } },
         });
         isGroupMemberMock.mockResolvedValue(false);
 
@@ -366,7 +366,7 @@ describe('GoalService', () => {
             isValidated: true,
             createdAt: new Date('2026-05-01T00:00:00.000Z'),
             user: { id: 'owner-1', name: 'Owner' },
-            chatSpace: {
+            sessionDiscussion: {
                 id: 'chat-1',
                 name: 'Chat 1',
                 groupId: 'group-1',
@@ -394,7 +394,7 @@ describe('GoalService', () => {
             content: 'Analyze the topic deeply.',
             isValidated: true,
             createdBy: { id: 'owner-1', name: 'Owner' },
-            chatSpace: {
+            sessionDiscussion: {
                 id: 'chat-1',
                 name: 'Chat 1',
                 group: {
@@ -415,15 +415,15 @@ describe('GoalService', () => {
         });
     });
 
-    it('returns null when a user goal is not found in a chat space', async () => {
+    it('returns null when a user goal is not found in a session discussion', async () => {
         prismaMock.learningGoal.findFirst.mockResolvedValue(null);
 
-        const result = await GoalService.getUserGoalInChatSpace('chat-1', 'user-1');
+        const result = await GoalService.getUserGoalInSessionDiscussion('chat-1', 'user-1');
 
         expect(result).toBeNull();
     });
 
-    it('returns the first shared goal for a chat space', async () => {
+    it('returns the first shared goal for a session discussion', async () => {
         prismaMock.learningGoal.findFirst.mockResolvedValue({
             id: 'goal-1',
             content: 'Shared goal',
@@ -432,7 +432,7 @@ describe('GoalService', () => {
             user: { id: 'user-1', name: 'Student One' },
         });
 
-        const result = await GoalService.getUserGoalInChatSpace('chat-1', 'user-1');
+        const result = await GoalService.getUserGoalInSessionDiscussion('chat-1', 'user-1');
 
         expect(result).toEqual({
             id: 'goal-1',
@@ -444,7 +444,7 @@ describe('GoalService', () => {
     });
 
     it('returns shared goal metadata only to group members', async () => {
-        prismaMock.chatSpace.findFirst.mockResolvedValue({ id: 'chat-1', groupId: 'group-1', group: { id: 'group-1' } });
+        prismaMock.sessionDiscussion.findFirst.mockResolvedValue({ id: 'chat-1', groupId: 'group-1', group: { id: 'group-1' } });
         isGroupMemberMock.mockResolvedValue(true);
         prismaMock.learningGoal.findFirst.mockResolvedValue({
             id: 'goal-1',
@@ -454,16 +454,16 @@ describe('GoalService', () => {
             user: { id: 'user-1', name: 'Student One' },
         });
 
-        const result = await GoalService.getChatSpaceSharedGoal('chat-1', 'user-1');
+        const result = await GoalService.getSessionDiscussionSharedGoal('chat-1', 'user-1');
 
         expect(result?.id).toBe('goal-1');
     });
 
     it('rejects shared goal access for non-members', async () => {
-        prismaMock.chatSpace.findFirst.mockResolvedValue({ id: 'chat-1', groupId: 'group-1', group: { id: 'group-1' } });
+        prismaMock.sessionDiscussion.findFirst.mockResolvedValue({ id: 'chat-1', groupId: 'group-1', group: { id: 'group-1' } });
         isGroupMemberMock.mockResolvedValue(false);
 
-        await expect(GoalService.getChatSpaceSharedGoal('chat-1', 'user-2')).rejects.toMatchObject({
+        await expect(GoalService.getSessionDiscussionSharedGoal('chat-1', 'user-2')).rejects.toMatchObject({
             statusCode: 403,
             message: 'You are not a member of this group',
         });

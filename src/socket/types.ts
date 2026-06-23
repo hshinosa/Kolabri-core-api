@@ -11,7 +11,7 @@ export interface ChatHistoryItem {
     _id: { toString(): string };
     courseId: string;
     groupId: string;
-    chatSpaceId: string;
+    sessionDiscussionId: string;
     senderId: string;
     senderName: string;
     senderType: 'student' | 'lecturer' | 'ai' | 'bot' | 'system';

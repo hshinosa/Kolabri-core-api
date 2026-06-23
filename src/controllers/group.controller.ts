@@ -242,13 +242,13 @@ export class GroupController {
     }
 
     /**
-     * POST /api/groups/:id/chat-spaces
-     * Create a new chat space in a group
+     * POST /api/groups/:id/session-discussions
+     * Create a new session discussion in a group
      */
-    static async createChatSpace(req: AuthenticatedRequest, res: Response, next: NextFunction) {
+    static async createSessionDiscussion(req: AuthenticatedRequest, res: Response, next: NextFunction) {
         try {
             const groupId = req.params.id;
-            const chatSpace = await GroupService.createChatSpace(
+            const sessionDiscussion = await GroupService.createSessionDiscussion(
                 groupId,
                 req.body,
                 req.user!.userId,
@@ -256,9 +256,9 @@ export class GroupController {
             );
 
             res.status(201).json({
-                data: chatSpace,
+                data: sessionDiscussion,
                 meta: {
-                    message: 'Chat space created successfully',
+                    message: 'Session discussion created successfully',
                 },
             });
         } catch (error) {
@@ -267,51 +267,51 @@ export class GroupController {
     }
 
     /**
-     * GET /api/groups/:id/chat-spaces
-     * Get all chat spaces in a group
+     * GET /api/groups/:id/session-discussions
+     * Get all session discussions in a group
      */
-    static async getChatSpaces(req: AuthenticatedRequest, res: Response, next: NextFunction) {
+    static async getSessionDiscussions(req: AuthenticatedRequest, res: Response, next: NextFunction) {
         try {
             const groupId = req.params.id;
-            const chatSpaces = await GroupService.getChatSpaces(
+            const sessionDiscussions = await GroupService.getSessionDiscussions(
                 groupId,
                 req.user!.userId,
                 req.user!.role,
                 req.query as any
             );
 
-            res.json(chatSpaces);
+            res.json(sessionDiscussions);
         } catch (error) {
             next(error);
         }
     }
 
     /**
-     * GET /api/groups/chat-spaces/:chatSpaceId
-     * Get a specific chat space by ID
+     * GET /api/groups/session-discussions/:sessionDiscussionId
+     * Get a specific session discussion by ID
      */
-    static async getChatSpaceById(req: AuthenticatedRequest, res: Response, next: NextFunction) {
+    static async getSessionDiscussionById(req: AuthenticatedRequest, res: Response, next: NextFunction) {
         try {
-            const chatSpaceId = req.params.chatSpaceId;
-            const chatSpace = await GroupService.getChatSpaceById(
-                chatSpaceId,
+            const sessionDiscussionId = req.params.sessionDiscussionId;
+            const sessionDiscussion = await GroupService.getSessionDiscussionById(
+                sessionDiscussionId,
                 req.user!.userId,
                 req.user!.role
             );
 
             res.json({
-                data: chatSpace,
+                data: sessionDiscussion,
             });
         } catch (error) {
             next(error);
         }
     }
 
-    static async updateChatSpaceWeek(req: AuthenticatedRequest, res: Response, next: NextFunction) {
+    static async updateSessionDiscussionWeek(req: AuthenticatedRequest, res: Response, next: NextFunction) {
         try {
             const { week_id: weekId } = req.body as { week_id: string };
-            const result = await GroupService.updateChatSpaceWeek(
-                req.params.chatSpaceId,
+            const result = await GroupService.updateSessionDiscussionWeek(
+                req.params.sessionDiscussionId,
                 weekId,
                 req.user!.userId,
                 req.user!.role
@@ -323,12 +323,12 @@ export class GroupController {
     }
 
     /**
-     * POST /api/groups/chat-spaces/:chatSpaceId/pre-read/complete
+     * POST /api/groups/session-discussions/:sessionDiscussionId/pre-read/complete
      */
     static async completePreRead(req: AuthenticatedRequest, res: Response, next: NextFunction) {
         try {
             const result = await GroupService.completePreRead(
-                req.params.chatSpaceId,
+                req.params.sessionDiscussionId,
                 req.user!.userId,
                 req.user!.role
             );

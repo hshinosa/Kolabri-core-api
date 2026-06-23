@@ -13,7 +13,7 @@ export interface EscalationHistoryEntry {
 export interface IEscalationState extends Document {
     courseId: string;
     groupId: string;
-    chatSpaceId: string;
+    sessionDiscussionId: string;
     issueType: IssueType;
     currentStage: EscalationStage;
     history: EscalationHistoryEntry[];
@@ -39,7 +39,7 @@ const EscalationStateSchema = new Schema<IEscalationState>(
     {
         courseId: { type: String, required: true, index: true },
         groupId: { type: String, required: true, index: true },
-        chatSpaceId: { type: String, required: true, index: true },
+        sessionDiscussionId: { type: String, required: true, index: true },
         issueType: { type: String, enum: ['silence', 'low_quality', 'unresolved_blocker'], required: true },
         currentStage: { type: String, enum: ['new', 'nudge', 'probe-blocker', 'flag-lecturer', 'resolved'], default: 'new' },
         history: { type: [EscalationHistorySchema], default: [] },
@@ -53,7 +53,7 @@ const EscalationStateSchema = new Schema<IEscalationState>(
     }
 );
 
-EscalationStateSchema.index({ chatSpaceId: 1, issueType: 1, currentStage: 1 });
+EscalationStateSchema.index({ sessionDiscussionId: 1, issueType: 1, currentStage: 1 });
 EscalationStateSchema.index({ courseId: 1, currentStage: 1 });
 EscalationStateSchema.index({ groupId: 1, currentStage: 1 });
 

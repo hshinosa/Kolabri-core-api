@@ -10,7 +10,7 @@ export function invalidateDashboardCache() {
 
 type ActivityItem = {
     id: string;
-    type: 'user' | 'course' | 'chat_space';
+    type: 'user' | 'course' | 'session_discussion';
     title: string;
     description: string;
     createdAt: Date;
@@ -95,14 +95,14 @@ export class DashboardService {
             totalCourses,
             activeCourses,
             totalGroups,
-            totalChatSpaces,
+            totalSessionDiscussions,
             totalMessages,
             messagesToday,
             usersCreatedInRange,
             activeMessageSenders,
             aiInteractionsInRange,
             totalMessagesInRange,
-            chatSpaceMessageCounts,
+            sessionDiscussionMessageCounts,
             senderMessageCounts,
             recentMessagesForHotCheck,
         ] = await Promise.all([
@@ -113,7 +113,7 @@ export class DashboardService {
             prisma.course.count({ where: { isArchived: false } }),
             prisma.course.count({ where: { isArchived: false, isActive: true } }),
             prisma.group.count(),
-            prisma.chatSpace.count(),
+            prisma.sessionDiscussion.count(),
             prisma.chatMessage.count(),
             prisma.chatMessage.count({
                 where: {
@@ -135,7 +135,7 @@ export class DashboardService {
             }),
             prisma.chatMessage.count({ where: messagesWhere }),
             prisma.chatMessage.groupBy({
-                by: ['chatSpaceId'],
+                by: ['sessionDiscussionId'],
                 where: messagesWhere,
                 _count: { id: true },
             }),
@@ -159,9 +159,9 @@ export class DashboardService {
         const hotThinkingPercentage = Number((hotThinkingRatio * 100).toFixed(1));
         const qualityScore = Number(Math.min(100, hotThinkingPercentage * 0.7 + Math.min(totalMessagesInRange, 200) * 0.15).toFixed(1));
 
-        const chatSpaceIds = chatSpaceMessageCounts.map((cs) => cs.chatSpaceId).filter(Boolean) as string[];
-        const chatSpaces = await prisma.chatSpace.findMany({
-            where: { id: { in: chatSpaceIds } },
+        const sessionDiscussionIds = sessionDiscussionMessageCounts.map((cs) => cs.sessionDiscussionId).filter(Boolean) as string[];
+        const sessionDiscussions = await prisma.sessionDiscussion.findMany({
+            where: { id: { in: sessionDiscussionIds } },
             select: {
                 id: true,
                 group: {
@@ -171,16 +171,16 @@ export class DashboardService {
                 },
             },
         });
-        const chatSpaceToCourse = new Map<string, { id: string; name: string }>();
+        const sessionDiscussionToCourse = new Map<string, { id: string; name: string }>();
         const activeDiscussionIds = new Set<string>();
-        chatSpaces.forEach((cs) => {
-            chatSpaceToCourse.set(cs.id, cs.group?.course ?? { id: '', name: 'Unknown' });
+        sessionDiscussions.forEach((cs) => {
+            sessionDiscussionToCourse.set(cs.id, cs.group?.course ?? { id: '', name: 'Unknown' });
             activeDiscussionIds.add(cs.id);
         });
 
         const courseMessageCounts = new Map<string, { id: string; name: string; messageCount: number }>();
-        chatSpaceMessageCounts.forEach((cs) => {
-            const course = chatSpaceToCourse.get(cs.chatSpaceId);
+        sessionDiscussionMessageCounts.forEach((cs) => {
+            const course = sessionDiscussionToCourse.get(cs.sessionDiscussionId);
             if (course?.id) {
                 const current = courseMessageCounts.get(course.id) ?? { id: course.id, name: course.name, messageCount: 0 };
                 current.messageCount += cs._count.id;
@@ -225,7 +225,7 @@ export class DashboardService {
                 total: totalCourses,
                 active: activeCourses,
                 totalGroups,
-                totalChatSpaces,
+                totalSessionDiscussions,
             },
             discussions: {
                 totalMessages,
@@ -250,7 +250,7 @@ export class DashboardService {
         const { limit, offset } = query;
         const take = offset + limit;
 
-        const [recentUsers, recentCourses, recentChatSpaces, totalUsers, totalCourses, totalChatSpaces] =
+        const [recentUsers, recentCourses, recentSessionDiscussions, totalUsers, totalCourses, totalSessionDiscussions] =
             await Promise.all([
                 prisma.user.findMany({
                     orderBy: { createdAt: 'desc' },
@@ -281,7 +281,7 @@ export class DashboardService {
                         },
                     },
                 }),
-                prisma.chatSpace.findMany({
+                prisma.sessionDiscussion.findMany({
                     orderBy: { createdAt: 'desc' },
                     take,
                     select: {
@@ -302,7 +302,7 @@ export class DashboardService {
                 }),
                 prisma.user.count(),
                 prisma.course.count({ where: { isArchived: false } }),
-                prisma.chatSpace.count(),
+                prisma.sessionDiscussion.count(),
             ]);
 
         const activities: ActivityItem[] = [
@@ -320,12 +320,12 @@ export class DashboardService {
                 description: `${course.code} - ${course.name} created by ${course.owner.name}`,
                 createdAt: course.createdAt,
             })),
-            ...recentChatSpaces.map((chatSpace) => ({
-                id: chatSpace.id,
-                type: 'chat_space' as const,
+            ...recentSessionDiscussions.map((sessionDiscussion) => ({
+                id: sessionDiscussion.id,
+                type: 'session_discussion' as const,
                 title: 'New discussion space opened',
-                description: `${chatSpace.name} created in group ${chatSpace.group.name} with ${chatSpace._count.messages} messages`,
-                createdAt: chatSpace.createdAt,
+                description: `${sessionDiscussion.name} created in group ${sessionDiscussion.group.name} with ${sessionDiscussion._count.messages} messages`,
+                createdAt: sessionDiscussion.createdAt,
             })),
         ]
             .sort((a, b) => b.createdAt.getTime() - a.createdAt.getTime())
@@ -336,8 +336,8 @@ export class DashboardService {
             meta: {
                 limit,
                 offset,
-                total: totalUsers + totalCourses + totalChatSpaces,
-                hasMore: offset + limit < totalUsers + totalCourses + totalChatSpaces,
+                total: totalUsers + totalCourses + totalSessionDiscussions,
+                hasMore: offset + limit < totalUsers + totalCourses + totalSessionDiscussions,
             },
         };
     }

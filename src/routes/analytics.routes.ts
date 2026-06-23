@@ -40,7 +40,7 @@ router.get('/group/:groupId', requireLecturer, AnalyticsController.getGroupAnaly
 
 router.get('/group/:groupId/status', requireLecturer, AnalyticsController.getGroupQualityStatus);
 
-router.get('/chat-space/:chatSpaceId', requireLecturer, AnalyticsController.getChatSpaceAnalytics);
+router.get('/session-discussion/:sessionDiscussionId', requireLecturer, AnalyticsController.getSessionDiscussionAnalytics);
 
 router.post('/analyze', requireLecturer, validateBody(analyzeTextSchema), AnalyticsController.analyzeText);
 

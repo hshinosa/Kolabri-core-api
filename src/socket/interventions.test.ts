@@ -95,7 +95,7 @@ const ctx = {
     roomId: 'room-1',
     courseId: 'course-1',
     groupId: 'group-1',
-    chatSpaceId: 'cs-1',
+    sessionDiscussionId: 'cs-1',
 };
 
 function makeDeps() {

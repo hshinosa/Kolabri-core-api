@@ -11,7 +11,7 @@ export interface SilenceInterventionContext {
     roomId: string;
     courseId: string;
     groupId: string;
-    chatSpaceId: string;
+    sessionDiscussionId: string;
 }
 
 export interface SilenceInterventionDeps {
@@ -19,10 +19,10 @@ export interface SilenceInterventionDeps {
     onSent?: (roomId: string) => void;
 }
 
-async function selectMessage(chatSpaceId: string): Promise<string> {
+async function selectMessage(sessionDiscussionId: string): Promise<string> {
     try {
         const recentMessages = await ChatLog.find({
-            chatSpaceId,
+            sessionDiscussionId,
             deletedAt: null,
             senderType: { $in: ['student', 'lecturer'] },
         })
@@ -40,7 +40,7 @@ async function selectMessage(chatSpaceId: string): Promise<string> {
                     sender_id: m.senderId,
                 })),
                 topic: 'Diskusi sepi',
-                chat_room_id: chatSpaceId,
+                chat_room_id: sessionDiscussionId,
                 intervention_type: 'silence',
                 force: true,
                 provider_context: providerContext,
@@ -78,7 +78,7 @@ export async function runSilenceIntervention(
     ctx: SilenceInterventionContext,
     deps: SilenceInterventionDeps,
 ): Promise<void> {
-    const { roomId, courseId, groupId, chatSpaceId } = ctx;
+    const { roomId, courseId, groupId, sessionDiscussionId } = ctx;
     try {
         const lockAcquired = await tryAcquireSilenceLock(roomId);
         if (!lockAcquired) {
@@ -87,7 +87,7 @@ export async function runSilenceIntervention(
         }
 
         if (isStagedEscalationEnabled()) {
-            const state = await findOrCreateState(courseId, groupId, chatSpaceId, 'silence');
+            const state = await findOrCreateState(courseId, groupId, sessionDiscussionId, 'silence');
 
             if (state.currentStage === 'resolved') {
                 logger.debug(`Silence intervention skipped for ${roomId} (escalation resolved)`);
@@ -111,18 +111,18 @@ export async function runSilenceIntervention(
         const silenceEvent = new SilenceEvent({
             courseId,
             groupId,
-            chatSpaceId,
+            sessionDiscussionId,
             silenceDuration: SILENCE_TIMEOUT_MS / 1000,
             interventionSent: true,
         });
         await silenceEvent.save();
 
-        const message = await selectMessage(chatSpaceId);
+        const message = await selectMessage(sessionDiscussionId);
 
         const chatLog = new ChatLog({
             courseId,
             groupId,
-            chatSpaceId,
+            sessionDiscussionId,
             senderId: 'bot',
             senderName: 'Kolabri',
             senderType: 'bot',

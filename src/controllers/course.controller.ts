@@ -47,7 +47,7 @@ export class CourseController {
                     id: String(message._id),
                     course_id: message.courseId,
                     group_id: message.groupId,
-                    chat_space_id: message.chatSpaceId,
+                    session_discussion_id: message.sessionDiscussionId,
                     sender_id: message.senderId,
                     sender_name: message.senderName,
                     sender_type: message.senderType === 'student' ? 'user' : message.senderType,
@@ -310,10 +310,10 @@ export class CourseController {
                 });
             }
 
-            // Then get the student's goals - now structured with chatSpace.group.course
+            // Then get the student's goals - now structured with sessionDiscussion.group.course
             const goals = await GoalService.getMyGoals(req.user!.userId);
-            const courseGoal = goals.find((g: { chatSpace: { group: { course: { id: string } } } }) => 
-                g.chatSpace?.group?.course?.id === req.params.id
+            const courseGoal = goals.find((g: { sessionDiscussion: { group: { course: { id: string } } } }) => 
+                g.sessionDiscussion?.group?.course?.id === req.params.id
             );
 
             res.json({

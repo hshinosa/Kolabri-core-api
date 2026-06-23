@@ -4,7 +4,7 @@ import type { Socket } from 'socket.io';
 export const joinRoomSchema = z.object({
     courseId: z.string().uuid('Invalid course ID'),
     groupId: z.string().uuid('Invalid group ID'),
-    chatSpaceId: z.string().uuid('Invalid chat space ID'),
+    sessionDiscussionId: z.string().uuid('Invalid session discussion ID'),
 });
 
 export const sendMessageSchema = z
@@ -49,7 +49,7 @@ export const deleteMessageSchema = z.object({
 });
 
 export const loadMoreMessagesSchema = z.object({
-    chatSpaceId: z.string().uuid('Invalid chat space ID'),
+    sessionDiscussionId: z.string().uuid('Invalid session discussion ID'),
     beforeMessageId: z
         .string()
         .regex(/^[a-fA-F0-9]{24}$/, 'Invalid message ID'),

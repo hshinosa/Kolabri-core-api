@@ -4,7 +4,7 @@ import { beforeEach, describe, expect, it, vi } from 'vitest';
 const { mockGoalService } = vi.hoisted(() => ({
     mockGoalService: {
         createGoal: vi.fn(),
-        getChatSpaceGoals: vi.fn(),
+        getSessionDiscussionGoals: vi.fn(),
         getMyGoals: vi.fn(),
         getGoalDetails: vi.fn(),
     },
@@ -67,16 +67,16 @@ describe('GoalController', () => {
         expect(next).not.toHaveBeenCalled();
     });
 
-    it('returns goals for a chat space using auth context', async () => {
+    it('returns goals for a session discussion using auth context', async () => {
         const goals = [{ id: 'goal-1' }];
-        mockGoalService.getChatSpaceGoals.mockResolvedValue(goals);
-        const req = mockReq({ params: { chatSpaceId: 'chat-space-1' }, user: { userId: 'lecturer-1', role: 'lecturer' } as Request['user'] });
+        mockGoalService.getSessionDiscussionGoals.mockResolvedValue(goals);
+        const req = mockReq({ params: { sessionDiscussionId: 'session-discussion-1' }, user: { userId: 'lecturer-1', role: 'lecturer' } as Request['user'] });
         const res = mockRes();
         const next = mockNext();
 
-        await GoalController.getChatSpaceGoals(req as Request, res as Response, next);
+        await GoalController.getSessionDiscussionGoals(req as Request, res as Response, next);
 
-        expect(mockGoalService.getChatSpaceGoals).toHaveBeenCalledWith('chat-space-1', 'lecturer-1', 'lecturer');
+        expect(mockGoalService.getSessionDiscussionGoals).toHaveBeenCalledWith('session-discussion-1', 'lecturer-1', 'lecturer');
         expect(res.json).toHaveBeenCalledWith({ data: goals });
         expect(next).not.toHaveBeenCalled();
     });

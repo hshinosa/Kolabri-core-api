@@ -6,8 +6,8 @@ const { prismaMock, randomBytesMock } = vi.hoisted(() => ({
         course: { findUnique: vi.fn(), findFirst: vi.fn() },
         courseStudent: { findUnique: vi.fn(), findMany: vi.fn() },
         groupMember: { findUnique: vi.fn(), findFirst: vi.fn(), create: vi.fn(), createMany: vi.fn(), delete: vi.fn() },
-        chatSpace: { create: vi.fn(), findUnique: vi.fn(), findFirst: vi.fn() },
-        chatSpacePreReadCompletion: { findUnique: vi.fn(), findMany: vi.fn(), create: vi.fn() },
+        sessionDiscussion: { create: vi.fn(), findUnique: vi.fn(), findFirst: vi.fn() },
+        sessionDiscussionPreReadCompletion: { findUnique: vi.fn(), findMany: vi.fn(), create: vi.fn() },
         user: { findUnique: vi.fn() },
         $queryRaw: vi.fn(),
         $transaction: vi.fn(),
@@ -365,7 +365,7 @@ describe('GroupService', () => {
         await expect(GroupService.isGroupMember('group-1', 'student-2')).resolves.toBe(false);
     });
 
-    it('rejects chat space create without week_id', async () => {
+    it('rejects session discussion create without week_id', async () => {
         prismaMock.group.findUnique.mockResolvedValue({
             id: 'group-1',
             courseId: 'course-1',
@@ -374,11 +374,11 @@ describe('GroupService', () => {
         });
 
         await expect(
-            GroupService.createChatSpace('group-1', { name: 'General' }, 'lecturer-1', 'lecturer')
+            GroupService.createSessionDiscussion('group-1', { name: 'General' }, 'lecturer-1', 'lecturer')
         ).rejects.toMatchObject({ statusCode: 400 });
     });
 
-    it('creates a chat space with week_id when week belongs to course', async () => {
+    it('creates a session discussion with week_id when week belongs to course', async () => {
         const weekUuid = 'aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee';
         prismaMock.group.findUnique.mockResolvedValue({
             id: 'group-1',
@@ -389,7 +389,7 @@ describe('GroupService', () => {
         prismaMock.$queryRaw.mockResolvedValue([
             { id: weekUuid, course_id: 'course-1', week_index: 2, title: 'Minggu 2' },
         ]);
-        prismaMock.chatSpace.create.mockResolvedValue({
+        prismaMock.sessionDiscussion.create.mockResolvedValue({
             id: 'chat-2',
             name: 'Diskusi',
             description: null,
@@ -397,7 +397,7 @@ describe('GroupService', () => {
             weekId: weekUuid,
         });
 
-        const result = await GroupService.createChatSpace(
+        const result = await GroupService.createSessionDiscussion(
             'group-1',
             { name: 'Diskusi', week_id: weekUuid },
             'student-1',
@@ -405,7 +405,7 @@ describe('GroupService', () => {
         );
 
         expect(prismaMock.$queryRaw).toHaveBeenCalled();
-        expect(prismaMock.chatSpace.create).toHaveBeenCalledWith({
+        expect(prismaMock.sessionDiscussion.create).toHaveBeenCalledWith({
             data: expect.objectContaining({
                 weekId: weekUuid,
                 groupId: 'group-1',
@@ -417,7 +417,7 @@ describe('GroupService', () => {
     });
 
 
-    it('allows multiple chat spaces for the same week_id', async () => {
+    it('allows multiple session discussions for the same week_id', async () => {
         const weekUuid = 'aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee';
         const groupStub = {
             id: 'group-1',
@@ -429,7 +429,7 @@ describe('GroupService', () => {
         prismaMock.$queryRaw.mockResolvedValue([
             { id: weekUuid, course_id: 'course-1', week_index: 1, title: 'Pengenalan' },
         ]);
-        prismaMock.chatSpace.create
+        prismaMock.sessionDiscussion.create
             .mockResolvedValueOnce({
                 id: 'chat-a',
                 name: 'Sesi A',
@@ -445,27 +445,27 @@ describe('GroupService', () => {
                 weekId: weekUuid,
             });
 
-        const first = await GroupService.createChatSpace(
+        const first = await GroupService.createSessionDiscussion(
             'group-1',
             { name: 'Sesi A', week_id: weekUuid },
             'student-1',
             'student'
         );
-        const second = await GroupService.createChatSpace(
+        const second = await GroupService.createSessionDiscussion(
             'group-1',
             { name: 'Sesi B', week_id: weekUuid },
             'student-1',
             'student'
         );
 
-        expect(prismaMock.chatSpace.create).toHaveBeenCalledTimes(2);
+        expect(prismaMock.sessionDiscussion.create).toHaveBeenCalledTimes(2);
         expect(first.id).toBe('chat-a');
         expect(second.id).toBe('chat-b');
         expect(first.weekId).toBe(weekUuid);
         expect(second.weekId).toBe(weekUuid);
     });
 
-    it('marks closed chat spaces and shared goals in getMyGroup', async () => {
+    it('marks closed session discussions and shared goals in getMyGroup', async () => {
         prismaMock.groupMember.findFirst.mockResolvedValue({
             group: {
                 id: 'group-1',
@@ -473,7 +473,7 @@ describe('GroupService', () => {
                 joinCode: 'ABC12345',
                 createdBy: 'lecturer-1',
                 members: [{ user: { id: 'student-1', name: 'Student One', email: 's1@example.com' } }],
-                chatSpaces: [
+                sessionDiscussions: [
                     {
                         id: 'chat-1',
                         name: 'General',
@@ -500,7 +500,7 @@ describe('GroupService', () => {
             email: 'lecturer@example.com',
         });
         prismaMock.$queryRaw.mockResolvedValue([]);
-        prismaMock.chatSpacePreReadCompletion.findMany.mockResolvedValue([]);
+        prismaMock.sessionDiscussionPreReadCompletion.findMany.mockResolvedValue([]);
 
         const result = await GroupService.getMyGroup('course-1', 'student-1');
 
@@ -511,7 +511,7 @@ describe('GroupService', () => {
             creator: { id: 'lecturer-1', name: 'Lecturer One', email: 'lecturer@example.com' },
             members: [{ id: 'student-1', name: 'Student One', email: 's1@example.com' }],
             members_count: 1,
-            chatSpaces: [
+            sessionDiscussions: [
                 {
                     id: 'chat-1',
                     name: 'General',
@@ -535,8 +535,8 @@ describe('GroupService', () => {
         });
     });
 
-    it('completes pre-read for a chat space', async () => {
-        prismaMock.chatSpace.findFirst.mockResolvedValue({
+    it('completes pre-read for a session discussion', async () => {
+        prismaMock.sessionDiscussion.findFirst.mockResolvedValue({
             id: 'chat-1',
             weekId: 'week-1',
             group: {
@@ -544,8 +544,8 @@ describe('GroupService', () => {
                 members: [{ userId: 'student-1' }],
             },
         });
-        prismaMock.chatSpacePreReadCompletion.findUnique.mockResolvedValue(null);
-        prismaMock.chatSpacePreReadCompletion.create.mockResolvedValue({
+        prismaMock.sessionDiscussionPreReadCompletion.findUnique.mockResolvedValue(null);
+        prismaMock.sessionDiscussionPreReadCompletion.create.mockResolvedValue({
             id: 'pr-1',
             completedAt: new Date('2026-06-12T00:00:00.000Z'),
         });
@@ -553,6 +553,6 @@ describe('GroupService', () => {
         const result = await GroupService.completePreRead('chat-1', 'student-1', 'student');
 
         expect(result.alreadyCompleted).toBe(false);
-        expect(prismaMock.chatSpacePreReadCompletion.create).toHaveBeenCalled();
+        expect(prismaMock.sessionDiscussionPreReadCompletion.create).toHaveBeenCalled();
     });
 });

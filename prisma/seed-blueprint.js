@@ -105,7 +105,7 @@ export function createDemoBlueprint() {
         { key: 'group-dm-lab', courseKey: 'course-dm', name: 'Lab Miners', joinCode: 'LAB-MINERS', createdByKey: 'lecturer-bima', memberKeys: ['student-ivan', 'student-hana'] },
         { key: 'group-pm-lite', courseKey: 'course-pm', name: 'Project Starters', joinCode: 'STARTER-PM', createdByKey: 'lecturer-ahmad', memberKeys: ['student-alya', 'student-fajar', 'student-ivan'] },
     ];
-    const chatSpaces = [
+    const sessionDiscussions = [
         { key: 'space-hci-alpha-general', groupKey: 'group-hci-alpha', name: 'General Discussion', description: 'Diskusi utama HCI Team Alpha', type: 'Akademik', isDefault: true, summary: 'Diskusi kuat tentang evaluasi usability dan metode think aloud.' },
         { key: 'space-hci-alpha-prototype', groupKey: 'group-hci-alpha', name: 'Prototype Review', description: 'Review wireframe dan usability issue', type: 'Proyek', summary: 'Tim menyepakati perbaikan navigasi dan hierarchy CTA.' },
         { key: 'space-hci-beta-general', groupKey: 'group-hci-beta', name: 'General Discussion', description: 'Diskusi utama HCI Team Beta', type: 'Akademik', isDefault: true, summary: 'Diskusi moderat, butuh dorongan untuk memperdalam alasan desain.' },
@@ -116,27 +116,27 @@ export function createDemoBlueprint() {
         { key: 'space-pm-lite-general', groupKey: 'group-pm-lite', name: 'Kickoff Room', description: 'Ruang kickoff kelas ringan', type: 'Umum', isDefault: true, summary: 'Aktivitas awal berjalan, namun belum konsisten.' },
     ];
     const learningGoals = [
-        { key: 'goal-hci-alpha-1', chatSpaceKey: 'space-hci-alpha-general', userKey: 'student-alya', content: 'Menganalisis faktor yang memengaruhi usability pada aplikasi mobile.', isValidated: true },
-        { key: 'goal-hci-beta-1', chatSpaceKey: 'space-hci-beta-general', userKey: 'student-citra', content: 'Menyusun argumentasi desain berbasis hasil evaluasi pengguna.', isValidated: true },
-        { key: 'goal-se-gamma-1', chatSpaceKey: 'space-se-gamma-general', userKey: 'student-eka', content: 'Mampu memetakan backlog ke sprint goals yang realistis.', isValidated: true },
-        { key: 'goal-se-delta-1', chatSpaceKey: 'space-se-delta-general', userKey: 'student-gita', content: 'Menjelaskan trade-off arsitektur modular untuk aplikasi kolaboratif.', isValidated: true },
-        { key: 'goal-dm-insight-1', chatSpaceKey: 'space-dm-insight-general', userKey: 'student-bagas', content: 'Membedakan kualitas insight berdasarkan evidence data.', isValidated: true },
-        { key: 'goal-dm-lab-1', chatSpaceKey: 'space-dm-lab-general', userKey: 'student-ivan', content: 'Menginterpretasikan hasil clustering secara kritis.', isValidated: false },
-        { key: 'goal-pm-lite-1', chatSpaceKey: 'space-pm-lite-general', userKey: 'student-fajar', content: 'Menyusun prioritas risiko awal proyek tim kecil.', isValidated: false },
+        { key: 'goal-hci-alpha-1', sessionDiscussionKey: 'space-hci-alpha-general', userKey: 'student-alya', content: 'Menganalisis faktor yang memengaruhi usability pada aplikasi mobile.', isValidated: true },
+        { key: 'goal-hci-beta-1', sessionDiscussionKey: 'space-hci-beta-general', userKey: 'student-citra', content: 'Menyusun argumentasi desain berbasis hasil evaluasi pengguna.', isValidated: true },
+        { key: 'goal-se-gamma-1', sessionDiscussionKey: 'space-se-gamma-general', userKey: 'student-eka', content: 'Mampu memetakan backlog ke sprint goals yang realistis.', isValidated: true },
+        { key: 'goal-se-delta-1', sessionDiscussionKey: 'space-se-delta-general', userKey: 'student-gita', content: 'Menjelaskan trade-off arsitektur modular untuk aplikasi kolaboratif.', isValidated: true },
+        { key: 'goal-dm-insight-1', sessionDiscussionKey: 'space-dm-insight-general', userKey: 'student-bagas', content: 'Membedakan kualitas insight berdasarkan evidence data.', isValidated: true },
+        { key: 'goal-dm-lab-1', sessionDiscussionKey: 'space-dm-lab-general', userKey: 'student-ivan', content: 'Menginterpretasikan hasil clustering secara kritis.', isValidated: false },
+        { key: 'goal-pm-lite-1', sessionDiscussionKey: 'space-pm-lite-general', userKey: 'student-fajar', content: 'Menyusun prioritas risiko awal proyek tim kecil.', isValidated: false },
     ];
     const reflections = [
-        { key: 'reflection-1', userKey: 'student-alya', chatSpaceKey: 'space-hci-alpha-general', goalKey: 'goal-hci-alpha-1', type: 'session', content: 'Saya mulai bisa menghubungkan feedback pengguna dengan keputusan layout secara lebih sistematis.' },
-        { key: 'reflection-2', userKey: 'student-bagas', chatSpaceKey: 'space-hci-alpha-general', goalKey: 'goal-hci-alpha-1', type: 'weekly', content: 'Diskusi tim membantu saya melihat bahwa evaluasi usability harus dibuktikan dengan contoh konkret.' },
-        { key: 'reflection-3', userKey: 'student-citra', chatSpaceKey: 'space-hci-beta-general', goalKey: 'goal-hci-beta-1', type: 'session', content: 'Saya masih perlu memperkuat alasan saat menyarankan perubahan navigasi.' },
-        { key: 'reflection-4', userKey: 'student-dimas', chatSpaceKey: 'space-hci-beta-general', type: 'weekly', content: 'Tim kami cukup aktif, tapi perlu lebih banyak pertanyaan HOT supaya analisis tidak dangkal.' },
-        { key: 'reflection-5', userKey: 'student-eka', chatSpaceKey: 'space-se-gamma-general', goalKey: 'goal-se-gamma-1', type: 'session', content: 'Backlog refinement jadi lebih jelas setelah kami pecah story berdasarkan risiko.' },
-        { key: 'reflection-6', userKey: 'student-fajar', chatSpaceKey: 'space-se-gamma-general', type: 'weekly', content: 'Saya belajar bahwa estimasi sprint harus mempertimbangkan blocker integrasi.' },
-        { key: 'reflection-7', userKey: 'student-gita', chatSpaceKey: 'space-se-delta-general', goalKey: 'goal-se-delta-1', type: 'session', content: 'Arsitektur service terpisah mempermudah reasoning, tapi koordinasi endpoint perlu disiplin.' },
-        { key: 'reflection-8', userKey: 'student-hana', chatSpaceKey: 'space-se-delta-general', type: 'weekly', content: 'Saya mulai memahami trade-off modularitas vs kompleksitas deployment.' },
-        { key: 'reflection-9', userKey: 'student-bagas', chatSpaceKey: 'space-dm-insight-general', goalKey: 'goal-dm-insight-1', type: 'session', content: 'Insight yang kuat ternyata harus menjawab mengapa pola itu penting bagi keputusan.' },
-        { key: 'reflection-10', userKey: 'student-citra', chatSpaceKey: 'space-dm-insight-general', type: 'weekly', content: 'Saya ingin lebih teliti membedakan insight deskriptif dan insight yang actionable.' },
-        { key: 'reflection-11', userKey: 'student-ivan', chatSpaceKey: 'space-dm-lab-general', goalKey: 'goal-dm-lab-1', type: 'session', content: 'Saya masih bingung menjelaskan kualitas cluster tanpa contoh kasus.' },
-        { key: 'reflection-12', userKey: 'student-fajar', chatSpaceKey: 'space-pm-lite-general', goalKey: 'goal-pm-lite-1', type: 'session', content: 'Kami butuh lebih banyak struktur agar kickoff tidak hanya jadi update status.' },
+        { key: 'reflection-1', userKey: 'student-alya', sessionDiscussionKey: 'space-hci-alpha-general', goalKey: 'goal-hci-alpha-1', type: 'session', content: 'Saya mulai bisa menghubungkan feedback pengguna dengan keputusan layout secara lebih sistematis.' },
+        { key: 'reflection-2', userKey: 'student-bagas', sessionDiscussionKey: 'space-hci-alpha-general', goalKey: 'goal-hci-alpha-1', type: 'weekly', content: 'Diskusi tim membantu saya melihat bahwa evaluasi usability harus dibuktikan dengan contoh konkret.' },
+        { key: 'reflection-3', userKey: 'student-citra', sessionDiscussionKey: 'space-hci-beta-general', goalKey: 'goal-hci-beta-1', type: 'session', content: 'Saya masih perlu memperkuat alasan saat menyarankan perubahan navigasi.' },
+        { key: 'reflection-4', userKey: 'student-dimas', sessionDiscussionKey: 'space-hci-beta-general', type: 'weekly', content: 'Tim kami cukup aktif, tapi perlu lebih banyak pertanyaan HOT supaya analisis tidak dangkal.' },
+        { key: 'reflection-5', userKey: 'student-eka', sessionDiscussionKey: 'space-se-gamma-general', goalKey: 'goal-se-gamma-1', type: 'session', content: 'Backlog refinement jadi lebih jelas setelah kami pecah story berdasarkan risiko.' },
+        { key: 'reflection-6', userKey: 'student-fajar', sessionDiscussionKey: 'space-se-gamma-general', type: 'weekly', content: 'Saya belajar bahwa estimasi sprint harus mempertimbangkan blocker integrasi.' },
+        { key: 'reflection-7', userKey: 'student-gita', sessionDiscussionKey: 'space-se-delta-general', goalKey: 'goal-se-delta-1', type: 'session', content: 'Arsitektur service terpisah mempermudah reasoning, tapi koordinasi endpoint perlu disiplin.' },
+        { key: 'reflection-8', userKey: 'student-hana', sessionDiscussionKey: 'space-se-delta-general', type: 'weekly', content: 'Saya mulai memahami trade-off modularitas vs kompleksitas deployment.' },
+        { key: 'reflection-9', userKey: 'student-bagas', sessionDiscussionKey: 'space-dm-insight-general', goalKey: 'goal-dm-insight-1', type: 'session', content: 'Insight yang kuat ternyata harus menjawab mengapa pola itu penting bagi keputusan.' },
+        { key: 'reflection-10', userKey: 'student-citra', sessionDiscussionKey: 'space-dm-insight-general', type: 'weekly', content: 'Saya ingin lebih teliti membedakan insight deskriptif dan insight yang actionable.' },
+        { key: 'reflection-11', userKey: 'student-ivan', sessionDiscussionKey: 'space-dm-lab-general', goalKey: 'goal-dm-lab-1', type: 'session', content: 'Saya masih bingung menjelaskan kualitas cluster tanpa contoh kasus.' },
+        { key: 'reflection-12', userKey: 'student-fajar', sessionDiscussionKey: 'space-pm-lite-general', goalKey: 'goal-pm-lite-1', type: 'session', content: 'Kami butuh lebih banyak struktur agar kickoff tidak hanya jadi update status.' },
     ];
     const knowledgeBases = [
         { key: 'kb-hci-guide', courseKey: 'course-hci', uploadedByKey: 'lecturer-ahmad', fileName: 'hci-usability-guide.pdf', filePath: '/demo/kb/hci-usability-guide.pdf', fileSize: 2480000, mimeType: 'application/pdf', vectorStatus: 'ready' },
@@ -252,15 +252,15 @@ export function createDemoBlueprint() {
         { courseKey: 'course-se', groupKey: 'group-se-gamma', userKey: 'lecturer-sari', activityType: 'file_uploaded', metadata: { fileName: 'sprint-planning-template.docx' } },
     ];
     const silenceEvents = [
-        { courseKey: 'course-dm', groupKey: 'group-dm-lab', chatSpaceKey: 'space-dm-lab-general', silenceDuration: 5400, interventionSent: true },
-        { courseKey: 'course-pm', groupKey: 'group-pm-lite', chatSpaceKey: 'space-pm-lite-general', silenceDuration: 3200, interventionSent: false },
+        { courseKey: 'course-dm', groupKey: 'group-dm-lab', sessionDiscussionKey: 'space-dm-lab-general', silenceDuration: 5400, interventionSent: true },
+        { courseKey: 'course-pm', groupKey: 'group-pm-lite', sessionDiscussionKey: 'space-pm-lite-general', silenceDuration: 3200, interventionSent: false },
     ];
     const discussions = [
         {
             key: 'discussion-hci-alpha-general',
             courseKey: 'course-hci',
             groupKey: 'group-hci-alpha',
-            chatSpaceKey: 'space-hci-alpha-general',
+            sessionDiscussionKey: 'space-hci-alpha-general',
             profile: 'high',
             messages: [
                 { senderKey: 'student-alya', senderType: 'student', content: 'Mengapa hasil usability testing kita menunjukkan pengguna berhenti di langkah checkout kedua?', engagement: { engagementType: 'cognitive', isHigherOrder: true, lexicalVariety: 0.82, hotIndicators: ['mengapa', 'hasil', 'menunjukkan'], confidence: 0.96 } },
@@ -275,7 +275,7 @@ export function createDemoBlueprint() {
             key: 'discussion-hci-alpha-prototype',
             courseKey: 'course-hci',
             groupKey: 'group-hci-alpha',
-            chatSpaceKey: 'space-hci-alpha-prototype',
+            sessionDiscussionKey: 'space-hci-alpha-prototype',
             profile: 'high',
             messages: [
                 { senderKey: 'student-alya', senderType: 'student', content: 'Kalau CTA utama kita pindah ke kanan bawah, apakah hierarki visualnya jadi lebih jelas?', engagement: { engagementType: 'cognitive', isHigherOrder: true, lexicalVariety: 0.8, hotIndicators: ['apakah', 'hierarki'], confidence: 0.94 } },
@@ -288,7 +288,7 @@ export function createDemoBlueprint() {
             key: 'discussion-hci-beta-general',
             courseKey: 'course-hci',
             groupKey: 'group-hci-beta',
-            chatSpaceKey: 'space-hci-beta-general',
+            sessionDiscussionKey: 'space-hci-beta-general',
             profile: 'moderate',
             messages: [
                 { senderKey: 'student-citra', senderType: 'student', content: 'Menurut kalian, menu navigasi kita sudah cukup sederhana belum?', engagement: { engagementType: 'behavioral', isHigherOrder: false, lexicalVariety: 0.68, hotIndicators: [], confidence: 0.81 } },
@@ -300,7 +300,7 @@ export function createDemoBlueprint() {
             key: 'discussion-se-gamma-general',
             courseKey: 'course-se',
             groupKey: 'group-se-gamma',
-            chatSpaceKey: 'space-se-gamma-general',
+            sessionDiscussionKey: 'space-se-gamma-general',
             profile: 'high',
             messages: [
                 { senderKey: 'student-eka', senderType: 'student', content: 'Bagaimana kita membagi backlog supaya risiko integrasi tidak menumpuk di akhir sprint?', engagement: { engagementType: 'cognitive', isHigherOrder: true, lexicalVariety: 0.81, hotIndicators: ['bagaimana', 'risiko integrasi'], confidence: 0.95 } },
@@ -315,7 +315,7 @@ export function createDemoBlueprint() {
             key: 'discussion-se-delta-general',
             courseKey: 'course-se',
             groupKey: 'group-se-delta',
-            chatSpaceKey: 'space-se-delta-general',
+            sessionDiscussionKey: 'space-se-delta-general',
             profile: 'high',
             messages: [
                 { senderKey: 'student-gita', senderType: 'student', content: 'Mengapa service auth sebaiknya dipisah dari service analytics pada tahap ini?', engagement: { engagementType: 'cognitive', isHigherOrder: true, lexicalVariety: 0.85, hotIndicators: ['mengapa', 'dipisah'], confidence: 0.96 } },
@@ -328,7 +328,7 @@ export function createDemoBlueprint() {
             key: 'discussion-dm-insight-general',
             courseKey: 'course-dm',
             groupKey: 'group-dm-insight',
-            chatSpaceKey: 'space-dm-insight-general',
+            sessionDiscussionKey: 'space-dm-insight-general',
             profile: 'moderate',
             messages: [
                 { senderKey: 'student-bagas', senderType: 'student', content: 'Kalau cluster ini berisi pengguna aktif tapi churn tinggi, insight apa yang paling relevan?', engagement: { engagementType: 'cognitive', isHigherOrder: true, lexicalVariety: 0.8, hotIndicators: ['insight apa'], confidence: 0.93 } },
@@ -340,7 +340,7 @@ export function createDemoBlueprint() {
             key: 'discussion-dm-lab-general',
             courseKey: 'course-dm',
             groupKey: 'group-dm-lab',
-            chatSpaceKey: 'space-dm-lab-general',
+            sessionDiscussionKey: 'space-dm-lab-general',
             profile: 'low',
             messages: [
                 { senderKey: 'student-ivan', senderType: 'student', content: 'Aku masih bingung hasil cluster ini maksudnya apa.', engagement: { engagementType: 'emotional', isHigherOrder: false, lexicalVariety: 0.55, hotIndicators: [], confidence: 0.78 } },
@@ -352,7 +352,7 @@ export function createDemoBlueprint() {
             key: 'discussion-pm-lite-general',
             courseKey: 'course-pm',
             groupKey: 'group-pm-lite',
-            chatSpaceKey: 'space-pm-lite-general',
+            sessionDiscussionKey: 'space-pm-lite-general',
             profile: 'low',
             messages: [
                 { senderKey: 'student-fajar', senderType: 'student', content: 'Kita mulai dari mana ya untuk risk register?', engagement: { engagementType: 'behavioral', isHigherOrder: false, lexicalVariety: 0.62, hotIndicators: [], confidence: 0.8 } },
@@ -367,7 +367,7 @@ export function createDemoBlueprint() {
         courses,
         courseTemplates,
         groups,
-        chatSpaces,
+        sessionDiscussions,
         learningGoals,
         reflections,
         knowledgeBases,

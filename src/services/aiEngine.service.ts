@@ -381,7 +381,7 @@ export class AIEngineService {
         query: string,
         courseId: string,
         userName?: string,
-        chatSpaceId?: string,
+        sessionDiscussionId?: string,
         guardrailPolicy?: GuardrailPolicyPayload,
         providerContext?: ProviderContextV1,
     ): Promise<AskResponse> {
@@ -394,7 +394,7 @@ export class AIEngineService {
                         query,
                         course_id: courseId,
                         user_name: userName,
-                        chat_space_id: chatSpaceId,
+                        session_discussion_id: sessionDiscussionId,
                         guardrail_policy: guardrailPolicy,
                         provider_context: providerContext,
                     }),
@@ -1050,7 +1050,7 @@ export class AIEngineService {
     async validateGoal(
         goalText: string,
         userId: string,
-        chatSpaceId: string,
+        sessionDiscussionId: string,
         weekContext?: { week_title?: string; week_index?: number; material_titles?: string[] },
         providerContext?: ProviderContextV1,
         groupId?: string,
@@ -1063,7 +1063,7 @@ export class AIEngineService {
                     body: JSON.stringify({
                         goal_text: goalText,
                         user_id: userId,
-                        chat_space_id: chatSpaceId,
+                        session_discussion_id: sessionDiscussionId,
                         week_context: weekContext ?? undefined,
                         provider_context: providerContext,
                         group_id: groupId,

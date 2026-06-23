@@ -43,7 +43,7 @@ export function registerDeleteMessage(io: Server, socket: AuthenticatedSocket): 
                 return;
             }
 
-            if (message.chatSpaceId !== roomId) {
+            if (message.sessionDiscussionId !== roomId) {
                 socket.emit('error', { message: 'Message does not belong to this room' });
                 return;
             }

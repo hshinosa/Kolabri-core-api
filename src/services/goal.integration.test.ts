@@ -2,7 +2,7 @@ import { beforeEach, describe, expect, it, vi } from 'vitest';
 
 const { prismaMock, mockGroupService, mockValidateGoalContent, mockProviderResolutionService } = vi.hoisted(() => ({
     prismaMock: {
-        chatSpace: { findUnique: vi.fn(), findFirst: vi.fn() },
+        sessionDiscussion: { findUnique: vi.fn(), findFirst: vi.fn() },
         learningGoal: { findFirst: vi.fn(), create: vi.fn(), findMany: vi.fn(), findUnique: vi.fn() },
         courseStudent: { findMany: vi.fn().mockResolvedValue([]) },
     },
@@ -39,7 +39,7 @@ import { GoalService } from './goal.service.js';
 
 const NOW = new Date('2026-06-01T00:00:00.000Z');
 
-function makeChatSpace(overrides: Record<string, unknown> = {}) {
+function makeSessionDiscussion(overrides: Record<string, unknown> = {}) {
     return {
         id: 'cs-1',
         groupId: 'group-1',
@@ -54,7 +54,7 @@ describe('GoalService Integration — Flow 3: Goal Setting + Bloom Taxonomy', ()
     });
 
     it('creates goal with valid Bloom verb', async () => {
-        prismaMock.chatSpace.findFirst.mockResolvedValue(makeChatSpace());
+        prismaMock.sessionDiscussion.findFirst.mockResolvedValue(makeSessionDiscussion());
         mockGroupService.isGroupMember.mockResolvedValue(true);
         prismaMock.learningGoal.findFirst.mockResolvedValue(null);
         mockValidateGoalContent.mockReturnValue({ isValid: true });
@@ -67,12 +67,12 @@ describe('GoalService Integration — Flow 3: Goal Setting + Bloom Taxonomy', ()
             content: 'Menganalisis dampak perubahan iklim',
             isValidated: true,
             user: { id: 'student-1', name: 'Student' },
-            chatSpace: { id: 'cs-1', name: 'Sesi 1', group: { id: 'group-1', name: 'Kelompok 1' } },
+            sessionDiscussion: { id: 'cs-1', name: 'Sesi 1', group: { id: 'group-1', name: 'Kelompok 1' } },
             createdAt: NOW,
         });
 
         const result = await GoalService.createGoal(
-            { content: 'Menganalisis dampak perubahan iklim', chat_space_id: 'cs-1' } as any,
+            { content: 'Menganalisis dampak perubahan iklim', session_discussion_id: 'cs-1' } as any,
             'student-1',
         );
 
@@ -82,7 +82,7 @@ describe('GoalService Integration — Flow 3: Goal Setting + Bloom Taxonomy', ()
     });
 
     it('rejects goal without Bloom verb', async () => {
-        prismaMock.chatSpace.findFirst.mockResolvedValue(makeChatSpace());
+        prismaMock.sessionDiscussion.findFirst.mockResolvedValue(makeSessionDiscussion());
         mockGroupService.isGroupMember.mockResolvedValue(true);
         prismaMock.learningGoal.findFirst.mockResolvedValue(null);
         mockValidateGoalContent.mockReturnValue({
@@ -92,26 +92,26 @@ describe('GoalService Integration — Flow 3: Goal Setting + Bloom Taxonomy', ()
 
         await expect(
             GoalService.createGoal(
-                { content: 'Belajar tentang iklim', chat_space_id: 'cs-1' } as any,
+                { content: 'Belajar tentang iklim', session_discussion_id: 'cs-1' } as any,
                 'student-1',
             ),
         ).rejects.toThrow('Goal harus menggunakan kata kerja taksonomi Bloom');
     });
 
     it('returns existing goal when duplicate is submitted', async () => {
-        prismaMock.chatSpace.findFirst.mockResolvedValue(makeChatSpace());
+        prismaMock.sessionDiscussion.findFirst.mockResolvedValue(makeSessionDiscussion());
         mockGroupService.isGroupMember.mockResolvedValue(true);
         prismaMock.learningGoal.findFirst.mockResolvedValue({
             id: 'existing-goal',
             content: 'Mengevaluasi teori',
             isValidated: true,
             user: { id: 'student-2', name: 'Other Student' },
-            chatSpace: { id: 'cs-1', name: 'Sesi 1', group: { id: 'group-1', name: 'Kelompok 1' } },
+            sessionDiscussion: { id: 'cs-1', name: 'Sesi 1', group: { id: 'group-1', name: 'Kelompok 1' } },
             createdAt: NOW,
         });
 
         const result = await GoalService.createGoal(
-            { content: 'New goal', chat_space_id: 'cs-1' } as any,
+            { content: 'New goal', session_discussion_id: 'cs-1' } as any,
             'student-1',
         );
 
@@ -119,28 +119,28 @@ describe('GoalService Integration — Flow 3: Goal Setting + Bloom Taxonomy', ()
         expect(prismaMock.learningGoal.create).not.toHaveBeenCalled();
     });
 
-    it('rejects goal when chat space not found', async () => {
-        prismaMock.chatSpace.findFirst.mockResolvedValue(null);
+    it('rejects goal when session discussion not found', async () => {
+        prismaMock.sessionDiscussion.findFirst.mockResolvedValue(null);
 
         await expect(
-            GoalService.createGoal({ content: 'test', chat_space_id: 'nonexistent' } as any, 'student-1'),
-        ).rejects.toThrow('Chat space not found');
+            GoalService.createGoal({ content: 'test', session_discussion_id: 'nonexistent' } as any, 'student-1'),
+        ).rejects.toThrow('Session discussion not found');
     });
 
     it('rejects goal when user is not group member', async () => {
-        prismaMock.chatSpace.findFirst.mockResolvedValue(makeChatSpace());
+        prismaMock.sessionDiscussion.findFirst.mockResolvedValue(makeSessionDiscussion());
         mockGroupService.isGroupMember.mockResolvedValue(false);
 
         await expect(
-            GoalService.createGoal({ content: 'test', chat_space_id: 'cs-1' } as any, 'outsider'),
+            GoalService.createGoal({ content: 'test', session_discussion_id: 'cs-1' } as any, 'outsider'),
         ).rejects.toThrow('You are not a member of this group');
     });
 
-    it('returns goals for chat space as lecturer (owner)', async () => {
-        prismaMock.chatSpace.findFirst.mockResolvedValue({
-            ...makeChatSpace(),
+    it('returns goals for session discussion as lecturer (owner)', async () => {
+        prismaMock.sessionDiscussion.findFirst.mockResolvedValue({
+            ...makeSessionDiscussion(),
             group: {
-                ...makeChatSpace().group,
+                ...makeSessionDiscussion().group,
                 course: { ownerId: 'lecturer-1' },
             },
         });
@@ -153,37 +153,37 @@ describe('GoalService Integration — Flow 3: Goal Setting + Bloom Taxonomy', ()
             createdAt: NOW,
         });
 
-        const result = await GoalService.getChatSpaceGoals('cs-1', 'lecturer-1', 'lecturer');
+        const result = await GoalService.getSessionDiscussionGoals('cs-1', 'lecturer-1', 'lecturer');
 
         expect(result).toHaveLength(1);
         expect(result[0].content).toBe('Menganalisis data');
     });
 
-    it('returns empty array when no goal exists for chat space', async () => {
-        prismaMock.chatSpace.findFirst.mockResolvedValue({
-            ...makeChatSpace(),
+    it('returns empty array when no goal exists for session discussion', async () => {
+        prismaMock.sessionDiscussion.findFirst.mockResolvedValue({
+            ...makeSessionDiscussion(),
             group: {
-                ...makeChatSpace().group,
+                ...makeSessionDiscussion().group,
                 course: { ownerId: 'lecturer-1' },
             },
         });
         prismaMock.learningGoal.findFirst.mockResolvedValue(null);
 
-        const result = await GoalService.getChatSpaceGoals('cs-1', 'lecturer-1', 'lecturer');
+        const result = await GoalService.getSessionDiscussionGoals('cs-1', 'lecturer-1', 'lecturer');
         expect(result).toEqual([]);
     });
 
-    it('returns user goals across chat spaces', async () => {
+    it('returns user goals across session discussions', async () => {
         prismaMock.learningGoal.findMany.mockResolvedValue([
             {
                 id: 'g-1', content: 'Goal 1', isValidated: true,
-                chatSpace: { id: 'cs-1', name: 'Sesi 1', group: { id: 'grp-1', name: 'K1', course: { id: 'c-1', code: 'CS101', name: 'Algo' } } },
+                sessionDiscussion: { id: 'cs-1', name: 'Sesi 1', group: { id: 'grp-1', name: 'K1', course: { id: 'c-1', code: 'CS101', name: 'Algo' } } },
                 _count: { reflections: 1 },
                 createdAt: NOW,
             },
             {
                 id: 'g-2', content: 'Goal 2', isValidated: true,
-                chatSpace: { id: 'cs-2', name: 'Sesi 2', group: { id: 'grp-2', name: 'K2', course: { id: 'c-2', code: 'CS102', name: 'DB' } } },
+                sessionDiscussion: { id: 'cs-2', name: 'Sesi 2', group: { id: 'grp-2', name: 'K2', course: { id: 'c-2', code: 'CS102', name: 'DB' } } },
                 _count: { reflections: 0 },
                 createdAt: NOW,
             },
@@ -192,7 +192,7 @@ describe('GoalService Integration — Flow 3: Goal Setting + Bloom Taxonomy', ()
         const result = await GoalService.getMyGoals('student-1');
 
         expect(result).toHaveLength(2);
-        expect(result[0].chatSpace.name).toBe('Sesi 1');
+        expect(result[0].sessionDiscussion.name).toBe('Sesi 1');
         expect(result[1].reflectionsCount).toBe(0);
     });
 
@@ -203,7 +203,7 @@ describe('GoalService Integration — Flow 3: Goal Setting + Bloom Taxonomy', ()
             isValidated: true,
             userId: 'student-1',
             user: { id: 'student-1', name: 'Student' },
-            chatSpace: {
+            sessionDiscussion: {
                 id: 'cs-1', name: 'Sesi 1', groupId: 'group-1',
                 group: { id: 'group-1', name: 'K1', course: { id: 'c-1', code: 'CS101', name: 'Algo', ownerId: 'lecturer-1' } },
             },

@@ -27,7 +27,7 @@ export interface IEngagementAnalysis {
 export interface IChatLog extends Document {
     courseId: string;
     groupId: string;
-    chatSpaceId: string;
+    sessionDiscussionId: string;
     senderId: string;
     senderName: string;
     senderType: 'student' | 'lecturer' | 'ai' | 'bot' | 'system';
@@ -97,7 +97,7 @@ const ChatLogSchema = new Schema<IChatLog>(
     {
         courseId: { type: String, required: true, index: true },
         groupId: { type: String, required: true, index: true },
-        chatSpaceId: { type: String, required: true, index: true },
+        sessionDiscussionId: { type: String, required: true, index: true },
         senderId: { type: String, required: true },
         senderName: { type: String, required: true },
         senderType: {
@@ -141,9 +141,9 @@ const ChatLogSchema = new Schema<IChatLog>(
     }
 );
 
-ChatLogSchema.index({ chatSpaceId: 1, createdAt: -1 });
+ChatLogSchema.index({ sessionDiscussionId: 1, createdAt: -1 });
 ChatLogSchema.index({ courseId: 1, groupId: 1, createdAt: -1 });
-ChatLogSchema.index({ chatSpaceId: 1, isPinned: 1, createdAt: -1 });
-ChatLogSchema.index({ chatSpaceId: 1, topic: 1, createdAt: -1 });
+ChatLogSchema.index({ sessionDiscussionId: 1, isPinned: 1, createdAt: -1 });
+ChatLogSchema.index({ sessionDiscussionId: 1, topic: 1, createdAt: -1 });
 
 export const ChatLog = mongoose.model<IChatLog>('ChatLog', ChatLogSchema);

@@ -130,10 +130,10 @@ describe('Input Validation Integration Tests', () => {
         });
     });
 
-    describe('Chat Space - POST /api/chat-spaces/:id/reflection', () => {
+    describe('Session Discussion - POST /api/session-discussions/:id/reflection', () => {
         it('should reject reflection shorter than 10 chars', async () => {
             const res = await request(app)
-                .post('/api/chat-spaces/test-id/reflection')
+                .post('/api/session-discussions/test-id/reflection')
                 .set('Authorization', `Bearer ${studentAuthToken}`)
                 .send({ content: 'short' });
 
@@ -144,7 +144,7 @@ describe('Input Validation Integration Tests', () => {
         it('should reject reflection exceeding max length', async () => {
             const longContent = 'a'.repeat(2001);
             const res = await request(app)
-                .post('/api/chat-spaces/test-id/reflection')
+                .post('/api/session-discussions/test-id/reflection')
                 .set('Authorization', `Bearer ${studentAuthToken}`)
                 .send({ content: longContent });
 

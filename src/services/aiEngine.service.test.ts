@@ -135,7 +135,7 @@ describe('AIEngineService', () => {
                     query: 'Apa itu Kolabri?',
                     course_id: 'course-1',
                     user_name: 'Hshi',
-                    chat_space_id: 'chat-9',
+                    session_discussion_id: 'chat-9',
                     guardrail_policy: {
                         preset: 'balanced',
                         allow_rewrite: true,
@@ -159,7 +159,7 @@ describe('AIEngineService', () => {
                     query: 'Apa itu Kolabri?',
                     course_id: 'course-1',
                     user_name: 'Hshi',
-                    chat_space_id: 'chat-9',
+                    session_discussion_id: 'chat-9',
                     guardrail_policy: undefined,
                     provider_context: providerContext,
                 }),

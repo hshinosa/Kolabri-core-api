@@ -120,10 +120,10 @@ export class AnalyticsController {
         }
     }
 
-    static async getChatSpaceAnalytics(req: Request, res: Response, next: NextFunction) {
+    static async getSessionDiscussionAnalytics(req: Request, res: Response, next: NextFunction) {
         try {
-            const result = await AnalyticsService.getChatSpaceAnalytics(
-                req.params.chatSpaceId,
+            const result = await AnalyticsService.getSessionDiscussionAnalytics(
+                req.params.sessionDiscussionId,
                 req.user?.userId,
                 req.user?.role
             );

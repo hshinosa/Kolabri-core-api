@@ -14,7 +14,7 @@ interface LeanChatLog {
     _id?: unknown;
     courseId: string;
     groupId: string;
-    chatSpaceId: string;
+    sessionDiscussionId: string;
     senderId: string;
     senderName: string;
     senderType: 'student' | 'lecturer' | 'ai' | 'bot' | 'system';
@@ -57,17 +57,17 @@ export interface GroupAnalyticsResult {
     engagementDistribution: EngagementDistribution;
     engagementExamples: EngagementExample[];
     recommendation: string;
-    chatSpaceStats: {
-        chatSpaceId: string;
+    sessionDiscussionStats: {
+        sessionDiscussionId: string;
         messageCount: number;
         lastActivity: Date | null;
     }[];
     error?: string;
 }
 
-export interface ChatSpaceAnalyticsResult {
+export interface SessionDiscussionAnalyticsResult {
     success: boolean;
-    chatSpaceId: string;
+    sessionDiscussionId: string;
     messageCount: number;
     qualityScore: number;
     qualityBreakdown: QualityBreakdown;
@@ -83,7 +83,7 @@ export interface ChatSpaceAnalyticsResult {
  */
 export class ChatAnalyticsService {
     /**
-     * Get analytics for a group's discussions across all chat spaces
+     * Get analytics for a group's discussions across all session discussions
      */
     async getGroupAnalytics(groupId: string): Promise<GroupAnalyticsResult> {
         try {
@@ -117,22 +117,22 @@ export class ChatAnalyticsService {
                     },
                     engagementExamples: [],
                     recommendation: 'Belum ada data diskusi untuk dianalisis.',
-                    chatSpaceStats: [],
+                    sessionDiscussionStats: [],
                 };
             }
 
             // Calculate analytics from messages
             const analytics = this.calculateAnalytics(messages);
 
-            // Get chat space stats
-            const chatSpaceStats = await this.getChatSpaceStats(groupId);
+            // Get session discussion stats
+            const sessionDiscussionStats = await this.getSessionDiscussionStats(groupId);
 
             return {
                 success: true,
                 groupId,
                 messageCount: messages.length,
                 ...analytics,
-                chatSpaceStats,
+                sessionDiscussionStats,
             };
         } catch (error) {
             logger.error('Chat analytics calculation failed:', error);
@@ -156,21 +156,21 @@ export class ChatAnalyticsService {
                 },
                 engagementExamples: [],
                 recommendation: 'Terjadi kesalahan saat menghitung analytics.',
-                chatSpaceStats: [],
+                sessionDiscussionStats: [],
                 error: error instanceof Error ? error.message : 'Unknown error',
             };
         }
     }
 
     /**
-     * Get analytics for a specific chat space
+     * Get analytics for a specific session discussion
      */
-    async getChatSpaceAnalytics(
-        chatSpaceId: string
-    ): Promise<ChatSpaceAnalyticsResult> {
+    async getSessionDiscussionAnalytics(
+        sessionDiscussionId: string
+    ): Promise<SessionDiscussionAnalyticsResult> {
         try {
             const messages = await ChatLog.find({
-                chatSpaceId,
+                sessionDiscussionId,
                 deletedAt: null,
                 senderType: { $in: ['student', 'lecturer'] },
             })
@@ -180,7 +180,7 @@ export class ChatAnalyticsService {
             if (messages.length === 0) {
                 return {
                     success: true,
-                    chatSpaceId,
+                    sessionDiscussionId,
                     messageCount: 0,
                     qualityScore: 0,
                     qualityBreakdown: {
@@ -204,15 +204,15 @@ export class ChatAnalyticsService {
 
             return {
                 success: true,
-                chatSpaceId,
+                sessionDiscussionId,
                 messageCount: messages.length,
                 ...analytics,
             };
         } catch (error) {
-            logger.error('Chat space analytics calculation failed:', error);
+            logger.error('Session discussion analytics calculation failed:', error);
             return {
                 success: false,
-                chatSpaceId,
+                sessionDiscussionId,
                 messageCount: 0,
                 qualityScore: 0,
                 qualityBreakdown: {
@@ -383,16 +383,16 @@ export class ChatAnalyticsService {
     }
 
     /**
-     * Get statistics per chat space for a group
+     * Get statistics per session discussion for a group
      */
-    private async getChatSpaceStats(
+    private async getSessionDiscussionStats(
         groupId: string
-    ): Promise<{ chatSpaceId: string; messageCount: number; lastActivity: Date | null }[]> {
+    ): Promise<{ sessionDiscussionId: string; messageCount: number; lastActivity: Date | null }[]> {
         const stats = await ChatLog.aggregate([
             { $match: { groupId, deletedAt: null } },
             {
                 $group: {
-                    _id: '$chatSpaceId',
+                    _id: '$sessionDiscussionId',
                     messageCount: { $sum: 1 },
                     lastActivity: { $max: '$createdAt' },
                 },
@@ -401,7 +401,7 @@ export class ChatAnalyticsService {
         ]);
 
         return stats.map((s) => ({
-            chatSpaceId: s._id,
+            sessionDiscussionId: s._id,
             messageCount: s.messageCount,
             lastActivity: s.lastActivity,
         }));

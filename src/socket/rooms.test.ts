@@ -2,8 +2,8 @@ import { describe, expect, it } from 'vitest';
 import { roomNames } from './rooms.js';
 
 describe('roomNames', () => {
-    it('chatSpace returns the raw chatSpaceId for compatibility with socket.join', () => {
-        expect(roomNames.chatSpace('abc')).toBe('abc');
+    it('sessionDiscussion returns the raw sessionDiscussionId for compatibility with socket.join', () => {
+        expect(roomNames.sessionDiscussion('abc')).toBe('abc');
     });
 
     it('user returns a namespaced room', () => {

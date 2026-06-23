@@ -1,20 +1,20 @@
 import type { NextFunction, Request, Response } from 'express';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
-const { mockChatSpaceService } = vi.hoisted(() => ({
-    mockChatSpaceService: {
+const { mockSessionDiscussionService } = vi.hoisted(() => ({
+    mockSessionDiscussionService: {
         closeSession: vi.fn(),
         reopenSession: vi.fn(),
-        getChatSpaceStatus: vi.fn(),
+        getSessionDiscussionStatus: vi.fn(),
         submitSessionReflection: vi.fn(),
     },
 }));
 
-vi.mock('../services/chatSpace.service.js', () => ({
-    ChatSpaceService: mockChatSpaceService,
+vi.mock('../services/sessionDiscussion.service.js', () => ({
+    SessionDiscussionService: mockSessionDiscussionService,
 }));
 
-import { ChatSpaceController } from './chatSpace.controller.js';
+import { SessionDiscussionController } from './sessionDiscussion.controller.js';
 
 function mockReq(overrides: Partial<Request> = {}) {
     return {
@@ -44,21 +44,21 @@ function mockNext(): NextFunction {
     return vi.fn() as unknown as NextFunction;
 }
 
-describe('ChatSpaceController', () => {
+describe('SessionDiscussionController', () => {
     beforeEach(() => {
         vi.clearAllMocks();
     });
 
     it('closes a session and returns success message', async () => {
-        const result = { id: 'chat-space-1', closed: true };
-        mockChatSpaceService.closeSession.mockResolvedValue(result);
-        const req = mockReq({ params: { id: 'chat-space-1' } });
+        const result = { id: 'session-discussion-1', closed: true };
+        mockSessionDiscussionService.closeSession.mockResolvedValue(result);
+        const req = mockReq({ params: { id: 'session-discussion-1' } });
         const res = mockRes();
         const next = mockNext();
 
-        await ChatSpaceController.close(req as Request, res as Response, next);
+        await SessionDiscussionController.close(req as Request, res as Response, next);
 
-        expect(mockChatSpaceService.closeSession).toHaveBeenCalledWith('chat-space-1', 'user-1', 'lecturer');
+        expect(mockSessionDiscussionService.closeSession).toHaveBeenCalledWith('session-discussion-1', 'user-1', 'lecturer');
         expect(res.json).toHaveBeenCalledWith({
             data: result,
             meta: { message: 'Session closed successfully' },
@@ -67,15 +67,15 @@ describe('ChatSpaceController', () => {
     });
 
     it('reopens a session and returns success message', async () => {
-        const result = { id: 'chat-space-1', closed: false };
-        mockChatSpaceService.reopenSession.mockResolvedValue(result);
-        const req = mockReq({ params: { id: 'chat-space-1' } });
+        const result = { id: 'session-discussion-1', closed: false };
+        mockSessionDiscussionService.reopenSession.mockResolvedValue(result);
+        const req = mockReq({ params: { id: 'session-discussion-1' } });
         const res = mockRes();
         const next = mockNext();
 
-        await ChatSpaceController.reopen(req as Request, res as Response, next);
+        await SessionDiscussionController.reopen(req as Request, res as Response, next);
 
-        expect(mockChatSpaceService.reopenSession).toHaveBeenCalledWith('chat-space-1', 'user-1', 'lecturer');
+        expect(mockSessionDiscussionService.reopenSession).toHaveBeenCalledWith('session-discussion-1', 'user-1', 'lecturer');
         expect(res.json).toHaveBeenCalledWith({
             data: result,
             meta: { message: 'Session reopened successfully' },
@@ -83,30 +83,30 @@ describe('ChatSpaceController', () => {
         expect(next).not.toHaveBeenCalled();
     });
 
-    it('returns chat space status for the authenticated user', async () => {
+    it('returns session discussion status for the authenticated user', async () => {
         const status = { isClosed: false, requiresReflection: true };
-        mockChatSpaceService.getChatSpaceStatus.mockResolvedValue(status);
-        const req = mockReq({ params: { id: 'chat-space-1' }, user: { userId: 'student-1', role: 'student' } as Request['user'] });
+        mockSessionDiscussionService.getSessionDiscussionStatus.mockResolvedValue(status);
+        const req = mockReq({ params: { id: 'session-discussion-1' }, user: { userId: 'student-1', role: 'student' } as Request['user'] });
         const res = mockRes();
         const next = mockNext();
 
-        await ChatSpaceController.getStatus(req as Request, res as Response, next);
+        await SessionDiscussionController.getStatus(req as Request, res as Response, next);
 
-        expect(mockChatSpaceService.getChatSpaceStatus).toHaveBeenCalledWith('chat-space-1', 'student-1', 'student');
+        expect(mockSessionDiscussionService.getSessionDiscussionStatus).toHaveBeenCalledWith('session-discussion-1', 'student-1', 'student');
         expect(res.json).toHaveBeenCalledWith({ data: status });
         expect(next).not.toHaveBeenCalled();
     });
 
     it('submits a reflection and returns 201', async () => {
         const reflection = { id: 'reflection-1', content: 'It went well' };
-        mockChatSpaceService.submitSessionReflection.mockResolvedValue(reflection);
-        const req = mockReq({ params: { id: 'chat-space-1' }, body: { content: 'It went well' }, user: { userId: 'student-1', role: 'student' } as Request['user'] });
+        mockSessionDiscussionService.submitSessionReflection.mockResolvedValue(reflection);
+        const req = mockReq({ params: { id: 'session-discussion-1' }, body: { content: 'It went well' }, user: { userId: 'student-1', role: 'student' } as Request['user'] });
         const res = mockRes();
         const next = mockNext();
 
-        await ChatSpaceController.submitReflection(req as Request, res as Response, next);
+        await SessionDiscussionController.submitReflection(req as Request, res as Response, next);
 
-        expect(mockChatSpaceService.submitSessionReflection).toHaveBeenCalledWith('chat-space-1', 'It went well', 'student-1');
+        expect(mockSessionDiscussionService.submitSessionReflection).toHaveBeenCalledWith('session-discussion-1', 'It went well', 'student-1');
         expect(res.status).toHaveBeenCalledWith(201);
         expect(res.json).toHaveBeenCalledWith({
             data: reflection,

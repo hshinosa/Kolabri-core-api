@@ -21,7 +21,7 @@ function getModelName(dataType: DataType): keyof PrismaClient | null {
         [DataType.USER]: 'user',
         [DataType.COURSE]: 'course',
         [DataType.GROUP]: 'group',
-        [DataType.CHAT_SPACE]: 'chatSpace',
+        [DataType.SESSION_DISCUSSION]: 'sessionDiscussion',
         [DataType.KNOWLEDGE_BASE]: 'knowledgeBase',
         [DataType.CHAT_LOG]: null, // Handled separately (MongoDB)
     };

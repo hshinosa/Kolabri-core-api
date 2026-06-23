@@ -14,7 +14,7 @@ export type SessionWeekContext = {
 };
 
 export class WeekContextService {
-    static async sessionWeekForChatSpace(weekId: string | null | undefined): Promise<SessionWeekContext | null> {
+    static async sessionWeekForSessionDiscussion(weekId: string | null | undefined): Promise<SessionWeekContext | null> {
         if (!weekId) {
             return null;
         }

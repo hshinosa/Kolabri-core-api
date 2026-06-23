@@ -23,13 +23,13 @@ export class GoalController {
     }
 
     /**
-     * GET /api/goals/chat-space/:chatSpaceId
-     * Get goals for a chat space
+     * GET /api/goals/session-discussion/:sessionDiscussionId
+     * Get goals for a session discussion
      */
-    static async getChatSpaceGoals(req: AuthenticatedRequest, res: Response, next: NextFunction) {
+    static async getSessionDiscussionGoals(req: AuthenticatedRequest, res: Response, next: NextFunction) {
         try {
-            const goals = await GoalService.getChatSpaceGoals(
-                req.params.chatSpaceId,
+            const goals = await GoalService.getSessionDiscussionGoals(
+                req.params.sessionDiscussionId,
                 req.user!.userId,
                 req.user!.role
             );

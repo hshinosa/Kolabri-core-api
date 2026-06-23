@@ -11,9 +11,9 @@ const { mockGroupService } = vi.hoisted(() => ({
         getGroupDetails: vi.fn(),
         getMyGroup: vi.fn(),
         deleteGroup: vi.fn(),
-        createChatSpace: vi.fn(),
-        getChatSpaces: vi.fn(),
-        getChatSpaceById: vi.fn(),
+        createSessionDiscussion: vi.fn(),
+        getSessionDiscussions: vi.fn(),
+        getSessionDiscussionById: vi.fn(),
     },
 }));
 
@@ -233,9 +233,9 @@ describe('GroupController', () => {
         });
     });
 
-    it('creates a chat space and returns 201', async () => {
-        const chatSpace = { id: 'chat-1', name: 'General' };
-        mockGroupService.createChatSpace.mockResolvedValue(chatSpace);
+    it('creates a session discussion and returns 201', async () => {
+        const sessionDiscussion = { id: 'chat-1', name: 'General' };
+        mockGroupService.createSessionDiscussion.mockResolvedValue(sessionDiscussion);
         const req = mockReq({
             params: { id: 'group-1' },
             body: { name: 'General', description: 'Main space' },
@@ -244,9 +244,9 @@ describe('GroupController', () => {
         const res = mockRes();
         const next = mockNext();
 
-        await GroupController.createChatSpace(req as Request, res as Response, next);
+        await GroupController.createSessionDiscussion(req as Request, res as Response, next);
 
-        expect(mockGroupService.createChatSpace).toHaveBeenCalledWith(
+        expect(mockGroupService.createSessionDiscussion).toHaveBeenCalledWith(
             'group-1',
             { name: 'General', description: 'Main space' },
             'lecturer-1',
@@ -254,14 +254,14 @@ describe('GroupController', () => {
         );
         expect(res.status).toHaveBeenCalledWith(201);
         expect(res.json).toHaveBeenCalledWith({
-            data: chatSpace,
-            meta: { message: 'Chat space created successfully' },
+            data: sessionDiscussion,
+            meta: { message: 'Session discussion created successfully' },
         });
     });
 
-    it('returns all chat spaces in a group', async () => {
-        const chatSpaces = { data: [{ id: 'chat-1' }], pagination: { total: 1, per_page: 12, current_page: 1, last_page: 1 } };
-        mockGroupService.getChatSpaces.mockResolvedValue(chatSpaces);
+    it('returns all session discussions in a group', async () => {
+        const sessionDiscussions = { data: [{ id: 'chat-1' }], pagination: { total: 1, per_page: 12, current_page: 1, last_page: 1 } };
+        mockGroupService.getSessionDiscussions.mockResolvedValue(sessionDiscussions);
         const req = mockReq({
             params: { id: 'group-1' },
             user: { userId: 'student-1', role: 'student' } as Request['user'],
@@ -270,26 +270,26 @@ describe('GroupController', () => {
         const res = mockRes();
         const next = mockNext();
 
-        await GroupController.getChatSpaces(req as Request, res as Response, next);
+        await GroupController.getSessionDiscussions(req as Request, res as Response, next);
 
-        expect(mockGroupService.getChatSpaces).toHaveBeenCalledWith('group-1', 'student-1', 'student', {});
-        expect(res.json).toHaveBeenCalledWith(chatSpaces);
+        expect(mockGroupService.getSessionDiscussions).toHaveBeenCalledWith('group-1', 'student-1', 'student', {});
+        expect(res.json).toHaveBeenCalledWith(sessionDiscussions);
     });
 
-    it('returns a chat space by id', async () => {
-        const chatSpace = { id: 'chat-1', name: 'General' };
-        mockGroupService.getChatSpaceById.mockResolvedValue(chatSpace);
+    it('returns a session discussion by id', async () => {
+        const sessionDiscussion = { id: 'chat-1', name: 'General' };
+        mockGroupService.getSessionDiscussionById.mockResolvedValue(sessionDiscussion);
         const req = mockReq({
-            params: { chatSpaceId: 'chat-1' },
+            params: { sessionDiscussionId: 'chat-1' },
             user: { userId: 'student-1', role: 'student' } as Request['user'],
         });
         const res = mockRes();
         const next = mockNext();
 
-        await GroupController.getChatSpaceById(req as Request, res as Response, next);
+        await GroupController.getSessionDiscussionById(req as Request, res as Response, next);
 
-        expect(mockGroupService.getChatSpaceById).toHaveBeenCalledWith('chat-1', 'student-1', 'student');
-        expect(res.json).toHaveBeenCalledWith({ data: chatSpace });
+        expect(mockGroupService.getSessionDiscussionById).toHaveBeenCalledWith('chat-1', 'student-1', 'student');
+        expect(res.json).toHaveBeenCalledWith({ data: sessionDiscussion });
     });
 
     it('forwards service errors to next', async () => {

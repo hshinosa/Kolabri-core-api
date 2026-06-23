@@ -35,7 +35,7 @@ async function seedRetentionPolicies() {
             autoPurge: false,
         },
         {
-            dataType: DataType.CHAT_SPACE,
+            dataType: DataType.SESSION_DISCUSSION,
             retentionDays: 365,
             archiveAfterDays: 180,
             autoPurge: false,

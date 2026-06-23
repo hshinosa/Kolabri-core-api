@@ -11,7 +11,7 @@ describe('createDemoBlueprint', () => {
         expect(blueprint.users.students).toHaveLength(9);
         expect(blueprint.courses).toHaveLength(4);
         expect(blueprint.groups.length).toBeGreaterThanOrEqual(6);
-        expect(blueprint.chatSpaces.length).toBeGreaterThanOrEqual(8);
+        expect(blueprint.sessionDiscussions.length).toBeGreaterThanOrEqual(8);
         expect(blueprint.learningGoals.length).toBeGreaterThanOrEqual(6);
         expect(blueprint.reflections.length).toBeGreaterThanOrEqual(12);
         expect(blueprint.aiChats.length).toBeGreaterThanOrEqual(4);

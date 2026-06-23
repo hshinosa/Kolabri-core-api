@@ -1,7 +1,7 @@
 import { z } from 'zod';
 
 export const createGoalSchema = z.object({
-    chat_space_id: z.string().uuid('Invalid chat space ID'),
+    session_discussion_id: z.string().uuid('Invalid session discussion ID'),
     content: z
         .string()
         .min(20, 'Goal must be at least 20 characters')

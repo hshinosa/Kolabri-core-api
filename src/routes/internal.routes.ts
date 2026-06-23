@@ -10,6 +10,6 @@ router.post('/knowledge-base/queue-course-material', InternalController.queueCou
 router.post('/knowledge-base/link-course-material', InternalController.linkCourseMaterial);
 router.post('/knowledge-base/unassign-course-material', InternalController.unassignCourseMaterial);
 router.post('/knowledge-base/delete-course-material', InternalController.deleteCourseMaterialKb);
-router.post('/chat-spaces/backfill-week-ids', InternalController.backfillChatSpaceWeeks);
+router.post('/session-discussions/backfill-week-ids', InternalController.backfillSessionDiscussionWeeks);
 
 export default router;

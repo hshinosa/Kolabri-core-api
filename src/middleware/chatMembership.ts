@@ -6,8 +6,8 @@ import { AuthenticatedRequest } from './auth.js';
 
 /**
  * Middleware: verify the authenticated user is a member of the group
- * that owns the chat space / message being accessed.
- * Resolves chatSpaceId from:
+ * that owns the session discussion / message being accessed.
+ * Resolves sessionDiscussionId from:
  *   - req.query.conversation_id (search/pinned endpoints)
  *   - req.params.id (pin/unpin/topic endpoints - message ID, look up ChatLog.groupId)
  */
@@ -23,19 +23,19 @@ export async function assertChatMembership(req: AuthenticatedRequest, res: Respo
     // Case 1: conversation_id in query (search, pinned messages)
     const conversationId = req.query.conversation_id as string | undefined;
     if (conversationId) {
-      const sample = await ChatLog.findOne({ chatSpaceId: conversationId, deletedAt: null }).select('groupId').lean();
+      const sample = await ChatLog.findOne({ sessionDiscussionId: conversationId, deletedAt: null }).select('groupId').lean();
       groupId = sample?.groupId || null;
     }
 
     // Case 2: message ID in params (pin, unpin, topic)
     if (!groupId && req.params.id) {
-      const message = await ChatLog.findById(req.params.id).select('groupId chatSpaceId').lean();
+      const message = await ChatLog.findById(req.params.id).select('groupId sessionDiscussionId').lean();
       if (!message) {
         return res.status(404).json({ error: { code: 'NOT_FOUND', message: 'Message not found' } });
       }
       groupId = message.groupId;
-      // Also attach chatSpaceId to request for downstream use
-      req.chatSpaceId = message.chatSpaceId;
+      // Also attach sessionDiscussionId to request for downstream use
+      req.sessionDiscussionId = message.sessionDiscussionId;
     }
 
     if (!groupId) {

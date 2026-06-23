@@ -13,7 +13,7 @@ export class ReflectionService {
             const goal = await prisma.learningGoal.findUnique({
                 where: { id: data.goalId },
                 include: {
-                    chatSpace: {
+                    sessionDiscussion: {
                         include: {
                             group: {
                                 include: {
@@ -29,7 +29,7 @@ export class ReflectionService {
                 throw ApiError.notFound('Goal not found');
             }
 
-            const isMember = !!(goal.chatSpace?.group?.members.some((m) => m.userId === userId));
+            const isMember = !!(goal.sessionDiscussion?.group?.members.some((m) => m.userId === userId));
             if (!isMember) {
                 throw ApiError.forbidden('You are not a member of this group');
             }
@@ -103,7 +103,7 @@ export class ReflectionService {
                     select: {
                         id: true,
                         content: true,
-                        chatSpace: {
+                        sessionDiscussion: {
                             select: {
                                 id: true,
                                 name: true,
@@ -120,7 +120,7 @@ export class ReflectionService {
                         },
                     },
                 },
-                chatSpace: {
+                sessionDiscussion: {
                     select: {
                         id: true,
                         name: true,
@@ -143,8 +143,8 @@ export class ReflectionService {
         });
 
         return reflections.map((r) => {
-            const sourceChatSpace = r.chatSpace ?? r.goal?.chatSpace ?? null;
-            const sourceGroup = sourceChatSpace?.group ?? null;
+            const sourceSessionDiscussion = r.sessionDiscussion ?? r.goal?.sessionDiscussion ?? null;
+            const sourceGroup = sourceSessionDiscussion?.group ?? null;
             const sourceCourse = r.course ?? sourceGroup?.course ?? null;
 
             return {
@@ -157,10 +157,10 @@ export class ReflectionService {
                         content: r.goal.content,
                     }
                     : null,
-                chatSpace: sourceChatSpace
+                sessionDiscussion: sourceSessionDiscussion
                     ? {
-                        id: sourceChatSpace.id,
-                        name: sourceChatSpace.name,
+                        id: sourceSessionDiscussion.id,
+                        name: sourceSessionDiscussion.name,
                     }
                     : null,
                 course: sourceCourse
@@ -189,7 +189,7 @@ export class ReflectionService {
         const goal = await prisma.learningGoal.findUnique({
             where: { id: goalId },
             include: {
-                chatSpace: {
+                sessionDiscussion: {
                     include: {
                         group: {
                             include: {
@@ -208,11 +208,11 @@ export class ReflectionService {
 
         // Check access
         if (role === 'lecturer') {
-            if (!goal.chatSpace || !goal.chatSpace.group || goal.chatSpace.group.course.ownerId !== userId) {
+            if (!goal.sessionDiscussion || !goal.sessionDiscussion.group || goal.sessionDiscussion.group.course.ownerId !== userId) {
                 throw ApiError.forbidden('You do not own this course');
             }
         } else {
-            const isMember = !!(goal.chatSpace && goal.chatSpace.group && goal.chatSpace.group.members.some((m) => m.userId === userId));
+            const isMember = !!(goal.sessionDiscussion && goal.sessionDiscussion.group && goal.sessionDiscussion.group.members.some((m) => m.userId === userId));
             if (!isMember) {
                 throw ApiError.forbidden('You are not a member of this group');
             }
