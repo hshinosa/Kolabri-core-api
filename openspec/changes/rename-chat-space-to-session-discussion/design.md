@@ -86,13 +86,11 @@ Current naming surface across 3 repos:
 | Service method | `export_service.py _finalize_chat_space_metrics` | `_finalize_session_discussion_metrics` |
 | Mongo logger | `kwargs.get('chat_space_id')` | `kwargs.get('session_discussion_id')` |
 
-## Goals / Non-Goals
-
 **Goals:**
 - Rename all internal identifiers from `chatSpace`/`ChatSpace`/`chat_space` to `sessionDiscussion`/`SessionDiscussion`/`session_discussion`
 - Rename DB tables, columns, MongoDB fields
 - Rename API paths (breaking change — coordinated deploy)
-- Zero data loss (migration renames, not recreates)
+- Clean DB reset + reseed (beta testing, no production data to preserve)
 
 **Non-Goals:**
 - Changing any behavior or logic
@@ -107,33 +105,23 @@ Current naming surface across 3 repos:
 
 **Rationale**: Consistent with `CourseWeek`, `CourseMaterial` pattern (entity-qualifier). "Session" is the entity, "Discussion" is the qualifier. Matches Indonesian "sesi diskusi" (sesi = session, diskusi = discussion).
 
-### D2: DB migration strategy — RENAME, not DROP+CREATE
 
-**Decision**: Use `ALTER TABLE ... RENAME TO ...` and `ALTER TABLE ... RENAME COLUMN ...` for PostgreSQL. For MongoDB, field rename via update script.
+### D2: DB migration strategy — Clean break (migrate reset + reseed)
 
-**Rationale**: Zero data loss. Preserves all FK constraints, indexes, and data.
+**Decision**: Edit Prisma schema directly with new names, then `prisma migrate reset` to drop all tables and recreate from scratch. Reseed with updated seed scripts.
 
-**Migration steps**:
-1. Prisma migration: rename model + `@@map`, rename fields + `@map`
-2. `prisma migrate dev --name rename_chat_space_to_session_discussion`
-3. If schema drift blocks `migrate dev`, apply SQL directly:
-   ```sql
-   ALTER TABLE chat_spaces RENAME TO session_discussions;
-   ALTER TABLE chat_space_pre_read_completions RENAME TO session_discussion_pre_read_completions;
-   ALTER TABLE chat_space_pre_read_completions RENAME COLUMN chat_space_id TO session_discussion_id;
-   ALTER TABLE learning_goals RENAME COLUMN chat_space_id TO session_discussion_id;
-   ALTER TABLE reflections RENAME COLUMN chat_space_id TO session_discussion_id;
-   ALTER TABLE escalation_states RENAME COLUMN chat_space_id TO session_discussion_id;
-   -- Rename indexes
-   ALTER INDEX chat_spaces_group_id_idx RENAME TO session_discussions_group_id_idx;
-   -- etc.
-   ```
-4. MongoDB: `db.chatlogs.updateMany({}, { $rename: { "chatSpaceId": "sessionDiscussionId" } })`
-5. Same for `silence_events` and `escalation_states` collections.
+**Rationale**: Beta testing environment — no production data to preserve. Schema drift already exists (Laravel tables in `public`), so `migrate reset` will clear everything and recreate cleanly. Much simpler than `ALTER TABLE RENAME` which requires careful index/constraint handling and manual `_prisma_migrations` entries.
+
+**Steps**:
+1. Edit `prisma/schema.prisma` with all new names (`SessionDiscussion`, `@@map("session_discussions")`, `sessionDiscussionId`, etc.)
+2. `npx prisma migrate reset --force` — drops ALL tables, recreates from migration history
+3. `npx prisma db seed` — reseeds with updated seed scripts
+4. MongoDB: `db.chatlogs.drop()`, `db.silence_events.drop()`, `db.escalation_states.drop()` — seed scripts recreate with new field names
+5. Client-app: `php artisan migrate:fresh` + `MaterialsDemoSeeder` + `AttendanceDemoSeeder`
+
+**IMPORTANT**: `migrate reset` drops ALL tables including Laravel's. Must re-run both Prisma seed AND Laravel migrate+seed after.
 
 ### D3: Coordinated deployment
-
-**Decision**: Deploy all 3 services simultaneously. No backward-compat shim.
 
 **Rationale**: API path rename is breaking. Adding a shim would double the maintenance burden. Since all 3 services are under our control and deployed together, a clean cutover is simpler.
 
@@ -146,24 +134,24 @@ Current naming surface across 3 repos:
 ## Risks / Trade-offs
 
 | Risk | Severity | Mitigation |
-|---|---|---|
 | Missed identifier causes runtime error | HIGH | `grep -ri "chat.space" --include="*.ts" --include="*.tsx" --include="*.py" --include="*.php"` sweep after all edits |
-| Prisma migration fails due to schema drift | MEDIUM | Apply SQL directly + mark migration as applied in `_prisma_migrations` |
-| MongoDB field rename misses documents | MEDIUM | Run `updateMany` with `$rename` on all 3 collections; verify count before/after |
+| `migrate reset` drops Laravel tables | MEDIUM | Re-run `php artisan migrate` + seeders immediately after Prisma seed |
+| MongoDB collections missing new field names | LOW | `db.drop()` collections — seed scripts recreate with correct names |
 | API clients break during deploy | MEDIUM | Deploy all 3 services in quick succession; brief downtime acceptable |
 | Test files break | LOW | Update test files in same commit |
-| Large diff hard to review | LOW | Split into: (1) core-api Prisma+DB, (2) core-api code, (3) client-app, (4) ai-engine |
+| Large diff hard to review | LOW | Split into: (1) core-api Prisma+DB+seed, (2) core-api code, (3) client-app, (4) ai-engine |
 
 ## Execution Order
 
-1. **Core-api DB migration** (Prisma schema + SQL + MongoDB)
-2. **Core-api code** (controllers, services, routes, middleware, types, tests)
-3. **Client-app code** (routes, controllers, types, components, pages, hooks)
-4. **AI-engine code** (schemas, routes, services, tests)
-5. **Verify**: `tsc --noEmit` (both JS repos), `py_compile` (ai-engine), grep sweep
-6. **Deploy**: rsync all 3 → rebuild all containers → run MongoDB rename scripts
-7. **E2E test**: login, create session, pre-read, goal, chat, close, reflection
-8. **Commit + archive**
+1. **Core-api Prisma schema** (rename models, fields, @@map, @map)
+2. **Core-api seed scripts** (all identifiers + seed content)
+3. **Core-api code** (controllers, services, routes, middleware, types, Mongo models, tests)
+4. **Client-app code** (routes, controllers, types, components, pages, hooks)
+5. **AI-engine code** (schemas, routes, services, tests)
+6. **Verify**: `tsc --noEmit` (both JS repos), `py_compile` (ai-engine), grep sweep
+7. **Deploy**: rsync all 3 → rebuild all containers
+8. **DB reset**: `prisma migrate reset --force` + `prisma db seed` + MongoDB drop + `php artisan migrate` + Laravel seed
+9. **E2E test**: login, create session, pre-read, goal, chat, close, reflection
 
 ## Estimated Scope
 

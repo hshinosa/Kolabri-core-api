@@ -1,14 +1,10 @@
-## 1. Core-api — DB migration
+## 1. Core-api — DB schema + reset
 
-- [ ] 1.1 Edit `prisma/schema.prisma`: rename `ChatSpace` → `SessionDiscussion`, `ChatSpacePreReadCompletion` → `SessionDiscussionPreReadCompletion`, all `chatSpaceId` fields → `sessionDiscussionId`, `@@map("chat_spaces")` → `@@map("session_discussions")`, back-relations on User/Group/Course/Goal/Reflection
-- [ ] 1.2 Apply SQL directly on VPS (schema drift blocks `migrate dev`):
-  - `ALTER TABLE chat_spaces RENAME TO session_discussions`
-  - `ALTER TABLE chat_space_pre_read_completions RENAME TO session_discussion_pre_read_completions`
-  - `ALTER TABLE ... RENAME COLUMN chat_space_id TO session_discussion_id` (4 tables)
-  - Rename all indexes
-- [ ] 1.3 Mark migration as applied in `_prisma_migrations`
-- [ ] 1.4 MongoDB rename: `db.chatlogs.updateMany({}, {$rename: {"chatSpaceId": "sessionDiscussionId"}})` + same for `silence_events`, `escalation_states`
-- [ ] 1.5 `npx prisma generate`
+- [ ] 1.1 Edit `prisma/schema.prisma`: rename `ChatSpace` → `SessionDiscussion`, `ChatSpacePreReadCompletion` → `SessionDiscussionPreReadCompletion`, all `chatSpaceId` fields → `sessionDiscussionId`, `@@map("chat_spaces")` → `@@map("session_discussions")`, `@@map("chat_space_pre_read_completions")` → `@@map("session_discussion_pre_read_completions")`, all `@map("chat_space_id")` → `@map("session_discussion_id")`, back-relations on User/Group/Course/Goal/Reflection
+- [ ] 1.2 `npx prisma generate` — verify schema valid
+- [ ] 1.3 On VPS: `npx prisma migrate reset --force` — drops ALL tables, recreates from migration history
+- [ ] 1.4 MongoDB: `db.chatlogs.drop()`, `db.silence_events.drop()`, `db.escalation_states.drop()` — seed recreates with new field names
+- [ ] 1.5 After Prisma seed: `php artisan migrate` + `MaterialsDemoSeeder` + `AttendanceDemoSeeder` (Laravel tables)
 
 ## 2. Core-api — code
 
@@ -69,8 +65,8 @@
 
 - [ ] 5.1 Grep sweep: `grep -ri "chat.space" --include="*.ts" --include="*.tsx" --include="*.py" --include="*.php"` → 0 hits
 - [ ] 5.2 rsync all 3 repos to VPS
-- [ ] 5.3 Run MongoDB rename scripts on VPS
-- [ ] 5.4 Rebuild all 3 containers
+- [ ] 5.3 Rebuild all 3 containers
+- [ ] 5.4 DB reset: `prisma migrate reset --force` + `prisma db seed` + MongoDB drop + `php artisan migrate` + Laravel seed
 - [ ] 5.5 E2E test: login, create session, pre-read, goal, chat, close, reflection
 - [ ] 5.6 Verify web 200, API 200, AI chat works
 

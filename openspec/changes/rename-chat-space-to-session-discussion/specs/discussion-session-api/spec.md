@@ -33,9 +33,9 @@ All internal identifiers — DB tables, columns, API paths, request/response fie
 #### Scenario: MongoDB fields
 - **WHEN** a ChatLog document is read from MongoDB
 - **THEN** the field is `sessionDiscussionId` (not `chatSpaceId`)
-- **AND** all existing documents have been migrated via `$rename`
+- **AND** all documents are recreated from seed scripts (clean break, beta testing)
 
 #### Scenario: PostgreSQL columns
 - **WHEN** the `learning_goals` table is queried
 - **THEN** the FK column is `session_discussion_id` (not `chat_space_id`)
-- **AND** all existing data is preserved (rename, not recreate)
+- **AND** all data is recreated from seed scripts (clean break, beta testing)
