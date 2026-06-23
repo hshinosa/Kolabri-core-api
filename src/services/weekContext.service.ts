@@ -25,7 +25,7 @@ export class WeekContextService {
             >`
                 SELECT id, week_index, title, course_id
                 FROM course_weeks
-                WHERE id = ${weekId}::uuid
+                WHERE id = ${weekId}::text
                 LIMIT 1
             `;
             const week = weekRows[0];
@@ -37,7 +37,7 @@ export class WeekContextService {
                 SELECT cm.id, cm.title, cm.description
                 FROM course_week_materials cwm
                 INNER JOIN course_materials cm ON cm.id = cwm.course_material_id
-                WHERE cwm.course_week_id = ${weekId}::uuid
+                WHERE cwm.course_week_id = ${weekId}::text
                 ORDER BY cwm.sort_order ASC
             `;
 

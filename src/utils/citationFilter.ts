@@ -39,7 +39,7 @@ export async function allowedMaterialsForCourseMaxWeek(
             FROM course_materials cm
             INNER JOIN course_week_materials cwm ON cwm.course_material_id = cm.id
             INNER JOIN course_weeks cw ON cw.id = cwm.course_week_id
-            WHERE cm.course_id = ${courseId}::uuid
+            WHERE cm.course_id = ${courseId}::text
               AND cw.week_index <= ${maxWeekIndex}
             GROUP BY cm.id
         `;

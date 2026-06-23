@@ -26,7 +26,7 @@ async function assertCourseWeekBelongsToCourse(weekId: string, courseId: string)
         const rows = await prisma.$queryRaw<CourseWeekRow[]>`
             SELECT id, course_id, week_index, title
             FROM course_weeks
-            WHERE id = ${weekId}::uuid
+            WHERE id = ${weekId}::text
             LIMIT 1
         `;
         const week = rows[0];
@@ -63,7 +63,7 @@ async function assertCourseWeekBelongsToCourse(weekId: string, courseId: string)
          const rows = await prisma.$queryRaw<{ id: string; title: string; week_index: number }[]>`
              SELECT id, title, week_index
              FROM course_weeks
-             WHERE id = ANY(${unique}::uuid[])
+            WHERE id = ANY(${unique}::text[])
          `;
          for (const row of rows) {
              map.set(row.id, { title: row.title, week_index: row.week_index });
@@ -1248,7 +1248,7 @@ export class GroupService {
             try {
                 const defaultWeek = await prisma.$queryRaw<{ id: string }[]>`
                     SELECT id FROM course_weeks
-                    WHERE course_id = ${group.courseId}::uuid
+                    WHERE course_id = ${group.courseId}::text
                     ORDER BY week_index ASC
                     LIMIT 1
                 `;
