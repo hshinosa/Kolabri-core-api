@@ -306,14 +306,14 @@ export function createDemoBlueprint(): DemoBlueprint {
     ];
 
     const chatSpaces: DemoChatSpace[] = [
-        { key: 'space-hci-alpha-general', groupKey: 'group-hci-alpha', name: 'General Discussion', description: 'Diskusi utama HCI Team Alpha', type: 'Akademik', isDefault: true, summary: 'Diskusi kuat tentang evaluasi usability dan metode think aloud.' },
-        { key: 'space-hci-alpha-prototype', groupKey: 'group-hci-alpha', name: 'Prototype Review', description: 'Review wireframe dan usability issue', type: 'Proyek', summary: 'Tim menyepakati perbaikan navigasi dan hierarchy CTA.' },
-        { key: 'space-hci-beta-general', groupKey: 'group-hci-beta', name: 'General Discussion', description: 'Diskusi utama HCI Team Beta', type: 'Akademik', isDefault: true, summary: 'Diskusi moderat, butuh dorongan untuk memperdalam alasan desain.' },
-        { key: 'space-se-gamma-general', groupKey: 'group-se-gamma', name: 'Sprint Board', description: 'Daily sync dan backlog refinement', type: 'Proyek', isDefault: true, summary: 'Diskusi aktif tentang pembagian task dan risiko sprint.' },
-        { key: 'space-se-delta-general', groupKey: 'group-se-delta', name: 'Architecture Corner', description: 'Membahas arsitektur solusi', type: 'Akademik', isDefault: true, summary: 'Pembahasan struktur service dan validasi API cukup tajam.' },
-        { key: 'space-dm-insight-general', groupKey: 'group-dm-insight', name: 'Dataset Analysis', description: 'Eksplorasi pattern dan insight data', type: 'Akademik', isDefault: true, summary: 'Banyak insight, namun partisipasi belum merata.' },
-        { key: 'space-dm-lab-general', groupKey: 'group-dm-lab', name: 'Mining Lab', description: 'Praktikum clustering dan evaluasi model', type: 'Proyek', isDefault: true, summary: 'Aktivitas rendah, cocok untuk demo early intervention.' },
-        { key: 'space-pm-lite-general', groupKey: 'group-pm-lite', name: 'Kickoff Room', description: 'Ruang kickoff kelas ringan', type: 'Umum', isDefault: true, summary: 'Aktivitas awal berjalan, namun belum konsisten.' },
+        { key: 'space-hci-alpha-general', groupKey: 'group-hci-alpha', name: 'Diskusi Umum', description: 'Diskusi utama HCI Team Alpha', type: 'Akademik', isDefault: true, summary: 'Diskusi kuat tentang evaluasi usability dan metode think aloud.' },
+        { key: 'space-hci-alpha-prototype', groupKey: 'group-hci-alpha', name: 'Review Prototipe', description: 'Review wireframe dan usability issue', type: 'Proyek', summary: 'Tim menyepakati perbaikan navigasi dan hierarchy CTA.' },
+        { key: 'space-hci-beta-general', groupKey: 'group-hci-beta', name: 'Diskusi Umum', description: 'Diskusi utama HCI Team Beta', type: 'Akademik', isDefault: true, summary: 'Diskusi moderat, butuh dorongan untuk memperdalam alasan desain.' },
+        { key: 'space-se-gamma-general', groupKey: 'group-se-gamma', name: 'Sprint & Backlog', description: 'Daily sync dan backlog refinement', type: 'Proyek', isDefault: true, summary: 'Diskusi aktif tentang pembagian task dan risiko sprint.' },
+        { key: 'space-se-delta-general', groupKey: 'group-se-delta', name: 'Diskusi Arsitektur', description: 'Membahas arsitektur solusi', type: 'Akademik', isDefault: true, summary: 'Pembahasan struktur service dan validasi API cukup tajam.' },
+        { key: 'space-dm-insight-general', groupKey: 'group-dm-insight', name: 'Analisis Dataset', description: 'Eksplorasi pattern dan insight data', type: 'Akademik', isDefault: true, summary: 'Banyak insight, namun partisipasi belum merata.' },
+        { key: 'space-dm-lab-general', groupKey: 'group-dm-lab', name: 'Praktikum Mining', description: 'Praktikum clustering dan evaluasi model', type: 'Proyek', isDefault: true, summary: 'Aktivitas rendah, cocok untuk demo early intervention.' },
+        { key: 'space-pm-lite-general', groupKey: 'group-pm-lite', name: 'Kickoff Proyek', description: 'Sesi kickoff kelas ringan', type: 'Umum', isDefault: true, summary: 'Aktivitas awal berjalan, namun belum konsisten.' },
     ];
 
     const learningGoals: DemoGoal[] = [

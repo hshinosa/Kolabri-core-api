@@ -28,6 +28,15 @@
 - [ ] 2.14 `npx tsc --noEmit` — 0 errors
 - [ ] 2.15 `npm test` — all pass
 
+## 2b. Core-api — seeding
+
+- [ ] 2b.1 Edit `prisma/seed-blueprint.ts`: `DemoChatSpace` → `DemoSessionDiscussion`, `chatSpaces` → `sessionDiscussions`, `chatSpaceKey` → `sessionDiscussionKey` on DemoGoal/DemoReflection/DemoDiscussion/DemoSilenceEvent interfaces, blueprint property `chatSpaces` → `sessionDiscussions`
+- [ ] 2b.2 Edit `prisma/seed.ts`: `prisma.chatSpace` → `prisma.sessionDiscussion`, `chatSpaceIds` → `sessionDiscussionIds`, all `chatSpace`/`chatSpaceKey` refs, console log already fixed to "Sesi diskusi"
+- [ ] 2b.3 Edit `prisma/scripts/seed-demo-data.ts`: `prisma.chatSpace` → `prisma.sessionDiscussion`, `chatSpace` variable → `sessionDiscussion`, all `chatSpaceId` → `sessionDiscussionId` on ChatMessage/LearningGoal/Reflection/ChatLog, session name "Diskusi Utama" stays
+- [ ] 2b.4 Edit `prisma/scripts/seed-demo-chatlogs.ts`: `chatSpaceId` → `sessionDiscussionId` in IChatLog interface, `group.chatSpaces` → `group.sessionDiscussions`, `chatSpace` variable → `sessionDiscussion`
+- [ ] 2b.5 Edit `prisma/scripts/verify-demo-data.ts`: `prisma.chatSpace` → `prisma.sessionDiscussion`, `chatSpaces` → `sessionDiscussions`, `chatSpacesWithoutMessages` → `sessionDiscussionsWithoutMessages`, labels already fixed to "sesi diskusi"
+- [ ] 2b.6 Seed session names already Indonesian (Diskusi Umum, Review Prototipe, Sprint & Backlog, etc.) — no further change needed
+
 ## 3. Client-app — code
 
 - [ ] 3.1 Rename directory: `components/chat-spaces/` → `components/session-discussions/`

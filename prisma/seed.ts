@@ -416,7 +416,7 @@ async function main() {
     console.log(`   Students: ${blueprint.users.students.length}`);
     console.log(`   Courses: ${blueprint.courses.length}`);
     console.log(`   Groups: ${blueprint.groups.length}`);
-    console.log(`   Chat spaces: ${blueprint.chatSpaces.length}`);
+    console.log(`   Sesi diskusi: ${blueprint.chatSpaces.length}`);
     console.log(`   Learning goals: ${blueprint.learningGoals.length}`);
     console.log(`   Reflections: ${blueprint.reflections.length}`);
     console.log(`   AI chats: ${blueprint.aiChats.length}`);

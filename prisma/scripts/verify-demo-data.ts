@@ -106,7 +106,7 @@ export async function verifyDemoData() {
     { label: 'course students', value: courseStudents, minimum: 32 },
     { label: 'groups', value: groups, minimum: 8 },
     { label: 'group members', value: groupMembers, minimum: 24 },
-    { label: 'chat spaces', value: chatSpaces, minimum: 8 },
+    { label: 'sesi diskusi', value: chatSpaces, minimum: 8 },
     { label: 'chat messages', value: chatMessages, minimum: 120 },
     { label: 'learning goals', value: learningGoals, minimum: 24 },
     { label: 'reflections', value: reflections, minimum: 24 },
@@ -119,7 +119,7 @@ export async function verifyDemoData() {
     { label: 'Mongo graph groups matching Postgres groups', value: mongoGroupIdsMatchingPostgres, minimum: 8 },
     { label: 'no courses without groups', value: coursesWithoutGroups === 0 },
     { label: 'no groups without members', value: groupsWithoutMembers === 0 },
-    { label: 'no chat spaces without messages', value: chatSpacesWithoutMessages === 0 },
+    { label: 'no sesi diskusi without messages', value: chatSpacesWithoutMessages === 0 },
   ];
 
   const passed = checks.map(assertCount).every(Boolean);
