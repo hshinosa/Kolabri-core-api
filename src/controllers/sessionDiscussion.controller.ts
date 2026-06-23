@@ -124,4 +124,27 @@ export class SessionDiscussionController {
             next(error);
         }
     }
+    /**
+     * POST /api/session-discussions/bulk-close
+     * Close multiple sessions at once (lecturer only)
+     */
+    static async bulkClose(req: AuthenticatedRequest, res: Response, next: NextFunction) {
+        try {
+            const { sessionDiscussionIds } = req.body as { sessionDiscussionIds: string[] };
+            const results: Array<{ id: string; success: boolean; error?: string; attendanceData?: unknown }> = [];
+
+            for (const id of sessionDiscussionIds) {
+                try {
+                    const result = await SessionDiscussionService.closeSession(id, req.user!.userId, req.user!.role);
+                    results.push({ id, success: true, attendanceData: (result as { attendanceData?: unknown }).attendanceData });
+                } catch (error) {
+                    results.push({ id, success: false, error: error instanceof Error ? error.message : 'Unknown error' });
+                }
+            }
+
+            res.json({ results });
+        } catch (error) {
+            next(error);
+        }
+    }
 }

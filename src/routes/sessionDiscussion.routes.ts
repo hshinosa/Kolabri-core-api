@@ -15,8 +15,9 @@ const sessionReflectionSchema = z.object({
 });
 
 // Session discussion session routes
+router.post('/bulk-close', requireLecturer, SessionDiscussionController.bulkClose);
 router.post('/:id/close', SessionDiscussionController.close);
-router.post('/:id/reopen', requireLecturer, SessionDiscussionController.reopen);
+// Reopen disabled — sessions cannot be reopened (BR-023)
 router.get('/:id/status', SessionDiscussionController.getStatus);
 router.get('/:id/summary', SessionDiscussionController.getSummary);
 router.post('/:id/regenerate-summary', SessionDiscussionController.regenerateSummary);

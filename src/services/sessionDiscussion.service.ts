@@ -5,6 +5,7 @@ import { logger } from '../utils/logger.js';
 import { ChatLog } from '../models/ChatLog.js';
 import { aiEngineService } from './aiEngine.service.js';
 import { providerResolutionService } from './providerResolution.service.js';
+import { AttendanceService, type AttendanceResult } from './attendance.service.js';
 
 // Type for SessionDiscussion with session fields
 interface SessionDiscussionWithSession {
@@ -12,6 +13,7 @@ interface SessionDiscussionWithSession {
     name: string;
     closedAt: Date | null;
     closedBy: string | null;
+    weekId: string | null;
     group: {
         course: { ownerId: string };
         members: { userId: string }[];
@@ -132,6 +134,19 @@ export class SessionDiscussionService {
             });
             summaryError = error instanceof Error ? error.message : 'Failed to generate summary';
         }
+        let attendanceData: AttendanceResult | null = null;
+        try {
+            attendanceData = await AttendanceService.computeAttendance(sessionDiscussionId);
+            if (attendanceData) {
+                attendanceData.weekId = sessionDiscussion.weekId;
+            }
+        } catch (error) {
+            logger.warn('Auto-attendance computation failed during session close', {
+                sessionDiscussionId,
+                error: error instanceof Error ? error.message : String(error),
+            });
+        }
+
         return {
             id: updatedSessionDiscussion.id,
             name: updatedSessionDiscussion.name,
@@ -140,6 +155,7 @@ export class SessionDiscussionService {
             summary,
             summaryGeneratedAt,
             summaryError,
+            attendanceData,
         };
     }
 
