@@ -397,8 +397,28 @@ export class GroupService {
             throw ApiError.notFound('Group not found');
         }
 
+        // If user is the group creator, auto-transfer ownership or delete group
         if (group.createdBy === userId) {
-            throw ApiError.badRequest('Group owner cannot leave the group');
+            const remainingMembers = group.members.filter((m) => m.userId !== userId);
+
+            if (remainingMembers.length === 0) {
+                // No remaining members — soft-delete the group
+                await prisma.group.update({
+                    where: { id: groupId },
+                    data: { deletedAt: new Date() },
+                });
+                await prisma.groupMember.delete({
+                    where: { groupId_userId: { groupId, userId } },
+                });
+                return { success: true, groupDeleted: true };
+            }
+
+            // Transfer ownership to earliest-joined remaining member
+            remainingMembers.sort((a, b) => a.joinedAt.getTime() - b.joinedAt.getTime());
+            await prisma.group.update({
+                where: { id: groupId },
+                data: { createdBy: remainingMembers[0].userId },
+            });
         }
 
         this.ensureMinimumMemberCountAfterRemoval(group.members.length, getMinMembersPerGroup(group.course));
