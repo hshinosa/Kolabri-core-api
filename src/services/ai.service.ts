@@ -65,23 +65,6 @@ const providerRepository: ProviderRepository = {
     },
 };
 
-type ComparisonStore = {
-    saveComparison(data: {
-        prompt: string;
-        createdBy: string;
-        results: Array<{
-            provider: string;
-            providerId: string | null;
-            model: string;
-            response: string;
-            promptTokens: number;
-            completionTokens: number;
-            totalTokens: number;
-            estimatedCost: number;
-            latencyMs: number;
-        }>;
-    }): Promise<{ id: string }>;
-};
 
 type SendContext = {
     userId: string;
@@ -101,7 +84,6 @@ type RetryOptions = {
 type AIServiceDependencies = {
     providerRepository?: ProviderRepository;
     usageTrackingService?: Pick<UsageTrackingService, 'trackUsage'>;
-    comparisonStore?: ComparisonStore;
     adapterFactory?: (providerName: string, apiKey: string, provider?: ProviderRecord) => AIProviderAdapter;
     decryptApiKey?: (value: string) => string;
     retryOptions?: RetryOptions;
@@ -114,35 +96,10 @@ type SendResult = AIProviderResponse & {
     response: string;
 };
 
-const defaultComparisonStore: ComparisonStore = {
-    async saveComparison(data) {
-        return prisma.aiModelComparison.create({
-            data: {
-                prompt: data.prompt,
-                createdBy: data.createdBy,
-                results: {
-                    create: data.results.map((item) => ({
-                        provider: item.provider,
-                        providerId: item.providerId,
-                        model: item.model,
-                        response: item.response,
-                        promptTokens: item.promptTokens,
-                        completionTokens: item.completionTokens,
-                        totalTokens: item.totalTokens,
-                        estimatedCost: item.estimatedCost,
-                        latencyMs: item.latencyMs,
-                    })),
-                },
-            },
-            select: { id: true },
-        }) as Promise<{ id: string }>;
-    },
-};
 
 export class AIService {
     private readonly providerRepository: ProviderRepository;
     private readonly usageTrackingService: Pick<UsageTrackingService, 'trackUsage'>;
-    private readonly comparisonStore: ComparisonStore;
     private readonly adapterFactory: (providerName: string, apiKey: string, provider?: ProviderRecord) => AIProviderAdapter;
     private readonly decryptApiKey: (value: string) => string;
     private readonly retryOptions: RetryOptions;
@@ -150,7 +107,6 @@ export class AIService {
     constructor(dependencies: AIServiceDependencies = {}) {
         this.providerRepository = dependencies.providerRepository ?? defaultProviderRepository;
         this.usageTrackingService = dependencies.usageTrackingService ?? usageTrackingService;
-        this.comparisonStore = dependencies.comparisonStore ?? defaultComparisonStore;
         this.adapterFactory = dependencies.adapterFactory ?? ((providerName, apiKey) => this.createAdapter(providerName, apiKey));
         this.decryptApiKey = dependencies.decryptApiKey ?? decrypt;
         this.retryOptions = dependencies.retryOptions ?? { attempts: 3, baseDelayMs: 300 };
@@ -166,7 +122,6 @@ export class AIService {
         if (!provider || !provider.isActive) {
             throw ApiError.badRequest(`Provider ${providerName} is not available`);
         }
-
         return this.sendWithProvider(prompt, provider, context);
     }
 
@@ -203,57 +158,6 @@ export class AIService {
             fallbackProviders.map((provider) => provider.name),
             context,
         );
-    }
-
-    async compareModels(input: { prompt: string; models: string[]; createdBy: string }): Promise<{
-        comparisonId: string;
-        results: Array<{
-            provider: string;
-            model: string;
-            response: string;
-            tokens: number;
-            cost: number;
-            latencyMs: number;
-        }>;
-    }> {
-        const results: SendResult[] = [];
-
-        for (const entry of input.models) {
-            const [providerName, explicitModel] = entry.split(':');
-            const result = await this.send(input.prompt, providerName, {
-                userId: input.createdBy,
-                model: explicitModel,
-            });
-            results.push(result);
-        }
-
-        const saved = await this.comparisonStore.saveComparison({
-            prompt: input.prompt,
-            createdBy: input.createdBy,
-            results: results.map((result) => ({
-                provider: result.provider,
-                providerId: result.providerId,
-                model: result.model,
-                response: result.content,
-                promptTokens: result.promptTokens,
-                completionTokens: result.completionTokens,
-                totalTokens: result.totalTokens,
-                estimatedCost: result.estimatedCost,
-                latencyMs: result.latencyMs,
-            })),
-        });
-
-        return {
-            comparisonId: saved.id,
-            results: results.map((result) => ({
-                provider: result.provider,
-                model: result.model,
-                response: result.content,
-                tokens: result.totalTokens,
-                cost: result.estimatedCost,
-                latencyMs: result.latencyMs,
-            })),
-        };
     }
 
     private async sendWithProvider(prompt: string, provider: ProviderRecord, context: SendContext): Promise<SendResult> {

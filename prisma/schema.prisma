@@ -51,9 +51,6 @@ model User {
   chatMessages     ChatMessage[]
   aiChats          AiChat[]
   aiUsages         AiUsage[]
-  aiComparisons    AiModelComparison[]
-  aiAbTests        AiAbTest[]
-  aiAbTestResults  AiAbTestResult[]
   auditLogs        AuditLog[]
   notifications    Notification[]
   consentRecords         ConsentRecord[]
@@ -104,10 +101,9 @@ model Course {
   groups         Group[]
   knowledgeBases KnowledgeBase[]
   aiUsages       AiUsage[]
-  aiAbTests      AiAbTest[]
   courseWeeks    CourseWeek[]
   courseMaterials CourseMaterial[]
-  reflections    Reflection[]
+  reflections     Reflection[]
 
   @@index([ownerId])
   @@index([code])
@@ -434,10 +430,8 @@ model AiProvider {
   updatedAt     DateTime @updatedAt @map("updated_at")
 
   usages            AiUsage[]
-  comparisonResults AiModelComparisonResult[]
 
   @@index([isActive, fallbackOrder])
-  @@map("ai_providers")
 }
 
 model AiUsage {
@@ -464,91 +458,6 @@ model AiUsage {
   @@map("ai_usages")
 }
 
-model AiModelComparison {
-  id        String   @id @default(uuid())
-  prompt    String
-  createdBy String   @map("created_by")
-  createdAt DateTime @default(now()) @map("created_at")
-
-  creator User                      @relation(fields: [createdBy], references: [id], onDelete: Cascade)
-  results AiModelComparisonResult[]
-
-  @@index([createdBy, createdAt])
-  @@map("ai_model_comparisons")
-}
-
-model AiModelComparisonResult {
-  id               String   @id @default(uuid())
-  comparisonId     String   @map("comparison_id")
-  provider         String
-  providerId       String?  @map("provider_id")
-  model            String
-  response         String
-  promptTokens     Int      @map("prompt_tokens")
-  completionTokens Int      @map("completion_tokens")
-  totalTokens      Int      @map("total_tokens")
-  estimatedCost    Float    @map("estimated_cost")
-  latencyMs        Int      @map("latency_ms")
-  createdAt        DateTime @default(now()) @map("created_at")
-
-  comparison  AiModelComparison @relation(fields: [comparisonId], references: [id], onDelete: Cascade)
-  providerRef AiProvider?       @relation(fields: [providerId], references: [id], onDelete: SetNull)
-
-  @@index([comparisonId])
-  @@index([provider, model])
-  @@map("ai_model_comparison_results")
-}
-
-enum AbTestStatus {
-  draft
-  active
-  paused
-  completed
-}
-
-model AiAbTest {
-  id          String       @id @default(uuid())
-  name        String
-  description String?
-  courseId     String      @map("course_id")
-  createdBy   String      @map("created_by")
-  status      AbTestStatus @default(draft)
-  variantA    Json         @map("variant_a")
-  variantB    Json         @map("variant_b")
-  createdAt   DateTime     @default(now()) @map("created_at")
-  updatedAt   DateTime     @updatedAt @map("updated_at")
-
-  creator User            @relation(fields: [createdBy], references: [id], onDelete: Cascade)
-  course  Course          @relation(fields: [courseId], references: [id], onDelete: Cascade)
-  results AiAbTestResult[]
-
-  @@index([createdBy, status])
-  @@index([courseId])
-  @@index([createdAt])
-  @@map("ai_ab_tests")
-}
-
-model AiAbTestResult {
-  id               String   @id @default(uuid())
-  testId           String   @map("test_id")
-  userId           String   @map("user_id")
-  variant          String
-  promptTokens     Int      @default(0) @map("prompt_tokens")
-  completionTokens Int      @default(0) @map("completion_tokens")
-  totalTokens      Int      @default(0) @map("total_tokens")
-  estimatedCost    Float    @default(0) @map("estimated_cost")
-  latencyMs        Int      @default(0) @map("latency_ms")
-  assignedAt       DateTime @default(now()) @map("assigned_at")
-
-  test   AiAbTest @relation(fields: [testId], references: [id], onDelete: Cascade)
-  user   User     @relation(fields: [userId], references: [id], onDelete: Cascade)
-
-  @@unique([testId, userId])
-  @@index([testId])
-  @@index([userId])
-  @@index([testId, variant])
-  @@map("ai_ab_test_results")
-}
 
 model AuditLog {
   id         String   @id @default(uuid())

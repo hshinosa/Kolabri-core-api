@@ -1,23 +1,17 @@
 import type { NextFunction, Request, Response } from 'express';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
-const { mockAiService, mockUsageTrackingService } = vi.hoisted(() => ({
-    mockAiService: {
-        compareModels: vi.fn(),
-    },
+const { mockUsageTrackingService } = vi.hoisted(() => ({
     mockUsageTrackingService: {
         getUsageStats: vi.fn(),
         getMonthlyReport: vi.fn(),
     },
 }));
 
-vi.mock('../services/ai.service.js', () => ({
-    aiService: mockAiService,
-}));
-
 vi.mock('../services/usage-tracking.service.js', () => ({
     usageTrackingService: mockUsageTrackingService,
 }));
+
 
 import { AdminAiController } from './admin-ai.controller.js';
 
@@ -82,36 +76,4 @@ describe('AdminAiController', () => {
         expect(next).not.toHaveBeenCalled();
     });
 
-    it('compares AI models with the authenticated user as creator', async () => {
-        const result = [{ model: 'gpt-4o', response: 'hello' }];
-        mockAiService.compareModels.mockResolvedValue(result);
-        const req = mockReq({ body: { prompt: 'Explain AI', models: ['gpt-4o', 'gemini-2.5'] } });
-        const res = mockRes();
-        const next = mockNext();
-
-        await AdminAiController.compareModels(req as Request, res as Response, next);
-
-        expect(mockAiService.compareModels).toHaveBeenCalledWith({
-            prompt: 'Explain AI',
-            models: ['gpt-4o', 'gemini-2.5'],
-            createdBy: 'user-1',
-        });
-        expect(res.json).toHaveBeenCalledWith({
-            data: result,
-            meta: { message: 'AI model comparison completed successfully' },
-        });
-        expect(next).not.toHaveBeenCalled();
-    });
-
-    it('forwards compare model errors to next', async () => {
-        const error = new Error('comparison failed');
-        mockAiService.compareModels.mockRejectedValue(error);
-        const req = mockReq({ body: { prompt: 'Explain AI', models: ['gpt-4o'] } });
-        const res = mockRes();
-        const next = mockNext();
-
-        await AdminAiController.compareModels(req as Request, res as Response, next);
-
-        expect(next).toHaveBeenCalledWith(error);
-    });
 });
