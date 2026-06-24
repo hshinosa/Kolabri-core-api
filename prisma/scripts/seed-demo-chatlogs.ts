@@ -132,7 +132,7 @@ export async function seedDemoChatlogs() {
     senderType: String,
     content: String,
     isIntervention: Boolean,
-    isDeleted: Boolean,
+    deletedAt: Date,
     engagement: {
       engagementType: String,
       isHigherOrder: Boolean,
@@ -174,7 +174,6 @@ export async function seedDemoChatlogs() {
         const sender = randomElement(members);
         const msgDate = new Date(dayDate);
         msgDate.setHours(randomInt(8, 22), randomInt(0, 59), randomInt(0, 59));
-
         await ChatLog.create({
           courseId: group.courseId,
           groupId: group.id,
@@ -184,7 +183,7 @@ export async function seedDemoChatlogs() {
           senderType: 'student',
           content: msgTemplate.content,
           isIntervention: false,
-          isDeleted: false,
+          deletedAt: null,
           engagement: {
             engagementType: msgTemplate.engagementType,
             isHigherOrder: msgTemplate.isHigherOrder,
