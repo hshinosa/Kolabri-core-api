@@ -1,12 +1,13 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
-const { leanMock, sortMock, findMock, aggregateMock, loggerErrorMock } = vi.hoisted(() => {
+const { leanMock, sortMock, findMock, aggregateMock, loggerErrorMock, prismaGroupFindUniqueMock } = vi.hoisted(() => {
     const leanMock = vi.fn();
     const sortMock = vi.fn(() => ({ lean: leanMock }));
     const findMock = vi.fn(() => ({ sort: sortMock }));
     const aggregateMock = vi.fn();
     const loggerErrorMock = vi.fn();
-    return { leanMock, sortMock, findMock, aggregateMock, loggerErrorMock };
+    const prismaGroupFindUniqueMock = vi.fn();
+    return { leanMock, sortMock, findMock, aggregateMock, loggerErrorMock, prismaGroupFindUniqueMock };
 });
 
 vi.mock('../models/ChatLog.js', () => ({
@@ -19,6 +20,14 @@ vi.mock('../models/ChatLog.js', () => ({
 vi.mock('../utils/logger.js', () => ({
     logger: {
         error: loggerErrorMock,
+    },
+}));
+
+vi.mock('../config/database.js', () => ({
+    default: {
+        group: {
+            findUnique: prismaGroupFindUniqueMock,
+        },
     },
 }));
 
@@ -35,6 +44,7 @@ describe('ChatAnalyticsService', () => {
     it('returns an empty analytics payload when a group has no messages', async () => {
         leanMock.mockResolvedValue([]);
         aggregateMock.mockResolvedValue([]);
+        prismaGroupFindUniqueMock.mockResolvedValue({ _count: { members: 0 } });
 
         const result = await service.getGroupAnalytics('group-1');
 
@@ -63,6 +73,7 @@ describe('ChatAnalyticsService', () => {
     });
 
     it('calculates analytics, participants, examples, and session discussion stats for a group', async () => {
+        prismaGroupFindUniqueMock.mockResolvedValue({ _count: { members: 5 } });
         leanMock.mockResolvedValue([
             {
                 groupId: 'group-1',
@@ -252,5 +263,196 @@ describe('ChatAnalyticsService', () => {
 
         expect(loggerErrorMock).toHaveBeenCalledWith('Participant activity calculation failed:', expect.any(Error));
         expect(result).toEqual({ success: false, participants: [] });
+    });
+
+    describe('Participation Formula (Percentage-based)', () => {
+        it('calculates 100% participation when all 2 members are active', async () => {
+            prismaGroupFindUniqueMock.mockResolvedValue({ _count: { members: 2 } });
+            leanMock.mockResolvedValue([
+                {
+                    groupId: 'group-1',
+                    sessionDiscussionId: 'chat-1',
+                    senderName: 'Alice',
+                    senderType: 'student',
+                    content: 'Message from Alice',
+                    courseId: 'course-1',
+                    senderId: 'user-1',
+                    createdAt: new Date(),
+                    engagement: { engagementType: 'cognitive', isHigherOrder: true, lexicalVariety: 60, confidence: 0.9 },
+                },
+                {
+                    groupId: 'group-1',
+                    sessionDiscussionId: 'chat-1',
+                    senderName: 'Bob',
+                    senderType: 'student',
+                    content: 'Message from Bob',
+                    courseId: 'course-1',
+                    senderId: 'user-2',
+                    createdAt: new Date(),
+                    engagement: { engagementType: 'behavioral', isHigherOrder: false, lexicalVariety: 40, confidence: 0.8 },
+                },
+            ]);
+            aggregateMock.mockResolvedValue([]);
+
+            const result = await service.getGroupAnalytics('group-1');
+
+            expect(result.qualityBreakdown.participation).toBe(100);
+            expect(result.participantCount).toBe(2);
+        });
+
+        it('calculates 100% participation when all 3 members are active', async () => {
+            prismaGroupFindUniqueMock.mockResolvedValue({ _count: { members: 3 } });
+            leanMock.mockResolvedValue([
+                {
+                    groupId: 'group-1',
+                    sessionDiscussionId: 'chat-1',
+                    senderName: 'Alice',
+                    senderType: 'student',
+                    content: 'Message',
+                    courseId: 'course-1',
+                    senderId: 'user-1',
+                    createdAt: new Date(),
+                    engagement: { engagementType: 'cognitive', isHigherOrder: true, lexicalVariety: 60, confidence: 0.9 },
+                },
+                {
+                    groupId: 'group-1',
+                    sessionDiscussionId: 'chat-1',
+                    senderName: 'Bob',
+                    senderType: 'student',
+                    content: 'Message',
+                    courseId: 'course-1',
+                    senderId: 'user-2',
+                    createdAt: new Date(),
+                    engagement: { engagementType: 'behavioral', isHigherOrder: false, lexicalVariety: 40, confidence: 0.8 },
+                },
+                {
+                    groupId: 'group-1',
+                    sessionDiscussionId: 'chat-1',
+                    senderName: 'Charlie',
+                    senderType: 'student',
+                    content: 'Message',
+                    courseId: 'course-1',
+                    senderId: 'user-3',
+                    createdAt: new Date(),
+                    engagement: { engagementType: 'emotional', isHigherOrder: false, lexicalVariety: 50, confidence: 0.7 },
+                },
+            ]);
+            aggregateMock.mockResolvedValue([]);
+
+            const result = await service.getGroupAnalytics('group-1');
+
+            expect(result.qualityBreakdown.participation).toBe(100);
+            expect(result.participantCount).toBe(3);
+        });
+
+        it('calculates 50% participation when 4 out of 8 members are active', async () => {
+            prismaGroupFindUniqueMock.mockResolvedValue({ _count: { members: 8 } });
+            leanMock.mockResolvedValue([
+                {
+                    groupId: 'group-1',
+                    sessionDiscussionId: 'chat-1',
+                    senderName: 'Alice',
+                    senderType: 'student',
+                    content: 'Message',
+                    courseId: 'course-1',
+                    senderId: 'user-1',
+                    createdAt: new Date(),
+                    engagement: { engagementType: 'cognitive', isHigherOrder: true, lexicalVariety: 60, confidence: 0.9 },
+                },
+                {
+                    groupId: 'group-1',
+                    sessionDiscussionId: 'chat-1',
+                    senderName: 'Bob',
+                    senderType: 'student',
+                    content: 'Message',
+                    courseId: 'course-1',
+                    senderId: 'user-2',
+                    createdAt: new Date(),
+                    engagement: { engagementType: 'behavioral', isHigherOrder: false, lexicalVariety: 40, confidence: 0.8 },
+                },
+                {
+                    groupId: 'group-1',
+                    sessionDiscussionId: 'chat-1',
+                    senderName: 'Charlie',
+                    senderType: 'student',
+                    content: 'Message',
+                    courseId: 'course-1',
+                    senderId: 'user-3',
+                    createdAt: new Date(),
+                    engagement: { engagementType: 'emotional', isHigherOrder: false, lexicalVariety: 50, confidence: 0.7 },
+                },
+                {
+                    groupId: 'group-1',
+                    sessionDiscussionId: 'chat-1',
+                    senderName: 'Diana',
+                    senderType: 'student',
+                    content: 'Message',
+                    courseId: 'course-1',
+                    senderId: 'user-4',
+                    createdAt: new Date(),
+                    engagement: { engagementType: 'cognitive', isHigherOrder: false, lexicalVariety: 45, confidence: 0.8 },
+                },
+            ]);
+            aggregateMock.mockResolvedValue([]);
+
+            const result = await service.getGroupAnalytics('group-1');
+
+            expect(result.qualityBreakdown.participation).toBe(50);
+            expect(result.participantCount).toBe(4);
+        });
+
+        it('calculates 33% participation when 1 out of 3 members is active', async () => {
+            prismaGroupFindUniqueMock.mockResolvedValue({ _count: { members: 3 } });
+            leanMock.mockResolvedValue([
+                {
+                    groupId: 'group-1',
+                    sessionDiscussionId: 'chat-1',
+                    senderName: 'Alice',
+                    senderType: 'student',
+                    content: 'Message',
+                    courseId: 'course-1',
+                    senderId: 'user-1',
+                    createdAt: new Date(),
+                    engagement: { engagementType: 'cognitive', isHigherOrder: true, lexicalVariety: 60, confidence: 0.9 },
+                },
+            ]);
+            aggregateMock.mockResolvedValue([]);
+
+            const result = await service.getGroupAnalytics('group-1');
+
+            expect(result.qualityBreakdown.participation).toBe(33);
+            expect(result.participantCount).toBe(1);
+        });
+
+        it('handles edge case when group has 0 members', async () => {
+            prismaGroupFindUniqueMock.mockResolvedValue({ _count: { members: 0 } });
+            leanMock.mockResolvedValue([
+                {
+                    groupId: 'group-1',
+                    sessionDiscussionId: 'chat-1',
+                    senderName: 'Ghost',
+                    senderType: 'student',
+                    content: 'Message',
+                    courseId: 'course-1',
+                    senderId: 'user-1',
+                    createdAt: new Date(),
+                    engagement: { engagementType: 'cognitive', isHigherOrder: true, lexicalVariety: 60, confidence: 0.9 },
+                },
+            ]);
+            aggregateMock.mockResolvedValue([]);
+
+            const result = await service.getGroupAnalytics('group-1');
+
+            expect(result.qualityBreakdown.participation).toBe(0);
+        });
+
+        it('returns error response when group does not exist', async () => {
+            prismaGroupFindUniqueMock.mockResolvedValue(null);
+
+            const result = await service.getGroupAnalytics('group-1');
+
+            expect(result.success).toBe(false);
+            expect(result.error).toContain('Group group-1 not found');
+        });
     });
 });

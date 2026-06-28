@@ -8,6 +8,7 @@
 
 import { ChatLog, IEngagementAnalysis } from '../models/ChatLog.js';
 import { logger } from '../utils/logger.js';
+import prisma from '../config/database.js';
 
 // Plain message type for lean queries
 interface LeanChatLog {
@@ -121,8 +122,22 @@ export class ChatAnalyticsService {
                 };
             }
 
-            // Calculate analytics from messages
-            const analytics = this.calculateAnalytics(messages);
+            const group = await prisma.group.findUnique({
+                where: { id: groupId },
+                select: {
+                    _count: {
+                        select: { members: true },
+                    },
+                },
+            });
+
+            if (!group) {
+                throw new Error(`Group ${groupId} not found`);
+            }
+
+            const totalMembers = group._count.members;
+
+            const analytics = this.calculateAnalytics(messages, totalMembers);
 
             // Get session discussion stats
             const sessionDiscussionStats = await this.getSessionDiscussionStats(groupId);
@@ -237,7 +252,7 @@ export class ChatAnalyticsService {
     /**
      * Calculate analytics from a list of messages
      */
-    private calculateAnalytics(messages: LeanChatLog[]): {
+    private calculateAnalytics(messages: LeanChatLog[], totalMembers: number = 0): {
         qualityScore: number;
         qualityBreakdown: QualityBreakdown;
         participants: string[];
@@ -297,7 +312,9 @@ export class ChatAnalyticsService {
         const lexicalVariety = Math.round(
             totalLexicalVariety / totalWithEngagement
         );
-        const participation = Math.min(100, participants.length * 20); // Max 5 participants = 100%
+        const participation = totalMembers > 0 
+            ? Math.round((participants.length / totalMembers) * 100)
+            : 0;
 
         // Engagement balance: how evenly distributed are the engagement types
         const values = [cognitiveCount, behavioralCount, emotionalCount];
