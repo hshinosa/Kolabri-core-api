@@ -50,8 +50,8 @@ export class ApiError extends Error implements AppError {
         return new ApiError(429, 'TOO_MANY_REQUESTS', message);
     }
 
-    static internal(message = 'Internal server error') {
-        return new ApiError(500, 'INTERNAL_ERROR', message);
+    static internal(message = 'Internal server error', details?: Record<string, unknown>) {
+        return new ApiError(500, 'INTERNAL_ERROR', message, details);
     }
 }
 
