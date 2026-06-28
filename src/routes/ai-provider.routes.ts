@@ -23,6 +23,7 @@ router.use(checkRole(['admin']));
 router.use(rateLimiter);
 
 router.get('/', validateQuery(listAiProvidersQuerySchema), AiProviderController.index);
+router.get('/:provider/models', AiProviderController.getModels);
 router.get('/:id', validateParams(idSchema), AiProviderController.show);
 router.post('/', validateBody(createAiProviderSchema), AiProviderController.create);
 router.put('/:id', validateParams(idSchema), validateBody(updateAiProviderSchema), AiProviderController.update);

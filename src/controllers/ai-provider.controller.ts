@@ -126,4 +126,19 @@ export class AiProviderController {
             next(error);
         }
     }
+
+    static async getModels(req: AuthenticatedRequest, res: Response, next: NextFunction) {
+        try {
+            const result = await AiProviderService.getProviderModels(
+                req.params.provider,
+                req.query.refresh === 'true'
+            );
+
+            res.json({
+                data: result,
+            });
+        } catch (error) {
+            next(error);
+        }
+    }
 }

@@ -1,7 +1,7 @@
 import prisma from '../config/database.js';
 import { ApiError } from '../middleware/errorHandler.js';
 import { decrypt, encrypt, maskApiKey } from '../utils/encryption.js';
-import { aiService } from './ai.service.js';
+import { AdminProviderService } from './adminProvider.service.js';
 import { AuditLogService } from './audit-log.service.js';
 import { broadcastAdminEvent } from '../websocket/server.js';
 import {
@@ -271,14 +271,23 @@ export class AiProviderService {
         const config = this.normalizeConfig(provider.config);
         const model = typeof config.defaultModel === 'string' ? config.defaultModel : typeof config.model === 'string' ? config.model : undefined;
 
-        const result = await aiService.send(input.testPrompt || 'Hello', provider.name, {
-            userId: '00000000-0000-0000-0000-000000000000',
+        const result = await AdminProviderService.testProvider({
+            name: provider.name,
+            apiKey,
+            baseUrl: provider.baseUrl,
             model,
+            testPrompt: input.testPrompt || 'Hello',
         });
+
+        if (!result.success) {
+            throw ApiError.badRequest('Connection test failed', {
+                reason: result.error || 'Unknown error',
+            });
+        }
 
         return {
             status: 'success',
-            response: result.content,
+            response: result.response,
             latency: result.latencyMs,
             model: result.model,
         };
@@ -357,6 +366,27 @@ export class AiProviderService {
         }
 
         return activeProvider;
+    }
+
+    static async getProviderModels(provider: string, refresh = false) {
+        const supportedProviders = ['openai', 'anthropic', 'gemini'];
+        const normalizedProvider = provider.toLowerCase();
+
+        if (!supportedProviders.includes(normalizedProvider)) {
+            throw ApiError.badRequest('Unsupported provider', {
+                reason: `Provider must be one of: ${supportedProviders.join(', ')}`,
+            });
+        }
+
+        const result = await AdminProviderService.getProviderModels(normalizedProvider, refresh);
+
+        if (!result.success) {
+            throw ApiError.internal('Failed to fetch provider models', {
+                reason: result.error || 'Unknown error',
+            });
+        }
+
+        return result;
     }
 
     private static serializeProvider(provider: AiProviderEntity) {
