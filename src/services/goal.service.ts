@@ -78,20 +78,13 @@ export class GoalService {
         let goalFeedback: string | undefined;
         let socraticHint: string | undefined;
 
-        const aiValidation = await providerResolutionService.executeWithFallback(
-            { featureFamily: 'goals' },
-            (providerContext) => aiEngineService.validateGoal(
-                data.content,
-                userId,
-                sessionDiscussionId,
-                data.week_context ?? undefined,
-                providerContext,
-                sessionDiscussion.groupId,
-            ),
-            {
-                isSuccess: (response) => response.success,
-                perProviderTimeoutMs: 30000,
-            },
+        const aiValidation = await aiEngineService.validateGoal(
+            data.content,
+            userId,
+            sessionDiscussionId,
+            data.week_context ?? undefined,
+            undefined,
+            sessionDiscussion.groupId,
         );
         if (aiValidation.success) {
             if (!aiValidation.is_valid || aiValidation.status === 'revise') {

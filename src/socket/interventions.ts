@@ -30,42 +30,28 @@ async function selectMessage(sessionDiscussionId: string): Promise<string> {
             .limit(10)
             .lean();
 
-        const aiResult = await providerResolutionService.executeWithFallback(
-            { featureFamily: 'interventions' },
-            (providerContext) => aiEngineService.analyzeIntervention({
-                messages: recentMessages.reverse().map((m) => ({
-                    sender: m.senderName,
-                    content: m.content,
-                    timestamp: new Date(m.createdAt).toISOString(),
-                    sender_id: m.senderId,
-                })),
-                topic: 'Diskusi sepi',
-                chat_room_id: sessionDiscussionId,
-                intervention_type: 'silence',
-                force: true,
-                provider_context: providerContext,
-            }),
-            {
-                isSuccess: (response) => response.success && Boolean(response.message),
-                perProviderTimeoutMs: 20000,
-            },
-        );
+        const aiResult = await aiEngineService.analyzeIntervention({
+            messages: recentMessages.reverse().map((m) => ({
+                sender: m.senderName,
+                content: m.content,
+                timestamp: new Date(m.createdAt).toISOString(),
+                sender_id: m.senderId,
+            })),
+            topic: 'Diskusi sepi',
+            chat_room_id: sessionDiscussionId,
+            intervention_type: 'silence',
+            force: true,
+            provider_context: undefined,
+        });
 
         return aiResult.message;
     } catch {
         try {
-            const promptResult = await providerResolutionService.executeWithFallback(
-                { featureFamily: 'interventions' },
-                (providerContext) => aiEngineService.generatePrompt(
-                    'Diskusi sepi',
-                    'Bantu mendorong diskusi yang sudah sepi tanpa terkesan menggurui',
-                    'easy',
-                    providerContext,
-                ),
-                {
-                    isSuccess: (response) => response.success && Boolean(response.prompt),
-                    perProviderTimeoutMs: 20000,
-                },
+            const promptResult = await aiEngineService.generatePrompt(
+                'Diskusi sepi',
+                'Bantu mendorong diskusi yang sudah sepi tanpa terkesan menggurui',
+                'easy',
+                undefined,
             );
             return promptResult.prompt ?? pickRandom(INTERVENTION_MESSAGES);
         } catch {

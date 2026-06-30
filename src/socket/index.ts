@@ -505,14 +505,7 @@ export function initSocketIO(server: HttpServer): Server {
                     }, 5000);
                 }
 
-                providerResolutionService.executeWithFallback(
-                    { featureFamily: 'analytics' },
-                    (providerContext) => aiEngineService.analyzeEngagement(safeContent, providerContext),
-                    {
-                        isSuccess: (response) => response.success,
-                        perProviderTimeoutMs: 15000,
-                    },
-                ).then(async (aiEngagement) => {
+                aiEngineService.analyzeEngagement(safeContent, undefined).then(async (aiEngagement) => {
                     if (aiEngagement.success && aiEngagement.engagement_type !== 'unknown') {
                         await ChatLog.findByIdAndUpdate(chatLog._id, {
                             'engagement.lexicalVariety': Math.round(aiEngagement.lexical_variety * 100),
@@ -981,41 +974,27 @@ async function checkAndIntervenForQuality(
 
         let interventionMessage: string;
         try {
-            const aiResult = await providerResolutionService.executeWithFallback(
-                { featureFamily: 'interventions' },
-                (providerContext) => aiEngineService.analyzeIntervention({
-                    messages: recentMessages.slice(0, 10).map(m => ({
-                        sender: m.senderName,
-                        content: m.content,
-                        timestamp: new Date(m.createdAt).toISOString(),
-                        sender_id: m.senderId,
-                    })),
-                    topic: qualityIssue,
-                    chat_room_id: sessionDiscussionId,
-                    intervention_type: interventionType,
-                    force: true,
-                    provider_context: providerContext,
-                }),
-                {
-                    isSuccess: (response) => response.success && Boolean(response.message),
-                    perProviderTimeoutMs: 20000,
-                },
-            );
+            const aiResult = await aiEngineService.analyzeIntervention({
+                messages: recentMessages.slice(0, 10).map(m => ({
+                    sender: m.senderName,
+                    content: m.content,
+                    timestamp: new Date(m.createdAt).toISOString(),
+                    sender_id: m.senderId,
+                })),
+                topic: qualityIssue,
+                chat_room_id: sessionDiscussionId,
+                intervention_type: interventionType,
+                force: true,
+                provider_context: undefined,
+            });
             interventionMessage = aiResult.message;
         } catch {
             try {
-                const promptResult = await providerResolutionService.executeWithFallback(
-                    { featureFamily: 'interventions' },
-                    (providerContext) => aiEngineService.generatePrompt(
-                        qualityIssue,
-                        `Diskusi kelompok membutuhkan intervensi: ${qualityIssue}`,
-                        'medium',
-                        providerContext,
-                    ),
-                    {
-                        isSuccess: (response) => response.success && Boolean(response.prompt),
-                        perProviderTimeoutMs: 20000,
-                    },
+                const promptResult = await aiEngineService.generatePrompt(
+                    qualityIssue,
+                    `Diskusi kelompok membutuhkan intervensi: ${qualityIssue}`,
+                    'medium',
+                    undefined,
                 );
                 interventionMessage = promptResult.prompt ?? pickRandom(QUALITY_INTERVENTIONS[interventionType]);
             } catch {
@@ -1171,13 +1150,17 @@ async function handleAIQuestion(
                     content: m.content,
                 }));
 
+            // DEBUG: Log chatHistory for investigation
+            console.log('[DEBUG chatHistory]', {
+                sessionDiscussionId,
+                recentMessagesCount: recentMessages.length,
+                chatHistoryCount: chatHistory.length,
+                chatHistoryPreview: chatHistory.slice(0, 2).map(m => ({role: m.role, contentPreview: m.content.substring(0, 50)})),
+            });
+
             const cleanQuestion = question.replace(/@ai/gi, '').trim();
 
             if (isNoFetchEligible(cleanQuestion)) {
-                // PERF-AI-01: Streaming path for NO_FETCH queries (greetings, short follow-ups)
-                const resolution = await providerResolutionService.resolveProviderContext({ featureFamily: 'orchestration' });
-                const providerContext = resolution.primary.providerContext;
-
                 let fullContent = '';
                 let streamCompleted = false;
 
@@ -1201,7 +1184,7 @@ async function handleAIQuestion(
                           }
                         : undefined,
                     chat_history: chatHistory.length > 0 ? chatHistory : undefined,
-                    provider_context: providerContext,
+                    provider_context: undefined,
                 })) {
                     if (event.type === 'token') {
                         fullContent += event.content ?? '';
@@ -1246,13 +1229,11 @@ async function handleAIQuestion(
                             scaffolding_outcome: event.scaffolding_outcome,
                             citations: event.citations,
                         } as typeof orchestrationResult;
-                        const rawCitations = (event.citations ?? []) as CitationPayload[];
-                        if (rawCitations.length > 0 && sessionWeekIndex) {
-                            const allowed = await allowedMaterialsForCourseMaxWeek(courseId, sessionWeekIndex);
-                            filteredCitations = filterCitationsForSession(rawCitations, allowed, sessionWeekIndex);
-                        } else {
-                            filteredCitations = rawCitations;
-                        }
+                        // CITATIONS: Use all citations from AI engine without week filtering
+                        filteredCitations = (event.citations ?? []) as CitationPayload[];
+
+                        // DEBUG: Log citations in streaming path
+                        logger.info(`[DEBUG citations streaming] session=${sessionDiscussionId} hasCitations=${!!event.citations} count=${event.citations?.length || 0}`);
                         io.to(roomId).emit('ai_done', {
                             sessionDiscussionId,
                             citations: filteredCitations.length > 0 ? filteredCitations : undefined,
@@ -1281,41 +1262,37 @@ async function handleAIQuestion(
                 }
             } else {
                 // Existing FETCH path (non-streaming, grounding + guardrails)
-                const result = await providerResolutionService.executeWithFallback(
-                    { featureFamily: 'orchestration' },
-                    (providerContext) => aiEngineService.orchestratedChat({
-                        user_id: userId,
-                        group_id: groupId,
-                        message: question.replace(/@ai/gi, '').trim(),
-                        topic: weekCtx?.weekTitle ?? 'General Discussion',
-                        collection_name: `course_${courseId}`,
-                        course_id: courseId,
-                        chat_room_id: sessionDiscussionId,
-                        guardrail_policy: guardrailPolicy,
-                        scaffolding_config: scaffoldingConfig,
-                        session_week_index: sessionWeekIndex,
-                        max_week_index: maxWeekIndex,
-                        week_context: weekCtx
-                            ? {
-                                  week_title: weekCtx.weekTitle,
-                                  week_index: weekCtx.weekIndex,
-                                  material_titles: weekCtx.materials.map((m) => m.title),
-                              }
-                            : undefined,
-                        chat_history: chatHistory.length > 0 ? chatHistory : undefined,
-                        provider_context: providerContext,
-                    }),
-                    {
-                        isSuccess: (response) => response.success,
-                        perProviderTimeoutMs: 30000,
-                    },
-                );
+                const result = await aiEngineService.orchestratedChat({
+                    user_id: userId,
+                    group_id: groupId,
+                    message: question.replace(/@ai/gi, '').trim(),
+                    topic: weekCtx?.weekTitle ?? 'General Discussion',
+                    collection_name: `course_${courseId}`,
+                    course_id: courseId,
+                    chat_room_id: sessionDiscussionId,
+                    guardrail_policy: guardrailPolicy,
+                    scaffolding_config: scaffoldingConfig,
+                    session_week_index: sessionWeekIndex,
+                    max_week_index: maxWeekIndex,
+                    week_context: weekCtx
+                        ? {
+                              week_title: weekCtx.weekTitle,
+                              week_index: weekCtx.weekIndex,
+                              material_titles: weekCtx.materials.map((m) => m.title),
+                          }
+                        : undefined,
+                    chat_history: chatHistory.length > 0 ? chatHistory : undefined,
+                    provider_context: undefined,
+                });
                 orchestrationResult = result;
 
                 if (result.success) {
                     response = result.bot_response;
                     qualityScore = result.quality_score;
                     shouldNotifyTeacher = result.should_notify_teacher;
+
+                // DEBUG: Log citations received from AI engine
+                logger.info(`[DEBUG citations non-streaming] session=${sessionDiscussionId} hasCitations=${!!result.citations} count=${result.citations?.length || 0}`);
                     intervention = result.system_intervention;
                     interventionType = result.intervention_type;
                     engagementMeta = result.meta
@@ -1345,15 +1322,14 @@ async function handleAIQuestion(
                     response = result.bot_response || "Maaf, terjadi kesalahan saat memproses pertanyaan. Silakan coba lagi.";
                 }
 
-                const rawCitations = result.citations ?? [];
-                if (rawCitations.length > 0 && sessionWeekIndex) {
-                    const allowed = await allowedMaterialsForCourseMaxWeek(courseId, sessionWeekIndex);
-                    filteredCitations = filterCitationsForSession(rawCitations, allowed, sessionWeekIndex);
-                } else {
-                    filteredCitations = rawCitations;
-                }
+                // CITATIONS: Use all citations from AI engine without week filtering
+                // Rationale: RAG searches all materials, so citations should match what AI actually used
+                filteredCitations = result.citations ?? [];
             }
         }
+
+        // DEBUG: Log filteredCitations before ChatLog creation
+        logger.info(`[DEBUG citations pre-save] session=${sessionDiscussionId} filteredCount=${filteredCitations.length} willSave=${filteredCitations.length > 0}`);
 
         const chatLog = new ChatLog({
             courseId,

@@ -423,4 +423,31 @@ export class AiProviderService {
 
         return config as Record<string, unknown>;
     }
+
+    static async getActiveProviderForAiEngine() {
+        const provider = await aiProviderDelegate.findMany({
+            where: { isActive: true },
+            orderBy: { fallbackOrder: 'asc' },
+            take: 1,
+        });
+
+        if (!provider || provider.length === 0) {
+            return null;
+        }
+
+        const activeProvider = provider[0];
+        const decryptedApiKey = decrypt(activeProvider.apiKey);
+        const normalizedConfig = this.normalizeConfig(activeProvider.config);
+
+        return {
+            id: activeProvider.id,
+            name: activeProvider.name,
+            displayName: activeProvider.displayName,
+            apiKey: decryptedApiKey,
+            baseUrl: activeProvider.baseUrl,
+            isActive: activeProvider.isActive,
+            fallbackOrder: activeProvider.fallbackOrder,
+            config: normalizedConfig,
+        };
+    }
 }

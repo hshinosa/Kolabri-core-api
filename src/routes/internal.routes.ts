@@ -11,5 +11,6 @@ router.post('/knowledge-base/link-course-material', InternalController.linkCours
 router.post('/knowledge-base/unassign-course-material', InternalController.unassignCourseMaterial);
 router.post('/knowledge-base/delete-course-material', InternalController.deleteCourseMaterialKb);
 router.post('/session-discussions/backfill-week-ids', InternalController.backfillSessionDiscussionWeeks);
+router.get('/ai-provider/active', InternalController.getActiveProvider);
 
 export default router;

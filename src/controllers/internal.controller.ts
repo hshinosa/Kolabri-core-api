@@ -2,6 +2,7 @@ import { Request, Response, NextFunction } from 'express';
 import { z } from 'zod';
 import { CourseMaterialKbService } from '../services/courseMaterialKb.service.js';
 import { GroupService } from '../services/group.service.js';
+import { AiProviderService } from '../services/ai-provider.service.js';
 
 const linkSchema = z.object({
     course_id: z.string().uuid(),
@@ -103,6 +104,21 @@ export class InternalController {
             const courseId = typeof req.query.course_id === 'string' ? req.query.course_id : undefined;
             const result = await GroupService.backfillSessionDiscussionWeekIds(courseId);
             res.json({ data: result });
+        } catch (error) {
+            next(error);
+        }
+    }
+
+    static async getActiveProvider(_req: Request, res: Response, next: NextFunction) {
+        try {
+            const provider = await AiProviderService.getActiveProviderForAiEngine();
+            if (!provider) {
+                return res.status(404).json({ 
+                    error: 'No active provider found',
+                    message: 'No AI provider is currently active in the system'
+                });
+            }
+            res.json({ data: provider });
         } catch (error) {
             next(error);
         }

@@ -66,18 +66,11 @@ export class ReadingRecommendationService {
             };
         }
 
-        const engineResult = await providerResolutionService.executeWithFallback(
-            { featureFamily: 'reading-recommendations' },
-            (providerContext) => aiEngineService.generateReadingRecommendations(
-                input.topic,
-                courseId,
-                input.limit ?? 3,
-                providerContext,
-            ),
-            {
-                isSuccess: (response) => response.success,
-                perProviderTimeoutMs: 30000,
-            },
+        const engineResult = await aiEngineService.generateReadingRecommendations(
+            input.topic,
+            courseId,
+            input.limit ?? 3,
+            undefined,
         );
         if (!engineResult.success || engineResult.recommendations.length === 0) {
             return {

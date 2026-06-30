@@ -24,7 +24,7 @@ export async function runAutoCloseJob(): Promise<{ closed: number; errors: numbe
             closedAt: null,
             deletedAt: null,
         },
-        select: { id: true, name: true },
+        select: { id: true, name: true, createdAt: true },
     });
 
     if (openSessions.length === 0) {
@@ -46,7 +46,7 @@ export async function runAutoCloseJob(): Promise<{ closed: number; errors: numbe
                 .lean();
 
             // If no messages at all, use session creation time
-            const lastActivity = lastMessage?.createdAt ?? new Date(0);
+            const lastActivity = lastMessage?.createdAt ?? session.createdAt;
 
             if (lastActivity < threshold) {
                 logger.info('Auto-closing inactive session', {

@@ -904,7 +904,6 @@ export async function seedDemoData() {
   await prisma.reflection.deleteMany();
   await prisma.learningGoal.deleteMany();
   await prisma.chatMessage.deleteMany();
-  await prisma.sessionDiscussion.deleteMany();
   await prisma.groupMember.deleteMany();
   await prisma.group.deleteMany();
   await prisma.courseStudent.deleteMany();

@@ -97,21 +97,14 @@ export class SessionDiscussionService {
             }).sort({ createdAt: -1 }).limit(30).lean();
 
             if (recentMessages.length > 0) {
-                const summaryResult = await providerResolutionService.executeWithFallback(
-                    { featureFamily: 'summaries' },
-                    (providerContext) => aiEngineService.generateSummary(
-                        recentMessages.reverse().map((m) => ({
-                            sender: m.senderName,
-                            content: m.content,
-                            timestamp: new Date(m.createdAt).toISOString(),
-                        })),
-                        sessionDiscussionId,
-                        providerContext,
-                    ),
-                    {
-                        isSuccess: (response) => response.success && Boolean(response.summary),
-                        perProviderTimeoutMs: 20000,
-                    },
+                const summaryResult = await aiEngineService.generateSummary(
+                    recentMessages.reverse().map((m) => ({
+                        sender: m.senderName,
+                        content: m.content,
+                        timestamp: new Date(m.createdAt).toISOString(),
+                    })),
+                    sessionDiscussionId,
+                    undefined,
                 );
                 if (summaryResult.success && summaryResult.summary) {
                     summary = summaryResult.summary;
@@ -519,21 +512,14 @@ export class SessionDiscussionService {
             };
         }
 
-        const summaryResult = await providerResolutionService.executeWithFallback(
-            { featureFamily: 'summaries' },
-            (providerContext) => aiEngineService.generateSummary(
-                recentMessages.reverse().map((m) => ({
-                    sender: m.senderName,
-                    content: m.content,
-                    timestamp: new Date(m.createdAt).toISOString(),
-                })),
-                sessionDiscussionId,
-                providerContext,
-            ),
-            {
-                isSuccess: (response) => response.success && Boolean(response.summary),
-                perProviderTimeoutMs: 20000,
-            },
+        const summaryResult = await aiEngineService.generateSummary(
+            recentMessages.reverse().map((m) => ({
+                sender: m.senderName,
+                content: m.content,
+                timestamp: new Date(m.createdAt).toISOString(),
+            })),
+            sessionDiscussionId,
+            undefined,
         );
 
         if (summaryResult.success && summaryResult.summary) {

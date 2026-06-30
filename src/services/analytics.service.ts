@@ -336,14 +336,7 @@ export class AnalyticsService {
 
     static async analyzeText(text: string) {
         if (!text || typeof text !== 'string') throw ApiError.badRequest('Text is required');
-        const analysis = await providerResolutionService.executeWithFallback(
-            { featureFamily: 'analytics' },
-            (providerContext) => aiEngineService.analyzeEngagement(text, providerContext),
-            {
-                isSuccess: (response) => response.success,
-                perProviderTimeoutMs: 15000,
-            },
-        );
+        const analysis = await aiEngineService.analyzeEngagement(text, undefined);
         return { success: true, analysis };
     }
 
@@ -352,14 +345,7 @@ export class AnalyticsService {
         if (!course) throw ApiError.notFound('Course not found');
         if (course.ownerId !== userId) throw ApiError.forbidden('You do not own this course');
 
-        const exportResult = await providerResolutionService.executeWithFallback(
-            { featureFamily: 'analytics' },
-            (providerContext) => aiEngineService.exportProcessMiningData(providerContext),
-            {
-                isSuccess: (response) => response.success,
-                perProviderTimeoutMs: 15000,
-            },
-        );
+        const exportResult = await aiEngineService.exportProcessMiningData(undefined);
         
         if (format === 'csv') {
             const csvData = this.formatAnalyticsAsCSV(exportResult);

@@ -169,16 +169,12 @@ export class AiChatController {
 
             res.write(`data: ${JSON.stringify({ type: 'user_message', id: userMessage.id })}\n\n`);
 
-            const streamResp = await providerResolutionService.executeWithFallback(
-                { featureFamily: 'personal-chat' },
-                (providerContext) => aiEngineService.personalChatStream(
-                    content,
-                    history,
-                    chat?.userName ?? undefined,
-                    providerContext,
-                    courseIds,
-                ),
-                { perProviderTimeoutMs: 30000 },
+            const streamResp = await aiEngineService.personalChatStream(
+                content,
+                history,
+                chat?.userName ?? undefined,
+                undefined,
+                courseIds,
             );
 
             if (!streamResp.ok || !streamResp.body) {
@@ -194,35 +190,72 @@ export class AiChatController {
             let collectedCitations: Array<{ source: string; page?: number; course_id?: string; course_material_id?: string }> = [];
             const reader = streamResp.body.getReader();
             const decoder = new TextDecoder();
+            let buffer = '';
 
             while (true) {
                 const { done, value } = await reader.read();
                 if (done) break;
 
-                const text = decoder.decode(value, { stream: true });
-                const lines = text.split('\n');
+                buffer += decoder.decode(value, { stream: true });
+                const lines = buffer.split('\n');
+                buffer = lines.pop() ?? '';
 
-                for (const line of lines) {
+                for (const rawLine of lines) {
+                    const line = rawLine.trim();
                     if (!line.startsWith('data: ')) continue;
-                    const payload = line.slice(6);
 
+                    const payload = line.slice(6);
                     if (payload === '[DONE]') {
                         continue;
                     }
 
                     try {
                         const parsed = JSON.parse(payload);
+
+                        if (parsed.type === 'error' || parsed.error) {
+                            throw new Error(parsed.content || parsed.error || 'AI stream failed');
+                        }
+
                         if (parsed.citations && Array.isArray(parsed.citations)) {
                             collectedCitations = parsed.citations;
                         }
+
                         if (parsed.content) {
                             fullReply += parsed.content;
                         }
-                    } catch { /* skip unparseable SSE chunks */ }
+                    } catch (error) {
+                        if (error instanceof Error && error.message !== payload) {
+                            throw error;
+                        }
+                    }
 
                     res.write(`${line}\n\n`);
                 }
             }
+
+            const trailingLine = buffer.trim();
+            if (trailingLine.startsWith('data: ')) {
+                const payload = trailingLine.slice(6);
+
+                if (payload !== '[DONE]') {
+                    const parsed = JSON.parse(payload);
+
+                    if (parsed.type === 'error' || parsed.error) {
+                        throw new Error(parsed.content || parsed.error || 'AI stream failed');
+                    }
+
+                    if (parsed.citations && Array.isArray(parsed.citations)) {
+                        collectedCitations = parsed.citations;
+                    }
+
+                    if (parsed.content) {
+                        fullReply += parsed.content;
+                    }
+
+                    res.write(`${trailingLine}\n\n`);
+                }
+            }
+
             if (fullReply) {
                 const saved = await AiChatService.addMessage(chatId, userId, 'assistant', fullReply, collectedCitations.length > 0 ? collectedCitations : undefined);
                 res.write(`data: ${JSON.stringify({ type: 'assistant_saved', id: saved.id, citations: collectedCitations.length > 0 ? collectedCitations : undefined })}\n\n`);
@@ -231,7 +264,23 @@ export class AiChatController {
             res.write('data: [DONE]\n\n');
             res.end();
         } catch (error) {
-            next(error);
+            const fallback = 'Maaf, AI Assistant sedang tidak tersedia saat ini. Silakan coba lagi nanti.';
+
+            try {
+                if (req.params.id && req.user?.userId) {
+                    await AiChatService.addMessage(req.params.id, req.user.userId, 'assistant', fallback);
+                }
+            } catch {
+                // Ignore persistence fallback failures so the stream can still terminate cleanly.
+            }
+
+            if (!res.headersSent) {
+                return next(error);
+            }
+
+            res.write(`data: ${JSON.stringify({ content: fallback })}\n\n`);
+            res.write('data: [DONE]\n\n');
+            res.end();
         }
     }
 }

@@ -244,18 +244,11 @@ export class AiChatService {
         let assistantContent: string;
 
         try {
-            const response = await providerResolutionService.executeWithFallback(
-                { featureFamily: 'personal-chat' },
-                (providerContext) => aiEngineService.personalChat(
-                    content,
-                    history,
-                    chat?.user?.name ?? undefined,
-                    providerContext,
-                ),
-                {
-                    isSuccess: (response: { success: boolean }) => response.success,
-                    perProviderTimeoutMs: 30000,
-                },
+            const response = await aiEngineService.personalChat(
+                content,
+                history,
+                chat?.user?.name ?? undefined,
+                undefined,
             );
             assistantContent = response.reply;
         } catch {
