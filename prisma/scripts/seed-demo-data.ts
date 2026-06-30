@@ -919,7 +919,7 @@ export async function seedDemoData() {
       baseUrl: 'http://43.228.214.145:8317/v1',
       isActive: true,
       fallbackOrder: 0,
-      config: { defaultModel: 'deepseek-v4-flash', temperature: 0.7, maxTokens: 8192 },
+      config: { defaultModel: 'gpt-oss-120b', temperature: 0.7, maxTokens: 8192 },
     },
     create: {
       name: 'cli-proxy-api-plus',
@@ -928,10 +928,10 @@ export async function seedDemoData() {
       baseUrl: 'http://43.228.214.145:8317/v1',
       isActive: true,
       fallbackOrder: 0,
-      config: { defaultModel: 'deepseek-v4-flash', temperature: 0.7, maxTokens: 8192 },
+      config: { defaultModel: 'gpt-oss-120b', temperature: 0.7, maxTokens: 8192 },
     },
   });
-  console.log('  ✅ AI provider: cli-proxy-api-plus (deepseek-v4-flash)\n');
+  console.log('  ✅ AI provider: cli-proxy-api-plus (gpt-oss-120b)\n');
 
 
   console.log('👥 Creating users...');
