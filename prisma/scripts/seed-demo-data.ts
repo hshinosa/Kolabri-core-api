@@ -3,6 +3,7 @@
 import { NotificationType, PrismaClient, UserRole, type User } from '@prisma/client';
 import bcrypt from 'bcrypt';
 import { createHash } from 'node:crypto';
+import { generateJoinCode } from '../../src/utils/helpers.js';
 import { fileURLToPath } from 'node:url';
 
 const prisma = new PrismaClient();
@@ -891,6 +892,24 @@ function generateConversationFlow(course: CourseContent, participants: string[])
   return messages;
 }
 
+async function allocateUniqueCourseJoinCode(): Promise<string> {
+  for (let attempt = 0; attempt < 20; attempt++) {
+    const code = generateJoinCode(6);
+    const existing = await prisma.course.findUnique({ where: { joinCode: code }, select: { id: true } });
+    if (!existing) return code;
+  }
+  throw new Error('Failed to allocate unique course join code');
+}
+
+async function allocateUniqueGroupJoinCode(): Promise<string> {
+  for (let attempt = 0; attempt < 20; attempt++) {
+    const code = generateJoinCode(8);
+    const existing = await prisma.group.findUnique({ where: { joinCode: code }, select: { id: true } });
+    if (!existing) return code;
+  }
+  throw new Error('Failed to allocate unique group join code');
+}
+
 export async function seedDemoData() {
   console.log('🌱 Starting full demo dataset seed...\n');
 
@@ -1003,9 +1022,9 @@ export async function seedDemoData() {
         code: courseContent.code,
         name: courseContent.name,
         description: courseContent.description,
-        joinCode: `JOIN-${courseContent.code}`,
+        joinCode: await allocateUniqueCourseJoinCode(),
         minMembersPerGroup: COURSE_DEMO_CONFIG[courseContent.code]?.minMembersPerGroup ?? 1,
-        maxMembersPerGroup: COURSE_DEMO_CONFIG[courseContent.code]?.maxMembersPerGroup ?? 1000,
+        maxMembersPerGroup: Math.min(COURSE_DEMO_CONFIG[courseContent.code]?.maxMembersPerGroup ?? 8, 8),
         aiGuardrailConfig: COURSE_DEMO_CONFIG[courseContent.code]?.aiGuardrailConfig ?? {
           preset: 'balanced',
           allowRewrite: true,
@@ -1165,14 +1184,18 @@ export async function seedDemoData() {
       if (lowEngagement.length > 0 && Math.random() > 0.5) groupMembers.push(lowEngagement.shift()!);
       if (silentStudents.length > 0 && Math.random() > 0.7) groupMembers.push(silentStudents.shift()!);
 
-      while (groupMembers.length < 3 && enrolledStudents.length > groupMembers.length) {
+      const targetGroupSize = randomInt(
+        course.minMembersPerGroup,
+        Math.min(course.maxMembersPerGroup, enrolledStudents.length),
+      );
+      while (groupMembers.length < targetGroupSize && groupMembers.length < course.maxMembersPerGroup) {
         const remaining = enrolledStudents.filter(s => !groupMembers.find(gm => gm.id === s.id));
-        if (remaining.length > 0) groupMembers.push(randomElement(remaining));
-        else break;
+        if (remaining.length === 0) break;
+        groupMembers.push(randomElement(remaining));
       }
 
       const group = await prisma.group.create({
-        data: { id: seedUuid(`group-${courseContent.code}-${g + 1}`), name: groupName, joinCode: `GRP-${courseContent.code}-${g + 1}`, courseId: course.id, createdBy: groupMembers[0].id },
+        data: { id: seedUuid(`group-${courseContent.code}-${g + 1}`), name: groupName, joinCode: await allocateUniqueGroupJoinCode(), courseId: course.id, createdBy: groupMembers[0].id },
       });
 
       for (const member of groupMembers) {

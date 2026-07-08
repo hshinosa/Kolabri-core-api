@@ -43,7 +43,7 @@ export class CourseService {
                 description: data.description,
                 joinCode,
                 minMembersPerGroup: data.min_members_per_group,
-                maxMembersPerGroup: data.max_members_per_group,
+                maxMembersPerGroup: data.max_members_per_group !== undefined ? Math.min(data.max_members_per_group, 8) : undefined,
                 aiGuardrailConfig: {
                     preset: data.ai_guardrail_preset ?? 'balanced',
                     allowRewrite: data.ai_guardrail_allow_rewrite ?? true,
@@ -289,7 +289,7 @@ export class CourseService {
             description: course.description,
             join_code: role === 'lecturer' ? course.joinCode : undefined,
             min_members_per_group: (courseRecord.minMembersPerGroup as number | undefined) ?? 1,
-            max_members_per_group: (courseRecord.maxMembersPerGroup as number | undefined) ?? 1000,
+            max_members_per_group: Math.min((courseRecord.maxMembersPerGroup as number | undefined) ?? 8, 8),
             ai_guardrail_preset: (aiGuardrailConfig.preset as string | undefined) ?? 'balanced',
             ai_guardrail_allow_rewrite: (aiGuardrailConfig.allowRewrite as boolean | undefined) ?? true,
             ai_guardrail_allow_flag_only: (aiGuardrailConfig.allowFlagOnly as boolean | undefined) ?? false,
@@ -384,7 +384,7 @@ export class CourseService {
         if (data.name !== undefined) updateData.name = data.name;
         if (data.description !== undefined) updateData.description = data.description;
         if (data.min_members_per_group !== undefined) updateData.minMembersPerGroup = data.min_members_per_group;
-        if (data.max_members_per_group !== undefined) updateData.maxMembersPerGroup = data.max_members_per_group;
+        if (data.max_members_per_group !== undefined) updateData.maxMembersPerGroup = Math.min(data.max_members_per_group, 8);
         if (
             data.ai_guardrail_preset !== undefined
             || data.ai_guardrail_allow_rewrite !== undefined

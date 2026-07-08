@@ -76,7 +76,7 @@ model Course {
   description  String?
   joinCode     String    @unique @map("join_code")
   minMembersPerGroup Int @default(1) @map("min_members_per_group")
-  maxMembersPerGroup Int @default(1000) @map("max_members_per_group")
+  maxMembersPerGroup Int @default(8) @map("max_members_per_group")
   aiGuardrailConfig Json? @map("ai_guardrail_config")
   aiScaffoldingConfig Json? @map("ai_scaffolding_config")
   aiEscalationConfig Json? @map("ai_escalation_config")

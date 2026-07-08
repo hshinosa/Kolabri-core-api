@@ -2,7 +2,7 @@ import { z } from 'zod';
 
 const groupSizePolicySchema = z.object({
     min_members_per_group: z.number().int().min(1, 'Minimum group members must be at least 1').optional(),
-    max_members_per_group: z.number().int().min(1, 'Maximum group members must be at least 1').optional(),
+    max_members_per_group: z.number().int().min(1, 'Maximum group members must be at least 1').max(8, 'Maximum group members cannot exceed 8').optional(),
 }).refine((data) => {
     if (data.min_members_per_group === undefined || data.max_members_per_group === undefined) {
         return true;

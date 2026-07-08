@@ -1,8 +1,8 @@
  import prisma from '../config/database.js';
  import { ApiError } from '../middleware/errorHandler.js';
  import { CreateGroupInput } from '../validators/group.validator.js';
- import { logger } from '../utils/logger.js';
- import { randomBytes } from 'crypto';
+import { logger } from '../utils/logger.js';
+import { generateJoinCode } from '../utils/helpers.js';
 
 const getMinMembersPerGroup = (course: Record<string, unknown>) => {
     const value = course.minMembersPerGroup;
@@ -11,13 +11,9 @@ const getMinMembersPerGroup = (course: Record<string, unknown>) => {
 
 const getMaxMembersPerGroup = (course: Record<string, unknown>) => {
     const value = course.maxMembersPerGroup;
-    return typeof value === 'number' ? value : 1000;
+    return typeof value === 'number' ? Math.min(value, 8) : 8;
 };
 
-// Generate a unique join code
-const generateJoinCode = (): string => {
-    return randomBytes(4).toString('hex').toUpperCase();
-};
 
 type CourseWeekRow = { id: string; course_id: string; week_index: number; title: string };
 
@@ -193,13 +189,13 @@ export class GroupService {
             }
         }
 
-        // Generate unique join code
-        let joinCode = generateJoinCode();
+        // Generate unique join code (8 chars, matches API validation)
+        let joinCode = generateJoinCode(8);
         let attempts = 0;
         while (attempts < 5) {
             const existing = await prisma.group.findUnique({ where: { joinCode } });
             if (!existing) break;
-            joinCode = generateJoinCode();
+            joinCode = generateJoinCode(8);
             attempts++;
         }
 

@@ -1,6 +1,6 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
-const { prismaMock, randomBytesMock } = vi.hoisted(() => ({
+const { prismaMock, generateJoinCodeMock } = vi.hoisted(() => ({
     prismaMock: {
         group: { findUnique: vi.fn(), findFirst: vi.fn(), create: vi.fn(), createMany: vi.fn(), delete: vi.fn(), update: vi.fn(), findMany: vi.fn() },
         course: { findUnique: vi.fn(), findFirst: vi.fn() },
@@ -12,7 +12,7 @@ const { prismaMock, randomBytesMock } = vi.hoisted(() => ({
         $queryRaw: vi.fn(),
         $transaction: vi.fn(),
     },
-    randomBytesMock: vi.fn(),
+    generateJoinCodeMock: vi.fn(),
 }));
 
 vi.mock('../config/database.js', () => ({
@@ -20,8 +20,8 @@ vi.mock('../config/database.js', () => ({
     prisma: prismaMock,
 }));
 
-vi.mock('crypto', () => ({
-    randomBytes: randomBytesMock,
+vi.mock('../utils/helpers.js', () => ({
+    generateJoinCode: generateJoinCodeMock,
 }));
 
 import { GroupService } from './group.service.js';
@@ -29,7 +29,7 @@ import { GroupService } from './group.service.js';
 describe('GroupService', () => {
     beforeEach(() => {
         vi.clearAllMocks();
-        randomBytesMock.mockReturnValue({ toString: vi.fn().mockReturnValue('ABC12345') });
+        generateJoinCodeMock.mockReturnValue('ABC12345');
     });
 
     it('rejects group deletion for non-lecturers', async () => {
