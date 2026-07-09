@@ -1,5 +1,5 @@
 // PERF-WS-02: Cache verified tokens to reduce JWT verify + DB lookup overhead
-const tokenCache = new Map<string, { userId: string; exp: number }>();
+const tokenCache = new Map<string, { user: JwtPayload; exp: number }>();
 const TOKEN_CACHE_TTL_MS = 60 * 1000; // 1 minute
 import jwt from 'jsonwebtoken';
 import type { Server, Socket } from 'socket.io';
@@ -31,8 +31,8 @@ export async function authMiddleware(socket: Socket, next: NextFn): Promise<void
         // PERF-WS-02: Check token cache first
         const cached = tokenCache.get(token as string);
         if (cached && Date.now() < cached.exp) {
-            authed.user = { userId: cached.userId } as JwtPayload;
-            logger.debug(`Socket auth cache hit for user: ${cached.userId}`);
+            authed.user = cached.user;
+            logger.debug(`Socket auth cache hit for user: ${cached.user.userId}`);
             return next();
         }
 
@@ -48,9 +48,9 @@ export async function authMiddleware(socket: Socket, next: NextFn): Promise<void
             return next(new Error('User not found'));
         }
 
-        // Cache the token for future connections
+        // PERF-WS-02: Cache the verified JWT payload for future connections
         tokenCache.set(token as string, {
-            userId: decoded.userId,
+            user: decoded,
             exp: Date.now() + TOKEN_CACHE_TTL_MS,
         });
 

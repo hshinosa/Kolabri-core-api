@@ -49,6 +49,41 @@ describe('authMiddleware', () => {
         expect(next).toHaveBeenCalledWith();
     });
 
+    it('preserves email and role on token cache hits', async () => {
+        const nextFirst = vi.fn();
+        const nextCached = vi.fn();
+        const decoded = { userId: 'user-1', email: 'alice@example.com', role: 'student' };
+        const firstSocket = {
+            handshake: {
+                auth: { token: 'cached-token' },
+                query: {},
+            },
+        };
+
+        verifyMock.mockReturnValue(decoded);
+
+        await authMiddleware(firstSocket as any, nextFirst);
+        expect(nextFirst).toHaveBeenCalledWith();
+        expect((firstSocket as any).user).toEqual(decoded);
+
+        verifyMock.mockClear();
+        findFirstMock.mockClear();
+
+        const cachedSocket = {
+            handshake: {
+                auth: { token: 'cached-token' },
+                query: {},
+            },
+        };
+
+        await authMiddleware(cachedSocket as any, nextCached);
+
+        expect(nextCached).toHaveBeenCalledWith();
+        expect(verifyMock).not.toHaveBeenCalled();
+        expect(findFirstMock).not.toHaveBeenCalled();
+        expect((cachedSocket as any).user).toEqual(decoded);
+    });
+
     it('rejects query-only tokens', async () => {
         const next = vi.fn();
         const socket = {
