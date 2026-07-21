@@ -27,7 +27,7 @@ interface TestProviderResponse {
     error?: string;
 }
 
-interface ModelMetadata {
+export interface ModelMetadata {
     id: string;
     name: string;
     description?: string;
@@ -36,7 +36,7 @@ interface ModelMetadata {
     outputCost?: number;
 }
 
-interface ModelListResponse {
+export interface ModelListResponse {
     success: boolean;
     models: ModelMetadata[];
     cached: boolean;
