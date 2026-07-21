@@ -83,6 +83,12 @@ async function removeUserFromRoom(socket: AuthenticatedSocket, roomId: string): 
     }
 }
 
+function socketDisplayName(socket: AuthenticatedSocket): string {
+    const email = socket.user?.email?.trim();
+    if (email) return email.split('@')[0];
+    return socket.user?.userId ?? 'user';
+}
+
 export function registerPresence(_io: Server, socket: AuthenticatedSocket): void {
     socket.on('typing', (data: { roomId: string; isTyping: boolean }) => {
         if (!socketRateLimiter.isAllowed(socket.id, 'typing')) return;
@@ -92,7 +98,7 @@ export function registerPresence(_io: Server, socket: AuthenticatedSocket): void
 
         socket.to(data.roomId).emit('user_typing', {
             userId: socket.user.userId,
-            userName: socket.user.email.split('@')[0],
+            userName: socketDisplayName(socket),
             isTyping: data.isTyping,
         });
     });
@@ -101,7 +107,7 @@ export function registerPresence(_io: Server, socket: AuthenticatedSocket): void
         if (socket.user) {
             socket.to(roomId).emit('user_typing', {
                 userId: socket.user.userId,
-                userName: socket.user.email.split('@')[0],
+                userName: socketDisplayName(socket),
                 isTyping: false,
             });
             removeUserFromRoom(socket, roomId).catch((err) => {
@@ -118,7 +124,7 @@ export function registerPresence(_io: Server, socket: AuthenticatedSocket): void
         if (socket.user && socket.currentRoom) {
             socket.to(socket.currentRoom).emit('user_typing', {
                 userId: socket.user.userId,
-                userName: socket.user.email.split('@')[0],
+                userName: socketDisplayName(socket),
                 isTyping: false,
             });
             removeUserFromRoom(socket, socket.currentRoom).catch((err) => {
