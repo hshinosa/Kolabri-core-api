@@ -643,7 +643,7 @@ export class GroupService {
         }
 
         const groups = await prisma.group.findMany({
-            where: { courseId },
+            where: { courseId, deletedAt: null },
             include: {
                 members: {
                     include: {

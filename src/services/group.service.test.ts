@@ -8,7 +8,7 @@ const { prismaMock, generateJoinCodeMock } = vi.hoisted(() => ({
         groupMember: { findUnique: vi.fn(), findFirst: vi.fn(), create: vi.fn(), createMany: vi.fn(), delete: vi.fn() },
         sessionDiscussion: { create: vi.fn(), findUnique: vi.fn(), findFirst: vi.fn() },
         sessionDiscussionPreReadCompletion: { findUnique: vi.fn(), findMany: vi.fn(), create: vi.fn() },
-        user: { findUnique: vi.fn() },
+        user: { findUnique: vi.fn(), findMany: vi.fn() },
         $queryRaw: vi.fn(),
         $transaction: vi.fn(),
     },
@@ -49,6 +49,18 @@ describe('GroupService', () => {
 
         expect(prismaMock.group.update).toHaveBeenCalledWith({ where: { id: 'group-1' }, data: { deletedAt: expect.any(Date) } });
         expect(result).toEqual({ success: true });
+    });
+
+    it('excludes soft-deleted groups from course group listings', async () => {
+        prismaMock.course.findUnique.mockResolvedValue({ id: 'course-1', ownerId: 'lecturer-1' });
+        prismaMock.group.findMany.mockResolvedValue([]);
+        prismaMock.user.findMany.mockResolvedValue([]);
+
+        await GroupService.getCourseGroups('course-1', 'lecturer-1', 'lecturer');
+
+        expect(prismaMock.group.findMany).toHaveBeenCalledWith(expect.objectContaining({
+            where: { courseId: 'course-1', deletedAt: null },
+        }));
     });
 
     it('creates a lecturer-managed group with enrolled members', async () => {
@@ -305,19 +317,34 @@ describe('GroupService', () => {
         });
     });
 
-    it('rejects leaving for the group owner', async () => {
+    it('transfers ownership when the group owner leaves and members remain', async () => {
         prismaMock.groupMember.findUnique.mockResolvedValue({ groupId: 'group-1', userId: 'student-1' });
         prismaMock.group.findFirst.mockResolvedValue({
             id: 'group-1',
             createdBy: 'student-1',
-            members: [{ userId: 'student-1' }, { userId: 'student-2' }, { userId: 'student-3' }],
+            members: [
+                { userId: 'student-1', joinedAt: new Date('2026-01-03T00:00:00.000Z') },
+                { userId: 'student-2', joinedAt: new Date('2026-01-01T00:00:00.000Z') },
+                { userId: 'student-3', joinedAt: new Date('2026-01-02T00:00:00.000Z') },
+            ],
             course: { minMembersPerGroup: 2, maxMembersPerGroup: 5 },
         });
 
-        await expect(GroupService.leaveGroup('group-1', 'student-1')).rejects.toMatchObject({
-            statusCode: 400,
-            message: 'Group owner cannot leave the group',
+        const result = await GroupService.leaveGroup('group-1', 'student-1');
+
+        expect(prismaMock.group.update).toHaveBeenCalledWith({
+            where: { id: 'group-1' },
+            data: { createdBy: 'student-2' },
         });
+        expect(prismaMock.groupMember.delete).toHaveBeenCalledWith({
+            where: {
+                groupId_userId: {
+                    groupId: 'group-1',
+                    userId: 'student-1',
+                },
+            },
+        });
+        expect(result).toEqual({ success: true });
     });
 
     it('allows lecturer-owned member removal when the group stays at or above the minimum', async () => {
