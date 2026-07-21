@@ -1,8 +1,16 @@
 import prisma from '../config/database.js';
+import type { Prisma } from '@prisma/client';
 import { ApiError } from '../middleware/errorHandler.js';
 import { CreateCourseInput, JoinCourseInput } from '../validators/course.validator.js';
 import { generateJoinCode } from '../utils/helpers.js';
 import { cache } from '../utils/cache.js';
+
+function asJsonObject(value: Prisma.JsonValue | null | undefined): Record<string, unknown> {
+    if (value && typeof value === 'object' && !Array.isArray(value)) {
+        return value as Record<string, unknown>;
+    }
+    return {};
+}
 
 export class CourseService {
     /**
@@ -278,9 +286,8 @@ export class CourseService {
             }
         }
 
-        const courseRecord = course as unknown as Record<string, unknown>;
-        const aiGuardrailConfig = (courseRecord.aiGuardrailConfig as Record<string, unknown> | null) ?? {};
-        const aiScaffoldingConfig = (courseRecord.aiScaffoldingConfig as Record<string, unknown> | null) ?? {};
+        const aiGuardrailConfig = asJsonObject(course.aiGuardrailConfig);
+        const aiScaffoldingConfig = asJsonObject(course.aiScaffoldingConfig);
 
         return {
             id: course.id,
@@ -288,8 +295,8 @@ export class CourseService {
             name: course.name,
             description: course.description,
             join_code: role === 'lecturer' ? course.joinCode : undefined,
-            min_members_per_group: (courseRecord.minMembersPerGroup as number | undefined) ?? 1,
-            max_members_per_group: Math.min((courseRecord.maxMembersPerGroup as number | undefined) ?? 8, 8),
+            min_members_per_group: course.minMembersPerGroup ?? 1,
+            max_members_per_group: Math.min(course.maxMembersPerGroup ?? 8, 8),
             ai_guardrail_preset: (aiGuardrailConfig.preset as string | undefined) ?? 'balanced',
             ai_guardrail_allow_rewrite: (aiGuardrailConfig.allowRewrite as boolean | undefined) ?? true,
             ai_guardrail_allow_flag_only: (aiGuardrailConfig.allowFlagOnly as boolean | undefined) ?? false,
@@ -379,47 +386,47 @@ export class CourseService {
             throw ApiError.notFound('Course not found or access denied');
         }
 
-        const updateData: Record<string, unknown> = {};
+        const updateData: Prisma.CourseUpdateInput = {};
 
-        if (data.name !== undefined) updateData.name = data.name;
-        if (data.description !== undefined) updateData.description = data.description;
-        if (data.min_members_per_group !== undefined) updateData.minMembersPerGroup = data.min_members_per_group;
-        if (data.max_members_per_group !== undefined) updateData.maxMembersPerGroup = Math.min(data.max_members_per_group, 8);
+        if (typeof data.name === 'string') updateData.name = data.name;
+        if (data.description !== undefined) updateData.description = data.description as string | null;
+        if (typeof data.min_members_per_group === 'number') updateData.minMembersPerGroup = data.min_members_per_group;
+        if (typeof data.max_members_per_group === 'number') updateData.maxMembersPerGroup = Math.min(data.max_members_per_group, 8);
         if (
             data.ai_guardrail_preset !== undefined
             || data.ai_guardrail_allow_rewrite !== undefined
             || data.ai_guardrail_allow_flag_only !== undefined
         ) {
-            const currentPolicy = (((course as unknown as Record<string, unknown>).aiGuardrailConfig) as Record<string, unknown> | null) ?? {};
+            const currentPolicy = asJsonObject(course.aiGuardrailConfig);
             updateData.aiGuardrailConfig = {
                 preset: data.ai_guardrail_preset ?? currentPolicy.preset ?? 'balanced',
                 allowRewrite: data.ai_guardrail_allow_rewrite ?? currentPolicy.allowRewrite ?? true,
                 allowFlagOnly: data.ai_guardrail_allow_flag_only ?? currentPolicy.allowFlagOnly ?? false,
-            };
+            } as Prisma.InputJsonValue;
         }
         if (
             data.ai_scaffolding_level !== undefined
             || data.ai_scaffolding_enabled !== undefined
         ) {
-            const currentScaffolding = (((course as unknown as Record<string, unknown>).aiScaffoldingConfig) as Record<string, unknown> | null) ?? {};
+            const currentScaffolding = asJsonObject(course.aiScaffoldingConfig);
             updateData.aiScaffoldingConfig = {
                 scaffoldingLevel: data.ai_scaffolding_level ?? currentScaffolding.scaffoldingLevel ?? 'auto',
                 enabled: data.ai_scaffolding_enabled ?? currentScaffolding.enabled ?? true,
-            };
+            } as Prisma.InputJsonValue;
         }
-        if (data.semester !== undefined) updateData.semester = data.semester;
-        if (data.academic_year !== undefined) updateData.academicYear = data.academic_year;
+        if (data.semester !== undefined) updateData.semester = data.semester as string | null;
+        if (data.academic_year !== undefined) updateData.academicYear = data.academic_year as string | null;
 
         if (data.status === 'selesai') {
             updateData.isActive = false;
             updateData.isArchived = true;
             updateData.archivedAt = new Date();
-            updateData.archivedById = lecturerId;
+            updateData.archivedBy = { connect: { id: lecturerId } };
         } else if (data.status === 'aktif') {
             updateData.isActive = true;
             updateData.isArchived = false;
             updateData.archivedAt = null;
-            updateData.archivedById = null;
+            updateData.archivedBy = { disconnect: true };
         }
 
         const updated = await prisma.course.update({
