@@ -934,23 +934,23 @@ export async function seedDemoData() {
     where: { name: 'cli-proxy-api-plus' },
     update: {
       displayName: 'CLI Proxy API Plus',
-      apiKey: 'sk-ama',
+      apiKey: 'sk-kolabri',
       baseUrl: 'http://43.228.214.145:8317/v1',
       isActive: true,
       fallbackOrder: 0,
-      config: { defaultModel: 'gpt-oss-120b', temperature: 0.7, maxTokens: 8192 },
+      config: { defaultModel: 'deepseek-v4-flash', temperature: 0.7, maxTokens: 8192 },
     },
     create: {
       name: 'cli-proxy-api-plus',
       displayName: 'CLI Proxy API Plus',
-      apiKey: 'sk-ama',
+      apiKey: 'sk-kolabri',
       baseUrl: 'http://43.228.214.145:8317/v1',
       isActive: true,
       fallbackOrder: 0,
-      config: { defaultModel: 'gpt-oss-120b', temperature: 0.7, maxTokens: 8192 },
+      config: { defaultModel: 'deepseek-v4-flash', temperature: 0.7, maxTokens: 8192 },
     },
   });
-  console.log('  ✅ AI provider: cli-proxy-api-plus (gpt-oss-120b)\n');
+  console.log('  ✅ AI provider: cli-proxy-api-plus (deepseek-v4-flash)\n');
 
 
   console.log('👥 Creating users...');
@@ -959,7 +959,7 @@ export async function seedDemoData() {
   const lecturers = [];
   for (const data of LECTURERS) {
     const lecturer = await prisma.user.create({
-      data: { id: seedUuid(`user-${data.email}`), email: data.email, password: hashedPassword, name: data.name, role: UserRole.lecturer, aiInteractionConsent: true },
+            data: { id: seedUuid(`user-${data.email}`), email: data.email, password: hashedPassword, name: data.name, role: UserRole.lecturer },
     });
     lecturers.push(lecturer);
     console.log(`  ✅ Lecturer: ${lecturer.name}`);
@@ -968,7 +968,7 @@ export async function seedDemoData() {
   const students: StudentWithEngagement[] = [];
   for (const data of STUDENTS) {
     const student = await prisma.user.create({
-      data: { id: seedUuid(`user-${data.email}`), email: data.email, password: hashedPassword, name: data.name, role: UserRole.student, aiInteractionConsent: true },
+            data: { id: seedUuid(`user-${data.email}`), email: data.email, password: hashedPassword, name: data.name, role: UserRole.student },
     });
     students.push({ ...student, engagement: data.engagement });
     console.log(`  ✅ Student: ${student.name} (${data.engagement})`);

@@ -111,6 +111,12 @@ async function processBatchClassification(sessionDiscussionId: string): Promise<
     }
 }
 
+function socketDisplayName(socket: AuthenticatedSocket): string {
+    const email = socket.user?.email?.trim();
+    if (email) return email.split('@')[0];
+    return socket.user?.userId ?? 'user';
+}
+
 export function initSocketIO(server: HttpServer): Server {
     const allowedOrigins = [
         process.env.CLIENT_URL || 'http://localhost:8080',
@@ -311,15 +317,17 @@ export function initSocketIO(server: HttpServer): Server {
 
                 socket.emit('chat_history', { messages: historyMessages });
 
+                const userName = socketDisplayName(socket);
+
                 // Notify room about new user joining
                 socket.to(roomId).emit('user_joined', {
                     userId: socket.user.userId,
-                    userName: socket.user.email.split('@')[0],
+                    userName,
                 });
 
                 await trackUserInRoom(roomId, {
                     userId: socket.user.userId,
-                    userName: socket.user.email.split('@')[0],
+                    userName,
                     socketId: socket.id,
                 });
 
@@ -1071,22 +1079,6 @@ async function handleAIQuestion(
     io.to(roomId).emit('ai_typing', { isTyping: true });
 
     try {
-        const userPrefs = await prisma.user.findUnique({
-            where: { id: userId },
-            select: { aiInteractionConsent: true }
-        });
-        if (!userPrefs?.aiInteractionConsent) {
-            io.to(roomId).emit('receive_message', {
-                id: `ai-denied-${Date.now()}`,
-                senderId: 'ai',
-                senderName: 'AI Assistant',
-                senderType: 'ai',
-                content: 'Anda perlu memberikan persetujuan AI interaction di pengaturan privasi sebelum menggunakan fitur AI.',
-                createdAt: new Date().toISOString(),
-            });
-            return;
-        }
-
         const isAvailable = await aiEngineService.isAvailable();
         
         let response: string = "";

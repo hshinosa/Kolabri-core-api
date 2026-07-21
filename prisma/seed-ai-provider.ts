@@ -27,7 +27,7 @@ async function main() {
         where: { name: 'cli-proxy-api-plus' },
         update: {
             displayName: 'CLI Proxy API Plus',
-            apiKey: 'sk-ama',
+            apiKey: 'sk-kolabri',
             baseUrl: 'http://43.228.214.145:8317/v1',
             isActive: true,
             fallbackOrder: 0,
@@ -40,7 +40,7 @@ async function main() {
         create: {
             name: 'cli-proxy-api-plus',
             displayName: 'CLI Proxy API Plus',
-            apiKey: 'sk-ama',
+            apiKey: 'sk-kolabri',
             baseUrl: 'http://43.228.214.145:8317/v1',
             isActive: true,
             fallbackOrder: 0,

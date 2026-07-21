@@ -30,7 +30,7 @@ Alternatif ditolak: Prisma middleware — terlalu magic, sulit di-override untuk
 Saat Course di-soft-delete → service juga soft-delete semua Groups-nya → soft-delete semua ChatSpaces-nya. Ini dilakukan di `course.service.ts` dalam satu transaction Prisma.
 
 **4. Admin hard delete endpoint**
-Tambah `DELETE /api/admin/users/:id/hard` dan equivalennya untuk model lain. Hanya accessible oleh admin role. Ini untuk compliance (GDPR right to erasure).
+Tambah `DELETE /api/admin/users/:id/hard` dan equivalennya untuk model lain. Hanya accessible oleh admin role. Ini untuk compliance .
 
 **5. Index pada `deletedAt`**
 Tambah `@@index([deletedAt])` ke semua model yang di-soft-delete untuk performa query `WHERE deletedAt IS NULL`.

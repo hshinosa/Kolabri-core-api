@@ -32,9 +32,6 @@ model User {
   emailVerifiedAt      DateTime? @map("email_verified_at")
   themePreference      String?   @default("system") @map("theme_preference") // "light" | "dark" | "system"
   languagePreference   String?   @default("id") @map("language_preference") // "id" | "en"
-  analyticsVisibility  Boolean   @default(false) @map("analytics_visibility")
-  aiInteractionConsent Boolean   @default(true) @map("ai_interaction_consent")
-  dataSharingConsent   Boolean   @default(false) @map("data_sharing_consent")
   createdAt            DateTime  @default(now()) @map("created_at")
   updatedAt            DateTime  @updatedAt @map("updated_at")
   deletedAt            DateTime? @map("deleted_at")
@@ -53,7 +50,6 @@ model User {
   aiUsages         AiUsage[]
   auditLogs        AuditLog[]
   notifications    Notification[]
-  consentRecords         ConsentRecord[]
   exportJobs             ExportJob[]
   sessionDiscussionPreReadCompletions SessionDiscussionPreReadCompletion[]
 
@@ -559,24 +555,6 @@ model EscalationState {
   @@map("escalation_states")
 }
 
-model ConsentRecord {
-  id         String   @id @default(uuid())
-  userId     String   @map("user_id")
-  consentType String  @map("consent_type") // 'ai_interaction' | 'data_analytics' | 'data_sharing'
-  granted    Boolean
-  grantedAt  DateTime @map("granted_at")
-  revokedAt  DateTime? @map("revoked_at")
-  createdAt  DateTime @default(now()) @map("created_at")
-  updatedAt  DateTime @updatedAt @map("updated_at")
-
-  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
-
-  @@index([userId])
-  @@index([consentType])
-  @@index([userId, consentType])
-  @@map("consent_records")
-}
-
 model ExportJob {
   id          String   @id @default(uuid())
   userId      String   @map("user_id")
@@ -596,30 +574,6 @@ model ExportJob {
 }
 
 // ============================================
-// DATA RETENTION POLICIES (NFR-DATA-01)
-// ============================================
-
-enum DataType {
-  USER
-  COURSE
-  GROUP
-  SESSION_DISCUSSION
-  KNOWLEDGE_BASE
-  CHAT_LOG
-}
-
-model DataRetentionPolicy {
-  id               String   @id @default(uuid())
-  dataType         DataType @unique
-  retentionDays    Int      @default(365) @map("retention_days")
-  archiveAfterDays Int      @default(180) @map("archive_after_days")
-  autoPurge        Boolean  @default(false) @map("auto_purge")
-  createdAt        DateTime @default(now()) @map("created_at")
-  updatedAt        DateTime @updatedAt @map("updated_at")
-
-  @@map("data_retention_policies")
-}
-
 // ============================================
 // COURSE WEEKS & MATERIALS
 // ============================================

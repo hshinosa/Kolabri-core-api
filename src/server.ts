@@ -19,8 +19,6 @@ import { initRedis, disconnectRedis } from './config/redis.js';
 import prisma from './config/database.js';
 import { setupWebSocket } from './websocket/server.js';
 
-import { runCleanupJobs } from './jobs/cleanup-job.js';
-import { startRetentionCleanup } from './jobs/retention-cleanup.js';
 import { startAutoCloseJob } from './jobs/auto-close.job.js';
 
 const SHUTDOWN_TIMEOUT_MS = 30_000;
@@ -42,13 +40,6 @@ async function bootstrap() {
             logger.info(`Health check: http://localhost:${env.PORT}/health`);
         });
 
-        runCleanupJobs().catch(err => logger.error('[Cleanup] Startup error:', err));
-
-        startRetentionCleanup();
-
-        setInterval(() => {
-            runCleanupJobs().catch(err => logger.error('[Cleanup] Error:', err));
-        }, 24 * 60 * 60 * 1000);
         startAutoCloseJob();
 
         let shuttingDown = false;

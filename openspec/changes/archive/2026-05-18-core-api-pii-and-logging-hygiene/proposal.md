@@ -10,7 +10,7 @@ Multiple logging issues:
    - User emails: `src/socket/index.ts:231,386,530,581,650`
    - Message content previews: same locations
    - Tokens (potentially) in error logs
-   - Production logs may end up in centralized log aggregator with email addresses → GDPR/privacy concerns
+   - Production logs may end up in centralized log aggregator with email addresses → privacy concerns in logs
 
 3. **Emoji in logs**: `src/server.ts:28-30`, `src/socket/index.ts:654`, `src/config/mongodb.ts:9-13`. Noisy in production log aggregators (often render incorrectly).
 

@@ -51,7 +51,7 @@ Sistem MUST mengimplementasikan soft delete untuk model `KnowledgeBase`. Knowled
 - **THEN** `deletedAt` diisi dan document tidak muncul di list documents
 
 ### Requirement: Admin hard delete endpoint available
-Sistem MUST menyediakan endpoint hard delete yang hanya dapat diakses oleh admin role, untuk keperluan compliance (GDPR right to erasure).
+Sistem MUST menyediakan endpoint hard delete yang hanya dapat diakses oleh admin role.
 
 #### Scenario: Admin hard deletes user
 - **WHEN** admin memanggil hard delete endpoint untuk user

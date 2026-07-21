@@ -200,20 +200,6 @@ CREATE TABLE "escalation_states" (
     CONSTRAINT "escalation_states_pkey" PRIMARY KEY ("id")
 );
 
--- CreateTable
-CREATE TABLE "consent_records" (
-    "id" TEXT NOT NULL,
-    "user_id" TEXT NOT NULL,
-    "consent_type" TEXT NOT NULL,
-    "granted" BOOLEAN NOT NULL,
-    "granted_at" TIMESTAMP(3) NOT NULL,
-    "revoked_at" TIMESTAMP(3),
-    "created_at" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
-    "updated_at" TIMESTAMP(3) NOT NULL,
-
-    CONSTRAINT "consent_records_pkey" PRIMARY KEY ("id")
-);
-
 -- CreateIndex
 CREATE INDEX "course_templates_created_by_id_idx" ON "course_templates"("created_by_id");
 
@@ -315,15 +301,6 @@ CREATE INDEX "escalation_states_group_id_current_stage_idx" ON "escalation_state
 
 -- CreateIndex
 CREATE INDEX "escalation_states_chat_space_id_issue_type_current_stage_idx" ON "escalation_states"("chat_space_id", "issue_type", "current_stage");
-
--- CreateIndex
-CREATE INDEX "consent_records_user_id_idx" ON "consent_records"("user_id");
-
--- CreateIndex
-CREATE INDEX "consent_records_consent_type_idx" ON "consent_records"("consent_type");
-
--- CreateIndex
-CREATE INDEX "consent_records_user_id_consent_type_idx" ON "consent_records"("user_id", "consent_type");
 
 -- CreateIndex
 CREATE INDEX "ai_chat_messages_chat_id_idx" ON "ai_chat_messages"("chat_id");
@@ -450,6 +427,3 @@ ALTER TABLE "audit_logs" ADD CONSTRAINT "audit_logs_user_id_fkey" FOREIGN KEY ("
 
 -- AddForeignKey
 ALTER TABLE "notifications" ADD CONSTRAINT "notifications_user_id_fkey" FOREIGN KEY ("user_id") REFERENCES "users"("id") ON DELETE CASCADE ON UPDATE CASCADE;
-
--- AddForeignKey
-ALTER TABLE "consent_records" ADD CONSTRAINT "consent_records_user_id_fkey" FOREIGN KEY ("user_id") REFERENCES "users"("id") ON DELETE CASCADE ON UPDATE CASCADE;
