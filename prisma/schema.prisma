@@ -230,7 +230,7 @@ model SessionDiscussion {
   @@index([deletedAt])
   @@index([groupId, deletedAt])
   @@index([groupId, type])
-  @@map("chat_spaces")
+  @@map("session_discussions")
 }
 
 model SessionDiscussionPreReadCompletion {
@@ -239,12 +239,12 @@ model SessionDiscussionPreReadCompletion {
 
   userId      String    @map("user_id")
   user        User      @relation(fields: [userId], references: [id], onDelete: Cascade)
-  sessionDiscussionId String    @map("chat_space_id")
+  sessionDiscussionId String    @map("session_discussion_id")
   sessionDiscussion   SessionDiscussion @relation(fields: [sessionDiscussionId], references: [id], onDelete: Cascade)
 
   @@unique([userId, sessionDiscussionId])
   @@index([sessionDiscussionId])
-  @@map("chat_space_pre_read_completions")
+  @@map("session_discussion_pre_read_completions")
 }
 
 model ChatMessage {
@@ -270,7 +270,7 @@ model ChatMessage {
   citations Json? @map("citations")
 
   // Relations
-  sessionDiscussionId String    @map("chat_space_id")
+  sessionDiscussionId String    @map("session_discussion_id")
   sessionDiscussion   SessionDiscussion @relation(fields: [sessionDiscussionId], references: [id], onDelete: Cascade)
   senderId    String    @map("sender_id")
   sender      User      @relation(fields: [senderId], references: [id], onDelete: Cascade)
@@ -294,7 +294,7 @@ model LearningGoal {
   updatedAt   DateTime @updatedAt @map("updated_at")
 
   // Relations - Goal belongs to a SessionDiscussion, not Group
-  sessionDiscussionId String       @map("chat_space_id")
+  sessionDiscussionId String       @map("session_discussion_id")
   sessionDiscussion   SessionDiscussion    @relation(fields: [sessionDiscussionId], references: [id], onDelete: Cascade)
   userId      String       @map("user_id")
   user        User         @relation(fields: [userId], references: [id], onDelete: Cascade)
@@ -318,7 +318,7 @@ model Reflection {
   goal        LearningGoal? @relation(fields: [goalId], references: [id], onDelete: SetNull)
   userId      String        @map("user_id")
   user        User          @relation(fields: [userId], references: [id], onDelete: Cascade)
-  sessionDiscussionId String?       @map("chat_space_id")
+  sessionDiscussionId String?       @map("session_discussion_id")
   sessionDiscussion   SessionDiscussion?    @relation(fields: [sessionDiscussionId], references: [id], onDelete: SetNull)
   courseId    String?       @map("course_id")
   course      Course?       @relation(fields: [courseId], references: [id], onDelete: SetNull)
@@ -538,7 +538,7 @@ model EscalationState {
   id              String   @id @default(uuid())
   courseId        String   @map("course_id")
   groupId         String   @map("group_id")
-  sessionDiscussionId     String   @map("chat_space_id")
+  sessionDiscussionId     String   @map("session_discussion_id")
   issueType       String   @map("issue_type")
   currentStage    String   @map("current_stage")
   history         Json     @default("[]")
@@ -639,7 +639,7 @@ model CourseMaterial {
 model AttendanceSession {
   id                    String              @id @default(uuid())
   courseId              String              @map("course_id")
-  sessionDiscussionId   String?             @unique @map("chat_space_id")
+  sessionDiscussionId   String?             @unique @map("session_discussion_id")
   weekId                String?             @map("week_id")
   groupId               String?             @map("group_id")
   title                 String
