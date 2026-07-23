@@ -84,9 +84,12 @@ export class DiscussionDirectionService {
   ) {
     return {
       goalAchieved: false,
-      topics: [goal],
+      topics: goal ? [goal] : [],
       contributions: {},
-      assessment: 'Ringkasan tidak tersedia. Silakan coba lagi nanti.',
+      assessment:
+        `Penilaian tujuan tidak tersedia saat ini (layanan AI sibuk atau tidak merespons). ` +
+        `Sesi ini mencatat ${stats.totalMessages} pesan dari ${stats.participantCount} peserta. ` +
+        `Silakan tinjau kembali tujuan: "${goal}".`,
     };
   }
 
