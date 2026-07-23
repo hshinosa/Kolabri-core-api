@@ -93,13 +93,13 @@ export class SessionDiscussionService {
             const recentMessages = await ChatLog.find({
                 sessionDiscussionId,
                 deletedAt: null,
-                senderType: { $in: ['student', 'lecturer'] },
+                senderType: { $in: ['student', 'lecturer', 'ai'] },
             }).sort({ createdAt: -1 }).limit(30).lean();
 
             if (recentMessages.length > 0) {
                 const summaryResult = await aiEngineService.generateSummary(
                     recentMessages.reverse().map((m) => ({
-                        sender: m.senderName,
+                        sender: m.senderType === 'ai' ? 'AI' : m.senderName,
                         content: m.content,
                         timestamp: new Date(m.createdAt).toISOString(),
                     })),
@@ -500,7 +500,7 @@ export class SessionDiscussionService {
         const recentMessages = await ChatLog.find({
             sessionDiscussionId,
             deletedAt: null,
-            senderType: { $in: ['student', 'lecturer'] },
+            senderType: { $in: ['student', 'lecturer', 'ai'] },
         }).sort({ createdAt: -1 }).limit(30).lean();
 
         if (recentMessages.length === 0) {
@@ -514,7 +514,7 @@ export class SessionDiscussionService {
 
         const summaryResult = await aiEngineService.generateSummary(
             recentMessages.reverse().map((m) => ({
-                sender: m.senderName,
+                sender: m.senderType === 'ai' ? 'AI' : m.senderName,
                 content: m.content,
                 timestamp: new Date(m.createdAt).toISOString(),
             })),
