@@ -1,6 +1,7 @@
 import { Response, NextFunction } from 'express';
 import { AuthenticatedRequest } from '../middleware/auth.js';
 import { CourseAdminService } from '../services/course-admin.service.js';
+import { ApiError } from '../middleware/errorHandler.js';
 import {
     BulkCourseSelectionInput,
     CreateCourseInput,
@@ -270,7 +271,7 @@ export class CourseAdminController {
             const file = req.file;
 
             if (!file) {
-                throw new Error('CSV file is required');
+                throw ApiError.badRequest('CSV file is required');
             }
 
             const result = await CourseAdminService.bulkImportCoursesFromCsv(file.buffer);

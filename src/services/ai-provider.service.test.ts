@@ -1,6 +1,6 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
-const { prismaMock, encryptionMock, aiServiceMock, auditLogServiceMock, broadcastAdminEventMock } = vi.hoisted(() => ({
+const { prismaMock, encryptionMock, adminProviderTestMock, auditLogServiceMock, broadcastAdminEventMock } = vi.hoisted(() => ({
     prismaMock: {
         aiProvider: {
             findMany: vi.fn(),
@@ -17,8 +17,8 @@ const { prismaMock, encryptionMock, aiServiceMock, auditLogServiceMock, broadcas
         decrypt: vi.fn(),
         maskApiKey: vi.fn(),
     },
-    aiServiceMock: {
-        send: vi.fn(),
+    adminProviderTestMock: {
+        testProvider: vi.fn(),
     },
     auditLogServiceMock: {
         logAction: vi.fn(),
@@ -32,8 +32,8 @@ vi.mock('../config/database.js', () => ({
 
 vi.mock('../utils/encryption.js', () => encryptionMock);
 
-vi.mock('./ai.service.js', () => ({
-    aiService: aiServiceMock,
+vi.mock('./adminProvider.service.js', () => ({
+    AdminProviderService: adminProviderTestMock,
 }));
 
 vi.mock('./audit-log.service.js', () => ({
@@ -215,17 +215,21 @@ describe('AiProviderService', () => {
             createdAt: new Date('2026-05-01T00:00:00.000Z'),
             updatedAt: new Date('2026-05-01T00:00:00.000Z'),
         });
-        aiServiceMock.send.mockResolvedValue({
-            content: 'Connection OK',
+        adminProviderTestMock.testProvider.mockResolvedValue({
+            success: true,
+            response: 'Connection OK',
             latencyMs: 150,
             model: 'gpt-4.1-mini',
         });
 
         const result = await AiProviderService.testConnection('provider-1', { testPrompt: 'Ping' });
 
-        expect(aiServiceMock.send).toHaveBeenCalledWith('Ping', 'openai', {
-            userId: '00000000-0000-0000-0000-000000000000',
+        expect(adminProviderTestMock.testProvider).toHaveBeenCalledWith({
+            name: 'openai',
+            apiKey: 'valid-secret-key',
+            baseUrl: null,
             model: 'gpt-4.1-mini',
+            testPrompt: 'Ping',
         });
         expect(result).toEqual({
             status: 'success',

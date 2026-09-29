@@ -4,6 +4,7 @@ import { z } from 'zod';
 import { UserController } from '../controllers/user.controller.js';
 import { AdminUserController } from '../controllers/admin-user.controller.js';
 import { verifyToken, checkRole } from '../middleware/auth.js';
+import { ApiError } from '../middleware/errorHandler.js';
 import { rateLimiter } from '../middleware/rateLimiter.js';
 import { validateBody, validateParams, validateQuery } from '../validators/validate.js';
 import {
@@ -27,7 +28,7 @@ const upload = multer({
             return;
         }
 
-        cb(new Error('Only CSV files are allowed'));
+        cb(ApiError.badRequest('Only CSV files are allowed'));
     },
 });
 
@@ -54,5 +55,6 @@ router.post(
     validateBody(resetPasswordSchema),
     UserController.resetPassword
 );
+router.put('/:id/toggle-status', validateParams(idSchema), UserController.toggleStatus);
 
 export default router;

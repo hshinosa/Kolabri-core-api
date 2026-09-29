@@ -372,13 +372,21 @@ export class AiProviderService {
         const supportedProviders = ['openai', 'anthropic', 'gemini'];
         const normalizedProvider = provider.toLowerCase();
 
-        if (!supportedProviders.includes(normalizedProvider)) {
-            throw ApiError.badRequest('Unsupported provider', {
-                reason: `Provider must be one of: ${supportedProviders.join(', ')}`,
-            });
+        // Saved custom providers: discover models via their own
+        // OpenAI-compatible endpoint using the stored credentials.
+        const saved = await aiProviderDelegate.findUnique({
+            where: { name: provider },
+            select: { baseUrl: true, apiKey: true },
+        });
+
+        let source: { baseUrl?: string | null; apiKey?: string } | undefined;
+        if (saved?.baseUrl) {
+            source = { baseUrl: saved.baseUrl, apiKey: decrypt(saved.apiKey) };
+        } else if (!supportedProviders.includes(normalizedProvider)) {
+            throw ApiError.notFound('Provider not found. Save the provider first, then fetch its models.');
         }
 
-        const result = await AdminProviderService.getProviderModels(normalizedProvider, refresh);
+        const result = await AdminProviderService.getProviderModels(normalizedProvider, refresh, source);
 
         if (!result.success) {
             throw ApiError.internal('Failed to fetch provider models', {

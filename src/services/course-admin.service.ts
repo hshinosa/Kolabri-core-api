@@ -34,7 +34,11 @@ const courseAdminInclude = {
     _count: {
         select: {
             students: true,
-            groups: true,
+            groups: {
+                where: {
+                    deletedAt: null,
+                },
+            },
         },
     },
 } as const;
@@ -142,6 +146,9 @@ export class CourseAdminService {
                     },
                 },
                 groups: {
+                    where: {
+                        deletedAt: null,
+                    },
                     include: {
                         _count: {
                             select: {
@@ -157,7 +164,11 @@ export class CourseAdminService {
                 _count: {
                     select: {
                         students: true,
-                        groups: true,
+                        groups: {
+                            where: {
+                                deletedAt: null,
+                            },
+                        },
                     },
                 },
             },
@@ -251,6 +262,7 @@ export class CourseAdminService {
             where: {
                 courseId: id,
                 isActive: true,
+                deletedAt: null,
             },
         });
 
@@ -281,7 +293,12 @@ export class CourseAdminService {
             });
             await tx.course.update({
                 where: { id },
-                data: { deletedAt: new Date() },
+                data: {
+                    deletedAt: new Date(),
+                    // Free the code for reuse: the unique index on `code` would
+                    // otherwise be locked forever by this invisible row.
+                    code: `${course.code}__deleted__${Date.now()}`,
+                },
             });
         });
 
@@ -314,14 +331,26 @@ export class CourseAdminService {
     }
 
     private static async ensureCourseCodeAvailable(code: string, excludeId?: string) {
-        const existingCourse = await prisma.course.findUnique({
+        const existingCourse = await prisma.course.findFirst({
             where: { code },
-            select: { id: true },
+            select: { id: true, deletedAt: true },
         });
 
-        if (existingCourse && existingCourse.id !== excludeId) {
-            throw ApiError.conflict('Course code already exists');
+        if (!existingCourse || existingCourse.id === excludeId) {
+            return;
         }
+
+        if (existingCourse.deletedAt) {
+            // Soft-deleted courses must not lock their code forever: free it by
+            // renaming the dead row so the unique index allows reuse.
+            await prisma.course.update({
+                where: { id: existingCourse.id },
+                data: { code: `${code}__deleted__${Date.now()}` },
+            });
+            return;
+        }
+
+        throw ApiError.conflict('Course code already exists');
     }
 
     private static async generateUniqueJoinCode() {
@@ -555,11 +584,15 @@ export class CourseAdminService {
             include: {
                 ...courseAdminInclude,
                 groups: {
+                    where: {
+                        deletedAt: null,
+                    },
                     select: {
                         id: true,
                         sessionDiscussions: {
                             where: {
                                 closedAt: null,
+                                deletedAt: null,
                             },
                             select: {
                                 id: true,

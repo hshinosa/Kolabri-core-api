@@ -1,8 +1,12 @@
- {
-   "compilerOptions": {
-     "noEmitOnError": false,
-     "rootDir": "./src"
-   },
-   "include": ["src/**/*"],
-   "exclude": ["node_modules", "dist", "**/*.test.ts", "**/*.spec.ts"]
- }
+{
+  "extends": "./tsconfig.json",
+  "compilerOptions": {
+    "rootDir": "./src",
+    "sourceMap": false,
+    "declaration": false,
+    "declarationMap": false,
+    "noEmitOnError": false
+  },
+  "include": ["src/**/*"],
+  "exclude": ["node_modules", "dist", "**/*.test.ts", "**/*.spec.ts", "src/services/savedMaterial.service.ts"]
+}

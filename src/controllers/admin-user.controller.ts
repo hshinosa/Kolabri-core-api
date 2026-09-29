@@ -9,6 +9,11 @@ export class AdminUserController {
                 return res.status(401).json({ error: { code: 'UNAUTHORIZED', message: 'Not authenticated' } });
             }
             const { id } = req.params;
+            if (id === req.user.userId) {
+                return res.status(403).json({
+                    error: { code: 'FORBIDDEN', message: 'Cannot delete your own account' },
+                });
+            }
             const result = await AccountDeletionService.hardDeleteUserData(id);
             res.json({ data: result, meta: { message: 'User permanently deleted by admin' } });
         } catch (error) {

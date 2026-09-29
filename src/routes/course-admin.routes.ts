@@ -2,6 +2,7 @@ import { Router } from 'express';
 import multer from 'multer';
 import { z } from 'zod';
 import { CourseAdminController } from '../controllers/course-admin.controller.js';
+import { ApiError } from '../middleware/errorHandler.js';
 import { verifyToken, checkRole } from '../middleware/auth.js';
 import { rateLimiter } from '../middleware/rateLimiter.js';
 import { validateBody, validateParams, validateQuery } from '../validators/validate.js';
@@ -28,7 +29,7 @@ const upload = multer({
             return;
         }
 
-        cb(new Error('Only CSV files are allowed'));
+        cb(ApiError.badRequest('Only CSV files are allowed'));
     },
 });
 

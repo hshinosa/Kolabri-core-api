@@ -116,7 +116,7 @@ export class UserService {
             action: 'CREATE',
             entityType: 'User',
             entityId: createdUser.id,
-            userId: actorUserId,
+            userId: actorUserId ?? "",
             changes: {
                 before: null,
                 after: createdUser,
@@ -182,7 +182,7 @@ export class UserService {
             action,
             entityType: 'User',
             entityId: updatedUser.id,
-            userId: actorUserId,
+            userId: actorUserId ?? "",
             changes: {
                 before: user,
                 after: updatedUser,
@@ -250,7 +250,7 @@ export class UserService {
             action: 'DELETE',
             entityType: 'User',
             entityId: id,
-            userId: actorUserId,
+            userId: actorUserId ?? "",
             changes: {
                 before: user,
                 after: null,
@@ -271,7 +271,7 @@ export class UserService {
         });
     }
 
-    static async resetPassword(id: string, newPassword: string) {
+    static async resetPassword(id: string, newPassword: string, actorUserId?: string) {
         const user = await prisma.user.findUnique({
             where: { id },
             select: { id: true },
@@ -289,9 +289,36 @@ export class UserService {
                 password: hashedPassword,
             },
         });
+
+        await AuditLogService.logAction({
+            action: 'UPDATE',
+            entityType: 'User',
+            entityId: id,
+            userId: actorUserId ?? "",
+            changes: {
+                before: { passwordHash: 'redacted' },
+                after: { passwordResetAt: new Date().toISOString() },
+            },
+            metadata: {
+                source: 'admin.user.reset-password',
+            },
+        });
     }
 
-    static async bulkDeleteUsers(userIds: string[], currentUserId: string) {
+    static async toggleUserStatus(id: string, actorUserId: string) {
+        const user = await prisma.user.findFirst({
+            where: { id, deletedAt: null },
+            select: { isActive: true },
+        });
+
+        if (!user) {
+            throw ApiError.notFound('User not found');
+        }
+
+        return UserService.updateUser(id, { isActive: !user.isActive }, actorUserId);
+    }
+
+    static async bulkDeleteUsers(userIds: string[], currentUserId: string, actorUserId: string) {
         const uniqueUserIds = [...new Set(userIds)];
 
         if (uniqueUserIds.length === 0) {
@@ -301,16 +328,6 @@ export class UserService {
         if (uniqueUserIds.includes(currentUserId)) {
             throw ApiError.forbidden('Cannot delete your own account');
         }
-
-        const existingUsers = await prisma.user.findMany({
-            where: { id: { in: uniqueUserIds } },
-            select: { id: true },
-        });
-
-        if (existingUsers.length !== uniqueUserIds.length) {
-            throw ApiError.notFound('One or more users were not found');
-        }
-
         const result = await prisma.user.updateMany({
             where: { id: { in: uniqueUserIds }, deletedAt: null },
             data: { deletedAt: new Date() },
@@ -320,12 +337,26 @@ export class UserService {
             userActiveCache.invalidate(id);
         }
 
+        await AuditLogService.logAction({
+            action: 'DELETE',
+            entityType: 'User',
+            entityId: uniqueUserIds.join(','),
+            userId: actorUserId ?? "",
+            changes: {
+                before: { userIds: uniqueUserIds },
+                after: { deletedCount: result.count },
+            },
+            metadata: {
+                source: 'admin.user.bulk-delete',
+            },
+        });
+
         return {
             deletedCount: result.count,
         };
     }
 
-    static async bulkUpdateUserRole(userIds: string[], role: UserRole) {
+    static async bulkUpdateUserRole(userIds: string[], role: UserRole, actorUserId?: string) {
         const uniqueUserIds = [...new Set(userIds)];
 
         if (uniqueUserIds.length === 0) {
@@ -346,13 +377,27 @@ export class UserService {
             data: { role },
         });
 
+        await AuditLogService.logAction({
+            action: 'UPDATE',
+            entityType: 'User',
+            entityId: uniqueUserIds.join(','),
+            userId: actorUserId ?? "",
+            changes: {
+                before: { role: 'mixed' },
+                after: { role },
+            },
+            metadata: {
+                source: 'admin.user.bulk-role-change',
+            },
+        });
+
         return {
             updatedCount: result.count,
             role,
         };
     }
 
-    static async bulkImportUsersFromCsv(fileBuffer: Buffer) {
+    static async bulkImportUsersFromCsv(fileBuffer: Buffer, actorUserId?: string) {
         const rows = parseCsvBuffer(fileBuffer);
 
         if (rows.length === 0) {
@@ -410,6 +455,20 @@ export class UserService {
                 ...row,
                 password: hashedPassword,
             })),
+        });
+
+        await AuditLogService.logAction({
+            action: 'CREATE',
+            entityType: 'User',
+            entityId: normalizedRows.map((row) => row.email).join(','),
+            userId: actorUserId ?? "",
+            changes: {
+                before: null,
+                after: { importedCount: result.count, emails: normalizedRows.map((row) => row.email) },
+            },
+            metadata: {
+                source: 'admin.user.bulk-import',
+            },
         });
 
         return {

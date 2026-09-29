@@ -1,5 +1,6 @@
 import { Response, NextFunction } from 'express';
 import { AuthenticatedRequest } from '../middleware/auth.js';
+import { ApiError } from '../middleware/errorHandler.js';
 import { UserService } from '../services/user.service.js';
 import {
     BulkDeleteUsersInput,
@@ -98,7 +99,8 @@ export class UserController {
         try {
             await UserService.resetPassword(
                 req.params.id,
-                (req.body as ResetPasswordInput).newPassword
+                (req.body as ResetPasswordInput).newPassword,
+                req.user?.userId
             );
 
             res.json({
@@ -115,6 +117,7 @@ export class UserController {
         try {
             const result = await UserService.bulkDeleteUsers(
                 (req.body as BulkDeleteUsersInput).userIds,
+                req.user!.userId,
                 req.user!.userId
             );
 
@@ -132,7 +135,7 @@ export class UserController {
     static async bulkRoleChange(req: AuthenticatedRequest, res: Response, next: NextFunction) {
         try {
             const payload = req.body as BulkRoleChangeInput;
-            const result = await UserService.bulkUpdateUserRole(payload.userIds, payload.role);
+            const result = await UserService.bulkUpdateUserRole(payload.userIds, payload.role, req.user?.userId);
 
             res.json({
                 data: result,
@@ -145,15 +148,30 @@ export class UserController {
         }
     }
 
+    static async toggleStatus(req: AuthenticatedRequest, res: Response, next: NextFunction) {
+        try {
+            const user = await UserService.toggleUserStatus(req.params.id, req.user!.userId);
+
+            res.json({
+                data: user,
+                meta: {
+                    message: 'User status updated successfully',
+                },
+            });
+        } catch (error) {
+            next(error);
+        }
+    }
+
     static async bulkImport(req: AuthenticatedRequest, res: Response, next: NextFunction) {
         try {
             const file = req.file;
 
             if (!file) {
-                throw new Error('CSV file is required');
+                throw ApiError.badRequest('CSV file is required');
             }
 
-            const result = await UserService.bulkImportUsersFromCsv(file.buffer);
+            const result = await UserService.bulkImportUsersFromCsv(file.buffer, req.user?.userId);
 
             res.status(201).json({
                 data: result,

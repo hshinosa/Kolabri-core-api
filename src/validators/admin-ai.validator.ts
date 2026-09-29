@@ -3,8 +3,8 @@ import { z } from 'zod';
 export const usageStatsQuerySchema = z.object({
     userId: z.string().uuid().optional(),
     courseId: z.string().uuid().optional(),
-    startDate: z.string().datetime().optional(),
-    endDate: z.string().datetime().optional(),
+    startDate: z.string().datetime({ offset: true }).or(z.string().date()).optional(),
+    endDate: z.string().datetime({ offset: true }).or(z.string().date()).optional(),
 });
 
 export const usageReportParamsSchema = z.object({

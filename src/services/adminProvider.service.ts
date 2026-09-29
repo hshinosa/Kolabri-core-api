@@ -65,6 +65,7 @@ export class AdminProviderService {
                     timeout: REQUEST_TIMEOUT,
                     headers: {
                         'Content-Type': 'application/json',
+                        Authorization: `Bearer ${process.env.AI_ENGINE_SECRET || process.env.CORE_API_SECRET || ''}`,
                     },
                 }
             );
@@ -87,18 +88,31 @@ export class AdminProviderService {
      * Returns cached models (1-hour TTL) unless refresh=true is passed.
      * Used by admin UI to populate model dropdown for provider configuration.
      */
-    static async getProviderModels(provider: string, refresh = false): Promise<ModelListResponse> {
+    static async getProviderModels(
+        provider: string,
+        refresh = false,
+        source?: { baseUrl?: string | null; apiKey?: string }
+    ): Promise<ModelListResponse> {
         try {
-            const response = await axios.get<ModelListResponse>(
-                `${AI_ENGINE_URL}/api/admin/providers/${provider}/models`,
-                {
-                    params: { refresh },
-                    timeout: REQUEST_TIMEOUT,
-                    headers: {
-                        'Content-Type': 'application/json',
-                    },
-                }
-            );
+            const headers = {
+                'Content-Type': 'application/json',
+                Authorization: `Bearer ${process.env.AI_ENGINE_SECRET || process.env.CORE_API_SECRET || ''}`,
+            };
+            let response;
+            if (source?.baseUrl) {
+                // OpenAI-compatible custom provider: credentials go in the body,
+                // never in the request URL.
+                response = await axios.post<ModelListResponse>(
+                    `${AI_ENGINE_URL}/api/admin/providers/${provider}/models`,
+                    { provider, refresh, baseUrl: source.baseUrl, apiKey: source.apiKey },
+                    { timeout: REQUEST_TIMEOUT, headers }
+                );
+            } else {
+                response = await axios.get<ModelListResponse>(
+                    `${AI_ENGINE_URL}/api/admin/providers/${provider}/models`,
+                    { params: { refresh }, timeout: REQUEST_TIMEOUT, headers }
+                );
+            }
 
             return response.data;
         } catch (error) {

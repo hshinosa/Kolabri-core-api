@@ -26,6 +26,7 @@ router.get('/', validateQuery(listAiProvidersQuerySchema), AiProviderController.
 router.get('/:provider/models', AiProviderController.getModels);
 router.get('/:id', validateParams(idSchema), AiProviderController.show);
 router.post('/', validateBody(createAiProviderSchema), AiProviderController.create);
+router.put('/fallback-order', validateBody(updateFallbackOrderSchema), AiProviderController.updateFallbackOrder);
 router.put('/:id', validateParams(idSchema), validateBody(updateAiProviderSchema), AiProviderController.update);
 router.delete('/:id', validateParams(idSchema), AiProviderController.delete);
 router.post(
@@ -36,6 +37,5 @@ router.post(
     AiProviderController.test
 );
 router.post('/:id/activate', validateParams(idSchema), AiProviderController.activate);
-router.put('/fallback-order', validateBody(updateFallbackOrderSchema), AiProviderController.updateFallbackOrder);
 
 export default router;

@@ -1,7 +1,7 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import axios from 'axios';
-import { AdminProviderService } from '../src/services/adminProvider.service';
-import { ApiError } from '../src/middleware/errorHandler';
+import { AdminProviderService } from './adminProvider.service';
+import { ApiError } from '../middleware/errorHandler';
 
 vi.mock('axios');
 const mockedAxios = vi.mocked(axios);
