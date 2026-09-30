@@ -111,7 +111,7 @@ describe('UserController', () => {
 
         await UserController.bulkImport(req as Request, res as Response, next);
 
-        expect(mockUserService.bulkImportUsersFromCsv).toHaveBeenCalledWith(file.buffer);
+        expect(mockUserService.bulkImportUsersFromCsv).toHaveBeenCalledWith(file.buffer, 'user-1');
         expect(res.status).toHaveBeenCalledWith(201);
         expect(res.json).toHaveBeenCalledWith({
             data: result,

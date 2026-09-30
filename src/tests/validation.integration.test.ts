@@ -6,7 +6,17 @@ import app from '../app.js';
 
 const prisma = new PrismaClient();
 
-describe('Input Validation Integration Tests', () => {
+// Probe Postgres once at collection so this suite reports SKIP (not fail)
+// when the local database is not running.
+let databaseReady = false;
+try {
+    await prisma.$queryRaw`SELECT 1`;
+    databaseReady = true;
+} catch {
+    databaseReady = false;
+}
+
+describe.skipIf(!databaseReady)('Input Validation Integration Tests', () => {
     let authToken: string;
     let studentAuthToken: string;
 

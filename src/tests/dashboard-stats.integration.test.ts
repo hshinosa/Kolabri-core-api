@@ -7,7 +7,19 @@ import { enableRealRateLimitForSuite } from './helpers/rateLimitTestEnv.js';
 
 const prisma = new PrismaClient();
 
-describe('Dashboard Stats API Integration Tests', () => {
+// Integration suite needs a live local Postgres. Probe once at collection so
+// the file reports SKIP (not fail) when the database is not running locally —
+// same environment-dependency idea as the `describe.skipIf` guard in
+// indonesian-text-verification.test.ts.
+let databaseReady = false;
+try {
+    await prisma.$queryRaw`SELECT 1`;
+    databaseReady = true;
+} catch {
+    databaseReady = false;
+}
+
+describe.skipIf(!databaseReady)('Dashboard Stats API Integration Tests', () => {
     let adminToken: string;
     let lecturerToken: string;
     let studentToken: string;

@@ -6,7 +6,6 @@ import { SilenceEvent } from '../models/SilenceEvent.js';
 import mongoose from 'mongoose';
 import prisma from '../config/database.js';
 import { aiEngineService, type CitationPayload } from '../services/aiEngine.service.js';
-import { providerResolutionService } from '../services/providerResolution.service.js';
 import { WeekContextService } from '../services/weekContext.service.js';
 import { filterCitationsForSession, allowedMaterialsForCourseMaxWeek } from '../utils/citationFilter.js';
 import { DiscussionDirectionService } from '../services/discussion-direction.service.js';
@@ -995,6 +994,9 @@ async function checkAndIntervenForQuality(
                 force: true,
                 provider_context: undefined,
             });
+            if (!aiResult.success || !aiResult.message) {
+                throw new Error(aiResult.error || 'Intervention analysis unsuccessful');
+            }
             interventionMessage = aiResult.message;
         } catch {
             try {
@@ -1004,7 +1006,12 @@ async function checkAndIntervenForQuality(
                     'medium',
                     undefined,
                 );
-                interventionMessage = promptResult.prompt ?? pickRandom(QUALITY_INTERVENTIONS[interventionType]);
+                // `??` misses the { success: false, prompt: '' } failure shape
+                // (empty string is not nullish) — require a real prompt.
+                interventionMessage =
+                    promptResult.success && promptResult.prompt
+                        ? promptResult.prompt
+                        : pickRandom(QUALITY_INTERVENTIONS[interventionType]);
             } catch {
                 interventionMessage = pickRandom(QUALITY_INTERVENTIONS[interventionType]);
             }

@@ -117,13 +117,12 @@ describe('GoalService', () => {
             'user-1'
         );
 
-        expect(providerResolutionServiceMock.resolveProviderContext).toHaveBeenCalledWith({ featureFamily: 'goals' });
         expect(validateGoalMock).toHaveBeenCalledWith(
             'Menganalisis data pembelajaran secara kolaboratif.',
             'user-1',
             'chat-1',
             undefined,
-            createProviderContext(),
+            undefined,
             'group-1',
         );
         expect(validateGoalContentMock).toHaveBeenCalledWith('Menganalisis data pembelajaran secara kolaboratif.');

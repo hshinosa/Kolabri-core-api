@@ -7,6 +7,16 @@ import app from '../../app.js';
 import prisma from '../../config/database.js';
 import { enableRealRateLimitForSuite } from '../helpers/rateLimitTestEnv.js';
 
+// Probe Postgres once at collection so this suite reports SKIP (not fail)
+// when the local database is not running.
+let databaseReady = false;
+try {
+    await prisma.$queryRaw`SELECT 1`;
+    databaseReady = true;
+} catch {
+    databaseReady = false;
+}
+
 type TestRole = 'student' | 'lecturer' | 'admin';
 
 function createToken(role: TestRole) {
@@ -27,7 +37,7 @@ function createToken(role: TestRole) {
     );
 }
 
-describe('Black-box API Tests', () => {
+describe.skipIf(!databaseReady)('Black-box API Tests', () => {
     let lecturerToken: string;
     let studentToken: string;
 

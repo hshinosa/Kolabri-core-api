@@ -1,7 +1,6 @@
 import prisma from '../config/database.js';
 import { ApiError } from '../middleware/errorHandler.js';
 import { aiEngineService } from './aiEngine.service.js';
-import { providerResolutionService } from './providerResolution.service.js';
 import type { ReadingRecommendationRequest } from '../validators/readingRecommendation.validator.js';
 
 interface RecommendationFallback {

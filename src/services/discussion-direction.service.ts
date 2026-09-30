@@ -1,5 +1,4 @@
  import { aiEngineCircuitBreaker } from '../utils/circuitBreaker.js';
-import { providerResolutionService } from './providerResolution.service.js';
 import { aiEngineService } from './aiEngine.service.js';
 import type { ProviderContextV1 } from './aiEngine.service.js';
 

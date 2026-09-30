@@ -57,10 +57,6 @@ describe('AIService', () => {
         trackUsage: vi.fn(),
     };
 
-    const comparisonStore = {
-        saveComparison: vi.fn(),
-    };
-
     beforeEach(() => {
         vi.clearAllMocks();
     });
@@ -73,7 +69,6 @@ describe('AIService', () => {
                 listActiveProvidersByFallbackOrder: async () => providers,
             },
             usageTrackingService,
-            comparisonStore,
             adapterFactory: (providerName: string) => {
                 if (providerName === 'openai') {
                     return createAdapter({
@@ -115,61 +110,6 @@ describe('AIService', () => {
                 model: 'claude-3-5-sonnet',
                 totalTokens: 200,
                 estimatedCost: 0.2,
-            })
-        );
-    });
-
-    it('compares multiple models and saves the comparison result', async () => {
-        const service = new AIService({
-            providerRepository: {
-                getActiveProvider: async () => providers[0],
-                getProviderByName: async (providerName: string) => providers.find((provider) => provider.name === providerName) ?? null,
-                listActiveProvidersByFallbackOrder: async () => providers,
-            },
-            usageTrackingService,
-            comparisonStore,
-            adapterFactory: (providerName: string) => {
-                if (providerName === 'openai') {
-                    return createAdapter({
-                        content: 'OpenAI result',
-                        promptTokens: 100,
-                        completionTokens: 50,
-                        totalTokens: 150,
-                        model: 'gpt-4',
-                        latencyMs: 400,
-                    });
-                }
-
-                return createAdapter({
-                    content: 'Claude result',
-                    promptTokens: 90,
-                    completionTokens: 45,
-                    totalTokens: 135,
-                    model: 'claude-3-5-sonnet',
-                    latencyMs: 300,
-                });
-            },
-            decryptApiKey: (value: string) => value,
-            retryOptions: { attempts: 1, baseDelayMs: 0 },
-        });
-
-        comparisonStore.saveComparison.mockResolvedValue({ id: 'comparison-1' });
-
-        const result = await service.compareModels({
-            prompt: 'Compare these models',
-            models: ['openai:gpt-4', 'anthropic:claude-3-5-sonnet'],
-            createdBy: 'admin-1',
-        });
-
-        expect(result.results).toHaveLength(2);
-        expect(comparisonStore.saveComparison).toHaveBeenCalledWith(
-            expect.objectContaining({
-                prompt: 'Compare these models',
-                createdBy: 'admin-1',
-                results: expect.arrayContaining([
-                    expect.objectContaining({ provider: 'openai', model: 'gpt-4' }),
-                    expect.objectContaining({ provider: 'anthropic', model: 'claude-3-5-sonnet' }),
-                ]),
             })
         );
     });

@@ -80,6 +80,7 @@ describe('SessionDiscussionService Integration - Lifecycle', () => {
             summary: null,
             summaryGeneratedAt: null,
             summaryError: null,
+            attendanceData: null,
         });
     });
 
@@ -125,6 +126,7 @@ describe('SessionDiscussionService Integration - Lifecycle', () => {
             summary: null,
             summaryGeneratedAt: null,
             summaryError: null,
+            attendanceData: null,
         });
     });
 

@@ -2,7 +2,6 @@ import { logger } from '../utils/logger.js';
 import { ChatLog } from '../models/ChatLog.js';
 import { SilenceEvent } from '../models/SilenceEvent.js';
 import { aiEngineService } from '../services/aiEngine.service.js';
-import { providerResolutionService } from '../services/providerResolution.service.js';
 import { INTERVENTION_MESSAGES, pickRandom } from './interventionMessages.js';
 import { tryAcquireSilenceLock, SILENCE_TIMEOUT_MS } from './interventionGate.js';
 import { isStagedEscalationEnabled, findOrCreateState, advanceStage } from '../services/escalation.service.js';
@@ -44,6 +43,10 @@ async function selectMessage(sessionDiscussionId: string): Promise<string> {
             provider_context: undefined,
         });
 
+        if (!aiResult.success || !aiResult.message) {
+            throw new Error(aiResult.error || 'Intervention analysis unsuccessful');
+        }
+
         return aiResult.message;
     } catch {
         try {
@@ -53,7 +56,12 @@ async function selectMessage(sessionDiscussionId: string): Promise<string> {
                 'easy',
                 undefined,
             );
-            return promptResult.prompt ?? pickRandom(INTERVENTION_MESSAGES);
+            // generatePrompt failures resolve to { success: false, prompt: '' }
+            // (HTTP 200 shape), so `??` would broadcast an empty message —
+            // only a successful non-empty prompt beats the hardcoded pool.
+            return promptResult.success && promptResult.prompt
+                ? promptResult.prompt
+                : pickRandom(INTERVENTION_MESSAGES);
         } catch {
             return pickRandom(INTERVENTION_MESSAGES);
         }

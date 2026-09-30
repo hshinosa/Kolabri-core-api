@@ -5,7 +5,19 @@ import app from '../app.js';
 
 const prisma = new PrismaClient();
 
-describe('E2E Auth Flow Integration Tests', () => {
+// Auth flow hits the real local Postgres. Probe once at collection so the file
+// reports SKIP (not fail) when the database is not running locally — same
+// environment-dependency idea as the `describe.skipIf` guard in
+// indonesian-text-verification.test.ts.
+let databaseReady = false;
+try {
+    await prisma.$queryRaw`SELECT 1`;
+    databaseReady = true;
+} catch {
+    databaseReady = false;
+}
+
+describe.skipIf(!databaseReady)('E2E Auth Flow Integration Tests', () => {
     const testEmail = 'e2e-auth@example.com';
     const testPassword = 'E2EPassword123!';
     const testName = 'E2E Test User';

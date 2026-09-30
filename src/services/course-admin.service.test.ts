@@ -6,6 +6,7 @@ const { prismaMock, auditLogServiceMock, broadcastAdminEventMock, generateJoinCo
             findMany: vi.fn(),
             count: vi.fn(),
             findUnique: vi.fn(),
+            findFirst: vi.fn(),
             create: vi.fn(),
             update: vi.fn(),
             delete: vi.fn(),
@@ -66,9 +67,10 @@ describe('CourseAdminService', () => {
     });
 
     it('creates a course after validating owner and unique code', async () => {
-        prismaMock.course.findUnique
-            .mockResolvedValueOnce(null)
-            .mockResolvedValueOnce(null);
+        // createCourse now checks code uniqueness via course.findFirst and
+        // join-code availability via course.findUnique (both must be free).
+        prismaMock.course.findFirst.mockResolvedValue(null);
+        prismaMock.course.findUnique.mockResolvedValue(null);
         prismaMock.user.findUnique.mockResolvedValue({ id: 'lecturer-1', role: 'lecturer', isActive: true });
         prismaMock.course.create.mockResolvedValue({ id: 'course-1', code: 'IF101', joinCode: 'JOIN123' });
 

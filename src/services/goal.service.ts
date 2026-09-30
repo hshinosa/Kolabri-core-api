@@ -4,7 +4,6 @@ import { CreateGoalInput } from '../validators/goal.validator.js';
 import { validateGoalContent } from '../utils/helpers.js';
 import { GroupService } from './group.service.js';
 import { aiEngineService } from './aiEngine.service.js';
-import { providerResolutionService } from './providerResolution.service.js';
 import { WeekContextService } from './weekContext.service.js';
 
 export class GoalService {

@@ -73,16 +73,6 @@ vi.mock('./providerResolution.service.js', () => ({
 
 import { SessionDiscussionService } from './sessionDiscussion.service.js';
 
-function createProviderContext() {
-    return {
-        version: '1.0' as const,
-        provider: { name: 'openai', displayName: 'OpenAI GPT' },
-        execution: { baseUrl: 'https://api.openai.com/v1', model: 'gpt-4o-mini' },
-        auth: { type: 'api-key' as const, credential: 'sk-test' },
-        metadata: { featureFamily: 'summaries', requestId: 'req-1', resolvedAt: '2026-06-16T10:00:00.000Z' },
-    };
-}
-
 describe('SessionDiscussionService', () => {
     beforeEach(() => {
         vi.clearAllMocks();
@@ -128,6 +118,7 @@ describe('SessionDiscussionService', () => {
             summary: null,
             summaryGeneratedAt: null,
             summaryError: null,
+            attendanceData: null,
         });
     });
 
@@ -163,11 +154,6 @@ describe('SessionDiscussionService', () => {
             })),
         });
         
-        const providerContext = createProviderContext();
-        providerResolutionServiceMock.resolveProviderContext.mockResolvedValue({
-            primary: { providerId: 'provider-openai', providerName: 'openai', providerContext },
-            fallbackChain: [],
-        });
         generateSummaryMock.mockResolvedValueOnce({
             success: true,
             summary: summaryText,
@@ -180,16 +166,15 @@ describe('SessionDiscussionService', () => {
         expect(chatLogFindMock).toHaveBeenCalledWith({
             sessionDiscussionId: 'chat-1',
             deletedAt: null,
-            senderType: { $in: ['student', 'lecturer'] },
+            senderType: { $in: ['student', 'lecturer', 'ai'] },
         });
-        expect(providerResolutionServiceMock.resolveProviderContext).toHaveBeenCalledWith({ featureFamily: 'summaries' });
         expect(generateSummaryMock).toHaveBeenCalledWith(
             expect.arrayContaining([
                 expect.objectContaining({ sender: 'Student A' }),
                 expect.objectContaining({ sender: 'Student B' }),
             ]),
             'chat-1',
-            providerContext
+            undefined
         );
         expect(prismaMock.sessionDiscussion.update).toHaveBeenCalledWith(
             expect.objectContaining({
@@ -208,6 +193,7 @@ describe('SessionDiscussionService', () => {
             summary: summaryText,
             summaryGeneratedAt: expect.any(Date),
             summaryError: null,
+            attendanceData: null,
         });
     });
 
@@ -241,11 +227,6 @@ describe('SessionDiscussionService', () => {
             })),
         });
         
-        const providerContext = createProviderContext();
-        providerResolutionServiceMock.resolveProviderContext.mockResolvedValue({
-            primary: { providerId: 'provider-openai', providerName: 'openai', providerContext },
-            fallbackChain: [],
-        });
         generateSummaryMock.mockRejectedValueOnce(new Error('AI Engine timeout'));
 
         const result = await SessionDiscussionService.closeSession('chat-1', 'student-1', 'student');
@@ -265,6 +246,7 @@ describe('SessionDiscussionService', () => {
             summary: null,
             summaryGeneratedAt: null,
             summaryError: 'AI Engine timeout',
+            attendanceData: null,
         });
     });
 
@@ -307,6 +289,7 @@ describe('SessionDiscussionService', () => {
             summary: null,
             summaryGeneratedAt: null,
             summaryError: null,
+            attendanceData: null,
         });
     });
 

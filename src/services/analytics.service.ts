@@ -3,7 +3,6 @@ import { ApiError } from '../middleware/errorHandler.js';
 import { ChatLog } from '../models/ChatLog.js';
 import { chatAnalyticsService } from './chatAnalytics.service.js';
 import { aiEngineService } from './aiEngine.service.js';
-import { providerResolutionService } from './providerResolution.service.js';
 import { Parser } from 'json2csv';
 
 export class AnalyticsService {

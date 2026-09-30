@@ -12,7 +12,6 @@ import {
 import { sendMessageSchema } from '../validators/socket.validator.js';
 import { createGroupSchema, addMembersSchema } from '../validators/group.validator.js';
 import { updateFallbackOrderSchema } from '../validators/ai-provider.validator.js';
-import { aiCompareSchema } from '../validators/admin-ai.validator.js';
 
 describe('Boundary Validation Tests', () => {
     describe('Pagination Limits', () => {
@@ -64,15 +63,6 @@ describe('Boundary Validation Tests', () => {
                 groupId: 'group1',
             });
             expect(result.success).toBe(true);
-        });
-
-        it('should reject prompt > 10000 chars', () => {
-            const longPrompt = 'a'.repeat(10001);
-            const result = aiCompareSchema.safeParse({
-                prompt: longPrompt,
-                models: ['gpt-4'],
-            });
-            expect(result.success).toBe(false);
         });
     });
 
@@ -179,15 +169,6 @@ describe('Boundary Validation Tests', () => {
             const tooManyProviders = Array(101).fill('550e8400-e29b-41d4-a716-446655440000');
             const result = updateFallbackOrderSchema.safeParse({
                 providerIds: tooManyProviders,
-            });
-            expect(result.success).toBe(false);
-        });
-
-        it('should reject AI compare models > 10 items', () => {
-            const tooManyModels = Array(11).fill('gpt-4');
-            const result = aiCompareSchema.safeParse({
-                prompt: 'test',
-                models: tooManyModels,
             });
             expect(result.success).toBe(false);
         });

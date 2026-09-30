@@ -2,7 +2,6 @@ import { Response, NextFunction } from 'express';
 import { PrismaClient } from '@prisma/client';
 import { AiChatService } from '../services/aiChat.service.js';
 import { aiEngineService } from '../services/aiEngine.service.js';
-import { providerResolutionService } from '../services/providerResolution.service.js';
 import { AuthenticatedRequest } from '../middleware/auth.js';
 
 const prisma = new PrismaClient();

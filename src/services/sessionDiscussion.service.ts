@@ -6,7 +6,6 @@ import { getSocketEmitter } from '../utils/socketEmitter.js';
 import { logger } from '../utils/logger.js';
 import { ChatLog } from '../models/ChatLog.js';
 import { aiEngineService } from './aiEngine.service.js';
-import { providerResolutionService } from './providerResolution.service.js';
 import { AttendanceService, type AttendanceResult } from './attendance.service.js';
 
 // Type for SessionDiscussion with session fields

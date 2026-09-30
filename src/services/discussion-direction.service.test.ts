@@ -102,7 +102,10 @@ describe('DiscussionDirectionService', () => {
             goalAchieved: false,
             topics: ['goal'],
             contributions: {},
-            assessment: 'Ringkasan tidak tersedia. Silakan coba lagi nanti.',
+            assessment:
+                'Penilaian tujuan tidak tersedia saat ini (layanan AI sibuk atau tidak merespons). ' +
+                'Sesi ini mencatat 1 pesan dari 1 peserta. ' +
+                'Silakan tinjau kembali tujuan: "goal".',
         });
         expect(consoleErrorMock).toHaveBeenCalled();
     });

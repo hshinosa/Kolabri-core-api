@@ -84,8 +84,7 @@ describe('ReadingRecommendationService', () => {
             'student'
         );
 
-        expect(providerResolutionServiceMock.resolveProviderContext).toHaveBeenCalledWith({ featureFamily: 'reading-recommendations' });
-        expect(aiEngineServiceMock.generateReadingRecommendations).toHaveBeenCalledWith('transformer', 'course-1', 3, createProviderContext());
+        expect(aiEngineServiceMock.generateReadingRecommendations).toHaveBeenCalledWith('transformer', 'course-1', 3, undefined);
         expect(result.recommendations).toEqual([
             {
                 knowledgeBaseId: 'kb-1',

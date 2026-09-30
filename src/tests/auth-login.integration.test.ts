@@ -7,7 +7,17 @@ import { enableRealRateLimitForSuite } from './helpers/rateLimitTestEnv.js';
 
 const prisma = new PrismaClient();
 
-describe('Auth Login Flow Integration Tests', () => {
+// Probe Postgres once at collection so this suite reports SKIP (not fail)
+// when the local database is not running.
+let databaseReady = false;
+try {
+    await prisma.$queryRaw`SELECT 1`;
+    databaseReady = true;
+} catch {
+    databaseReady = false;
+}
+
+describe.skipIf(!databaseReady)('Auth Login Flow Integration Tests', () => {
     const testUser = {
         email: 'logintest@example.com',
         password: 'SecurePass123!',

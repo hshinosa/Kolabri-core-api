@@ -6,6 +6,16 @@ import { enableRealRateLimitForSuite } from './helpers/rateLimitTestEnv.js';
 
 const prisma = new PrismaClient();
 
+// Probe Postgres once at collection so this suite reports SKIP (not fail)
+// when the local database is not running.
+let databaseReady = false;
+try {
+    await prisma.$queryRaw`SELECT 1`;
+    databaseReady = true;
+} catch {
+    databaseReady = false;
+}
+
 function expectValidationMessage(
     body: {
         error?: { message?: string };
@@ -22,7 +32,7 @@ function expectValidationMessage(
     expect(messages.some((m) => pattern.test(m))).toBe(true);
 }
 
-describe('Auth Register Flow Integration Tests', () => {
+describe.skipIf(!databaseReady)('Auth Register Flow Integration Tests', () => {
     const baseEmail = 'registertest';
     const domain = '@example.com';
     let testCounter = 0;

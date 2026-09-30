@@ -1,8 +1,27 @@
-import { describe, expect, it } from 'vitest';
+import { beforeAll, describe, expect, it } from 'vitest';
 import { prisma } from '../config/database.js';
 
 describe('SQL Injection Protection', () => {
-    it('blocks SQL injection in user search', async () => {
+    // These tests exercise real queries against Postgres. Probe the connection
+    // once so the suite reports SKIP instead of failing when the database is
+    // not running locally (same environment-dependency idea as the
+    // `describe.skipIf` guard used in indonesian-text-verification.test.ts).
+    let databaseReady = false;
+
+    beforeAll(async () => {
+        try {
+            await prisma.$queryRaw`SELECT 1`;
+            databaseReady = true;
+        } catch {
+            databaseReady = false;
+        }
+    });
+
+    it('blocks SQL injection in user search', async (ctx) => {
+        if (!databaseReady) {
+            ctx.skip();
+        }
+
         const maliciousInput = "'; DROP TABLE users; --";
         
         // Prisma parameterizes queries automatically
@@ -22,7 +41,11 @@ describe('SQL Injection Protection', () => {
         expect(typeof usersExist).toBe('number');
     });
 
-    it('blocks SQL injection in course search', async () => {
+    it('blocks SQL injection in course search', async (ctx) => {
+        if (!databaseReady) {
+            ctx.skip();
+        }
+
         const maliciousInput = "' OR '1'='1";
         
         const result = await prisma.course.findMany({
@@ -37,7 +60,11 @@ describe('SQL Injection Protection', () => {
         expect(Array.isArray(result)).toBe(true);
     });
 
-    it('blocks SQL injection in email lookup', async () => {
+    it('blocks SQL injection in email lookup', async (ctx) => {
+        if (!databaseReady) {
+            ctx.skip();
+        }
+
         const maliciousInput = "admin@example.com' OR '1'='1' --";
         
         const result = await prisma.user.findUnique({
