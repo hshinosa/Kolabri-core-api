@@ -8,7 +8,7 @@ const { prismaMock, aiEngineServiceMock, emitterMock, chatLogFindMock } = vi.hoi
         sessionDiscussion: { findFirst: vi.fn(), update: vi.fn() },
     },
     aiEngineServiceMock: {
-        personalChat: vi.fn(),
+        personalChatStream: vi.fn(),
         generateSummary: vi.fn(),
     },
     emitterMock: { emit: vi.fn() },
@@ -36,6 +36,26 @@ import { SessionDiscussionService } from './sessionDiscussion.service.js';
 
 const NOW = new Date('2026-06-01T00:00:00.000Z');
 
+function createSseResponse(payload: string): Response {
+    const bytes = new TextEncoder().encode(payload);
+    return {
+        ok: true,
+        status: 200,
+        body: {
+            getReader: () => {
+                let sent = false;
+                return {
+                    read: async () => {
+                        if (sent) return { done: true, value: undefined };
+                        sent = true;
+                        return { done: false, value: bytes };
+                    },
+                };
+            },
+        },
+    } as unknown as Response;
+}
+
 function createActiveProvider(overrides: Record<string, unknown> = {}) {
     return {
         id: 'provider-gemini',
@@ -55,7 +75,7 @@ describe('Unified provider source of truth — integration', () => {
         vi.clearAllMocks();
     });
 
-    it('propagates the same DB provider_context to personal-chat and summaries flows', async () => {
+    it('sends provider_context undefined to both personal-chat and summaries flows', async () => {
         prismaMock.aiProvider.findMany.mockResolvedValue([createActiveProvider()]);
 
         // Personal chat path
@@ -68,7 +88,10 @@ describe('Unified provider source of truth — integration', () => {
             .mockResolvedValueOnce({ id: 'msg-a', role: 'assistant', content: 'Hai!', createdAt: NOW });
         prismaMock.aiChatMessage.count.mockResolvedValue(2);
         prismaMock.aiChat.update.mockResolvedValue({});
-        aiEngineServiceMock.personalChat.mockResolvedValue({ reply: 'Hai!', success: true, tokens_used: 10 });
+        aiEngineServiceMock.personalChatStream.mockResolvedValue(createSseResponse(
+            'data: {"content":"Hai!"}\n\n' +
+            'data: [DONE]\n\n'
+        ));
 
         await AiChatService.sendMessage('chat-1', 'user-1', 'Halo');
 
@@ -102,31 +125,16 @@ describe('Unified provider source of truth — integration', () => {
 
         await SessionDiscussionService.closeSession('chat-1', 'lecturer-1', 'lecturer');
 
-        const personalChatContext = aiEngineServiceMock.personalChat.mock.calls[0][3];
+        // Single source of truth: the AI Engine resolves providers itself,
+        // so core sends no provider_context on any migrated feature family.
+        const personalChatContext = aiEngineServiceMock.personalChatStream.mock.calls[0][3];
         const summaryContext = aiEngineServiceMock.generateSummary.mock.calls[0][2];
 
-        expect(personalChatContext).toMatchObject({
-            version: '1.0',
-            provider: { name: 'gemini', displayName: 'Gemini' },
-            execution: { baseUrl: 'https://generativelanguage.googleapis.com/v1beta', model: 'gemini-1.5-pro', temperature: 0.3, maxTokens: 512 },
-            auth: { type: 'api-key', credential: expect.any(String) },
-            metadata: expect.objectContaining({ featureFamily: 'personal-chat' }),
-        });
-
-        expect(summaryContext).toMatchObject({
-            version: '1.0',
-            provider: { name: 'gemini', displayName: 'Gemini' },
-            execution: { baseUrl: 'https://generativelanguage.googleapis.com/v1beta', model: 'gemini-1.5-pro', temperature: 0.3, maxTokens: 512 },
-            auth: { type: 'api-key', credential: expect.any(String) },
-            metadata: expect.objectContaining({ featureFamily: 'summaries' }),
-        });
-
-        expect(personalChatContext.provider).toEqual(summaryContext.provider);
-        expect(personalChatContext.execution).toEqual(summaryContext.execution);
-        expect(personalChatContext.auth).toEqual(summaryContext.auth);
+        expect(personalChatContext).toBeUndefined();
+        expect(summaryContext).toBeUndefined();
     });
 
-    it('picks up a changed active provider across migrated feature families', async () => {
+    it('stays provider-agnostic when the active DB provider changes', async () => {
         prismaMock.aiProvider.findMany.mockResolvedValue([
             createActiveProvider({
                 id: 'provider-openai',
@@ -146,13 +154,15 @@ describe('Unified provider source of truth — integration', () => {
             .mockResolvedValueOnce({ id: 'msg-a', role: 'assistant', content: 'Hai!', createdAt: NOW });
         prismaMock.aiChatMessage.count.mockResolvedValue(2);
         prismaMock.aiChat.update.mockResolvedValue({});
-        aiEngineServiceMock.personalChat.mockResolvedValue({ reply: 'Hai!', success: true, tokens_used: 10 });
+        aiEngineServiceMock.personalChatStream.mockResolvedValue(createSseResponse(
+            'data: {"content":"Hai!"}\n\n' +
+            'data: [DONE]\n\n'
+        ));
 
         await AiChatService.sendMessage('chat-1', 'user-1', 'Halo');
 
-        const context = aiEngineServiceMock.personalChat.mock.calls[0][3];
-        expect(context.provider.name).toBe('openai');
-        expect(context.execution.model).toBe('gpt-4o-mini');
-        expect(context.execution.baseUrl).toBe('https://api.openai.com/v1');
+        const context = aiEngineServiceMock.personalChatStream.mock.calls[0][3];
+        expect(context).toBeUndefined();
+        expect(prismaMock.aiProvider.findMany).not.toHaveBeenCalled();
     });
 });

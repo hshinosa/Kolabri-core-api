@@ -200,7 +200,7 @@ export type CitationPayload = {
     page?: number;
 };
 
-interface OrchestrationResponse {
+export interface OrchestrationResponse {
     success: boolean;
     bot_response: string;
     system_intervention?: string;
@@ -807,72 +807,7 @@ export class AIEngineService {
         ));
     }
 
-    async personalChat(
-        message: string,
-        history: Array<{ role: 'user' | 'assistant'; content: string }>,
-        userName?: string,
-        providerContext?: ProviderContextV1,
-    ): Promise<{ reply: string; success: boolean; tokens_used: number; error?: string }> {
-        try {
-            return await this.resilient(async () => {
-                const response = await this.fetchWithTimeout(`${this.baseUrl}/api/chat/personal`, {
-                    method: 'POST',
-                    headers: this.getHeaders(),
-                    body: JSON.stringify({
-                        message,
-                        history: history.slice(-20),
-                        user_name: userName,
-                        provider_context: providerContext,
-                    }),
-                }, LLM_TIMEOUT);
-                if (!response.ok) throw new Error(`AI Engine responded with ${response.status}`);
-                return await response.json() as { reply: string; success: boolean; tokens_used: number; error?: string };
-            });
-        } catch (error) {
-            logger.error('AI Engine personal chat failed:', sanitizeErrorForLog(error));
-            return {
-                reply: 'Maaf, AI Assistant sedang tidak tersedia saat ini. Silakan coba lagi nanti.',
-                success: false,
-                tokens_used: 0,
-                error: error instanceof Error ? error.message : 'Unknown error',
-            };
-        }
-    }
-
     // ============== Orchestration Methods (Teacher-AI Complementarity) ==============
-
-    /**
-     * Send message through orchestrated pipeline with full analytics.
-     * This is the main method for chat processing with:
-     * - NLP engagement analysis
-     * - Policy-based RAG (FETCH/NO_FETCH optimization)
-     * - Automatic intervention triggers
-     * - Process Mining event logging
-     */
-    async orchestratedChat(
-        request: OrchestrationRequest
-    ): Promise<OrchestrationResponse> {
-        try {
-            return await this.resilient(async () => {
-                const response = await this.fetchWithTimeout(`${this.baseUrl}/api/chat`, {
-                    method: 'POST',
-                    headers: this.getHeaders(),
-                    body: JSON.stringify(request),
-                }, LLM_TIMEOUT);
-                if (!response.ok) throw new Error(`AI Engine responded with ${response.status}`);
-                return await response.json() as OrchestrationResponse;
-            });
-        } catch (error) {
-            logger.error('AI Engine orchestrated chat failed:', sanitizeErrorForLog(error));
-            return {
-                success: false,
-                bot_response: 'Maaf, terjadi kesalahan sistem.',
-                action_taken: 'ERROR',
-                should_notify_teacher: false,
-                error: error instanceof Error ? error.message : 'Unknown error',
-            };
-        }
-    }
 
     /**
      * Stream orchestrated chat via SSE (PERF-AI-01).

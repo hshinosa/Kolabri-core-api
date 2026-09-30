@@ -19,9 +19,8 @@ Client App (Laravel+React) → Core API (Express+Prisma) → AI Engine (FastAPI)
 | `analyzeIntervention()` | `POST /intervention/analyze` | `POST /api/intervention/analyze` | Verified |
 | `generateSummary()` | `POST /intervention/summary` | `POST /api/intervention/summary` | Verified |
 | `generatePrompt()` | `POST /intervention/prompt` | `POST /api/intervention/prompt` | Verified |
-| `personalChat()` | `POST /chat/personal` | `POST /api/chat/personal` | Verified |
 | `personalChatStream()` | `POST /chat/personal/stream` | `POST /api/chat/personal/stream` | Verified |
-| `orchestratedChat()` | `POST /chat` | `POST /api/chat` | Verified |
+| `orchestratedChatStream()` | `POST /chat/stream` | `POST /api/chat/stream` | Verified |
 | `getGroupAnalytics()` | `GET /analytics/group/:id` | `GET /api/analytics/group/:id` | Verified |
 | `analyzeEngagement()` | `POST /analytics/engagement` | `POST /api/analytics/engagement` | Verified |
 | `exportProcessMiningData()` | `GET /analytics/export` | `GET /api/analytics/export` | Verified |

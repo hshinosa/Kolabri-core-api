@@ -1,6 +1,6 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
-import { AIEngineService, type ProviderContextV1 } from './aiEngine.service.js';
+import { AIEngineService, type ProviderContextV1, type StreamEvent } from './aiEngine.service.js';
 
 type FetchMock = ReturnType<typeof vi.fn>;
 
@@ -11,6 +11,38 @@ function createJsonResponse(data: unknown, ok = true, status = 200): Response {
         json: vi.fn().mockResolvedValue(data),
         text: vi.fn().mockResolvedValue(JSON.stringify(data)),
     } as unknown as Response;
+}
+
+function createSseResponse(events: unknown[]): Response {
+    const payload =
+        events.map((event) => `data: ${JSON.stringify(event)}\n\n`).join('') +
+        'data: [DONE]\n\n' +
+        'data: {"type":"token","content":"after-done-marker"}\n\n';
+    const bytes = new TextEncoder().encode(payload);
+    return {
+        ok: true,
+        status: 200,
+        body: {
+            getReader: () => {
+                let sent = false;
+                return {
+                    read: async () => {
+                        if (sent) return { done: true, value: undefined };
+                        sent = true;
+                        return { done: false, value: bytes };
+                    },
+                };
+            },
+        },
+    } as unknown as Response;
+}
+
+async function collectEvents(stream: AsyncGenerator<StreamEvent>): Promise<StreamEvent[]> {
+    const events: StreamEvent[] = [];
+    for await (const event of stream) {
+        events.push(event);
+    }
+    return events;
 }
 
 function createProviderContext(): ProviderContextV1 {
@@ -249,31 +281,28 @@ describe('AIEngineService', () => {
         });
     });
 
-    it('sends orchestrated chat requests and returns parsed response', async () => {
+    it('streams orchestrated chat events from the SSE endpoint', async () => {
         fetchMock.mockResolvedValue(
-            createJsonResponse({
-                success: true,
-                bot_response: 'Diskusi kalian bagus.',
-                action_taken: 'RESPOND',
-                should_notify_teacher: false,
+            createSseResponse([
+                { type: 'token', content: 'Diskusi ' },
+                { type: 'token', content: 'kalian bagus.' },
+                { type: 'done', content: 'Diskusi kalian bagus.', action_taken: 'RESPOND', should_notify_teacher: false },
+            ])
+        );
+
+        const events = await collectEvents(
+            service.orchestratedChatStream({
+                user_id: 'user-1',
+                group_id: 'group-1',
+                message: 'Halo teman-teman',
+                topic: 'Kolaborasi',
             })
         );
 
-        const result = await service.orchestratedChat({
-            user_id: 'user-1',
-            group_id: 'group-1',
-            message: 'Halo teman-teman',
-            topic: 'Kolaborasi',
-        });
-
-        expect(result).toEqual({
-            success: true,
-            bot_response: 'Diskusi kalian bagus.',
-            action_taken: 'RESPOND',
-            should_notify_teacher: false,
-        });
+        expect(events.map((event) => event.type)).toEqual(['token', 'token', 'done']);
+        expect(events[2].content).toBe('Diskusi kalian bagus.');
         expect(fetchMock).toHaveBeenCalledWith(
-            'http://ai-engine.test/api/chat',
+            'http://ai-engine.test/api/chat/stream',
             expect.objectContaining({
                 method: 'POST',
                 body: JSON.stringify({
@@ -286,19 +315,37 @@ describe('AIEngineService', () => {
         );
     });
 
-    it('preserves provider_context on orchestrated chat requests', async () => {
-        const providerContext = createProviderContext();
-        fetchMock.mockResolvedValue(createJsonResponse({ success: true, bot_response: 'ok', action_taken: 'RESPOND', should_notify_teacher: false }));
+    it('stops consuming events after the [DONE] terminator', async () => {
+        fetchMock.mockResolvedValue(
+            createSseResponse([{ type: 'done', content: 'Selesai.' }])
+        );
 
-        await service.orchestratedChat({
-            user_id: 'user-1',
-            group_id: 'group-1',
-            message: 'Halo teman-teman',
-            provider_context: providerContext,
-        });
+        const events = await collectEvents(
+            service.orchestratedChatStream({
+                user_id: 'user-1',
+                group_id: 'group-1',
+                message: 'Halo teman-teman',
+            })
+        );
+
+        expect(events).toEqual([{ type: 'done', content: 'Selesai.' }]);
+    });
+
+    it('preserves provider_context on orchestrated chat stream requests', async () => {
+        const providerContext = createProviderContext();
+        fetchMock.mockResolvedValue(createSseResponse([{ type: 'done', content: 'ok' }]));
+
+        await collectEvents(
+            service.orchestratedChatStream({
+                user_id: 'user-1',
+                group_id: 'group-1',
+                message: 'Halo teman-teman',
+                provider_context: providerContext,
+            })
+        );
 
         expect(fetchMock).toHaveBeenCalledWith(
-            'http://ai-engine.test/api/chat',
+            'http://ai-engine.test/api/chat/stream',
             expect.objectContaining({
                 body: JSON.stringify({
                     user_id: 'user-1',
@@ -310,22 +357,20 @@ describe('AIEngineService', () => {
         );
     });
 
-    it('returns fallback response when orchestrated chat fails', async () => {
+    it('yields an error event when orchestrated chat stream fails', async () => {
         fetchMock.mockRejectedValue(new Error('timeout'));
 
-        const result = await service.orchestratedChat({
-            user_id: 'user-1',
-            group_id: 'group-1',
-            message: 'Halo',
-        });
+        const events = await collectEvents(
+            service.orchestratedChatStream({
+                user_id: 'user-1',
+                group_id: 'group-1',
+                message: 'Halo',
+            })
+        );
 
-        expect(result).toEqual({
-            success: false,
-            bot_response: 'Maaf, terjadi kesalahan sistem.',
-            action_taken: 'ERROR',
-            should_notify_teacher: false,
-            error: 'timeout',
-        });
+        expect(events).toEqual([
+            { type: 'error', content: 'Maaf, terjadi kesalahan sistem.' },
+        ]);
     });
 
     it('sends analyze intervention requests and returns parsed response', async () => {
@@ -417,56 +462,69 @@ describe('AIEngineService - Scaffolding', () => {
 
     it('returns scaffolding_level and scaffolding_outcome for early+enabled', async () => {
         fetchMock.mockResolvedValue(
-            createJsonResponse({
-                success: true,
-                bot_response: 'Step by step explanation...',
-                action_taken: 'RAG_FETCH',
-                should_notify_teacher: false,
-                scaffolding_level: 'early',
-                scaffolding_outcome: 'applied',
+            createSseResponse([
+                { type: 'full', content: 'Step by step explanation...' },
+                { type: 'done', content: 'Step by step explanation...', scaffolding_level: 'early', scaffolding_outcome: 'applied' },
+            ])
+        );
+
+        const events = await collectEvents(
+            service.orchestratedChatStream({
+                user_id: 'u1',
+                group_id: 'g1',
+                message: 'Explain recursion',
+                topic: 'Recursion',
+                collection_name: 'course_IF201',
+                course_id: 'c1',
+                chat_room_id: 'room-1',
+                guardrail_policy: { preset: 'balanced', allow_rewrite: true, allow_flag_only: false },
+                scaffolding_config: { scaffolding_level: 'early', enabled: true },
             })
         );
 
-        const result = await service.orchestratedChat({
-            user_id: 'u1',
-            group_id: 'g1',
-            message: 'Explain recursion',
-            topic: 'Recursion',
-            collection_name: 'course_IF201',
-            course_id: 'c1',
-            chat_room_id: 'room-1',
-            guardrail_policy: { preset: 'balanced', allow_rewrite: true, allow_flag_only: false },
-            scaffolding_config: { scaffolding_level: 'early', enabled: true },
-        });
-
-        expect(result.scaffolding_level).toBe('early');
-        expect(result.scaffolding_outcome).toBe('applied');
+        const done = events.find((event) => event.type === 'done');
+        expect(done?.scaffolding_level).toBe('early');
+        expect(done?.scaffolding_outcome).toBe('applied');
+        expect(fetchMock).toHaveBeenCalledWith(
+            'http://ai-engine.test/api/chat/stream',
+            expect.objectContaining({
+                body: JSON.stringify({
+                    user_id: 'u1',
+                    group_id: 'g1',
+                    message: 'Explain recursion',
+                    topic: 'Recursion',
+                    collection_name: 'course_IF201',
+                    course_id: 'c1',
+                    chat_room_id: 'room-1',
+                    guardrail_policy: { preset: 'balanced', allow_rewrite: true, allow_flag_only: false },
+                    scaffolding_config: { scaffolding_level: 'early', enabled: true },
+                }),
+            })
+        );
     });
 
     it('returns scaffolding_outcome=disabled when enabled=false', async () => {
         fetchMock.mockResolvedValue(
-            createJsonResponse({
-                success: true,
-                bot_response: 'Normal answer',
-                action_taken: 'RAG_FETCH',
-                should_notify_teacher: false,
-                scaffolding_level: 'auto',
-                scaffolding_outcome: 'disabled',
+            createSseResponse([
+                { type: 'done', content: 'Normal answer', scaffolding_level: 'auto', scaffolding_outcome: 'disabled' },
+            ])
+        );
+
+        const events = await collectEvents(
+            service.orchestratedChatStream({
+                user_id: 'u1',
+                group_id: 'g1',
+                message: 'Explain recursion',
+                topic: 'Recursion',
+                collection_name: 'course_IF204',
+                course_id: 'c4',
+                chat_room_id: 'room-1',
+                guardrail_policy: { preset: 'balanced', allow_rewrite: true, allow_flag_only: false },
+                scaffolding_config: { scaffolding_level: 'auto', enabled: false },
             })
         );
 
-        const result = await service.orchestratedChat({
-            user_id: 'u1',
-            group_id: 'g1',
-            message: 'Explain recursion',
-            topic: 'Recursion',
-            collection_name: 'course_IF204',
-            course_id: 'c4',
-            chat_room_id: 'room-1',
-            guardrail_policy: { preset: 'balanced', allow_rewrite: true, allow_flag_only: false },
-            scaffolding_config: { scaffolding_level: 'auto', enabled: false },
-        });
-
-        expect(result.scaffolding_outcome).toBe('disabled');
+        const done = events.find((event) => event.type === 'done');
+        expect(done?.scaffolding_outcome).toBe('disabled');
     });
 });

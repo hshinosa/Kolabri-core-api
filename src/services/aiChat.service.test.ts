@@ -17,7 +17,7 @@ const { prismaMock, providerResolutionServiceMock, aiEngineServiceMock } = vi.ho
             return result;
         }),
     },
-    aiEngineServiceMock: { personalChat: vi.fn() },
+    aiEngineServiceMock: { personalChatStream: vi.fn() },
 }));
 
 vi.mock('../config/database.js', () => ({
@@ -33,6 +33,32 @@ vi.mock('./aiEngine.service.js', () => ({
 }));
 
 import { AiChatService } from './aiChat.service.js';
+
+/**
+ * SSE Response whose payload is delivered split across two reads, so parsers
+ * are exercised on chunks that cut a `data:` line in half.
+ */
+function createSseResponse(payload: string): Response {
+    const bytes = new TextEncoder().encode(payload);
+    const midpoint = Math.floor(bytes.length / 2);
+    return {
+        ok: true,
+        status: 200,
+        body: {
+            getReader: () => {
+                let reads = 0;
+                return {
+                    read: async () => {
+                        reads += 1;
+                        if (reads === 1) return { done: false, value: bytes.slice(0, midpoint) };
+                        if (reads === 2) return { done: false, value: bytes.slice(midpoint) };
+                        return { done: true, value: undefined };
+                    },
+                };
+            },
+        },
+    } as unknown as Response;
+}
 
 describe('AiChatService', () => {
     beforeEach(() => {
@@ -141,7 +167,7 @@ describe('AiChatService', () => {
         });
     });
 
-    it('sends a message through ai-engine with resolved provider context', async () => {
+    it('sends a message through the ai-engine personal chat stream', async () => {
         const addMessageSpy = vi
             .spyOn(AiChatService, 'addMessage')
             .mockResolvedValueOnce({ id: 'user-msg', role: 'user', content: 'How do I improve?', createdAt: new Date('2026-05-01T00:00:00.000Z') })
@@ -157,40 +183,36 @@ describe('AiChatService', () => {
             user: { name: 'Alya' },
         });
 
-        const providerContext = {
-            version: '1.0' as const,
-            provider: { name: 'openai', displayName: 'OpenAI GPT' },
-            execution: { baseUrl: 'https://api.openai.com/v1', model: 'gpt-4o-mini' },
-            auth: { type: 'api-key' as const, credential: 'sk-test' },
-            metadata: { featureFamily: 'personal-chat', requestId: 'req-1', resolvedAt: '2026-06-16T10:00:00.000Z' },
-        };
-        providerResolutionServiceMock.resolveProviderContext.mockResolvedValue({
-            primary: { providerId: 'provider-openai', providerName: 'openai', providerContext },
-            fallbackChain: [],
-        });
-        aiEngineServiceMock.personalChat.mockResolvedValue({
-            reply: 'Try reflective practice.',
-            success: true,
-            tokens_used: 12,
-        });
+        aiEngineServiceMock.personalChatStream.mockResolvedValue(createSseResponse(
+            'data: {"content":"Try reflective "}\n\n' +
+            'data: {"content":"practice."}\n\n' +
+            'data: {"citations":[{"source":"week-3-reflective.pdf","page":12}]}\n\n' +
+            'data: [DONE]\n\n'
+        ));
 
         const result = await AiChatService.sendMessage('chat-1', 'user-1', 'How do I improve?');
 
-        expect(providerResolutionServiceMock.resolveProviderContext).toHaveBeenCalledWith({ featureFamily: 'personal-chat' });
-        expect(aiEngineServiceMock.personalChat).toHaveBeenCalledWith(
+        expect(aiEngineServiceMock.personalChatStream).toHaveBeenCalledWith(
             'How do I improve?',
             [{ role: 'assistant', content: 'Welcome back' }],
             'Alya',
-            providerContext,
+            undefined,
         );
-        expect(addMessageSpy).toHaveBeenNthCalledWith(2, 'chat-1', 'user-1', 'assistant', 'Try reflective practice.');
+        expect(addMessageSpy).toHaveBeenNthCalledWith(
+            2,
+            'chat-1',
+            'user-1',
+            'assistant',
+            'Try reflective practice.',
+            [{ source: 'week-3-reflective.pdf', page: 12 }],
+        );
         expect(result).toEqual({
             userMessage: { id: 'user-msg', role: 'user', content: 'How do I improve?', createdAt: new Date('2026-05-01T00:00:00.000Z') },
             assistantMessage: { id: 'assistant-msg', role: 'assistant', content: 'Try reflective practice.', createdAt: new Date('2026-05-01T00:01:00.000Z') },
         });
     });
 
-    it('returns a fallback reply when provider resolution fails', async () => {
+    it('returns a fallback reply when the personal chat stream is unavailable', async () => {
         const addMessageSpy = vi
             .spyOn(AiChatService, 'addMessage')
             .mockResolvedValueOnce({ id: 'user-msg', role: 'user', content: 'How do I improve?', createdAt: new Date('2026-05-01T00:00:00.000Z') })
@@ -202,12 +224,40 @@ describe('AiChatService', () => {
             messages: [],
             user: { name: 'Alya' },
         });
-        providerResolutionServiceMock.resolveProviderContext.mockRejectedValue(new Error('No active AI provider configured'));
+        aiEngineServiceMock.personalChatStream.mockResolvedValue({ ok: false, body: null, status: 503 } as unknown as Response);
 
         const result = await AiChatService.sendMessage('chat-1', 'user-1', 'How do I improve?');
 
-        expect(aiEngineServiceMock.personalChat).not.toHaveBeenCalled();
-        expect(addMessageSpy).toHaveBeenNthCalledWith(2, 'chat-1', 'user-1', 'assistant', 'Maaf, AI Assistant sedang tidak tersedia saat ini. Silakan coba lagi nanti.');
+        expect(aiEngineServiceMock.personalChatStream).toHaveBeenCalledWith(
+            'How do I improve?',
+            [],
+            'Alya',
+            undefined,
+        );
+        expect(addMessageSpy).toHaveBeenNthCalledWith(2, 'chat-1', 'user-1', 'assistant', 'Maaf, AI Assistant sedang tidak tersedia saat ini. Silakan coba lagi nanti.', undefined);
+        expect(result.assistantMessage.content).toBe('Maaf, AI Assistant sedang tidak tersedia saat ini. Silakan coba lagi nanti.');
+    });
+
+    it('returns a fallback reply when the stream reports an error event', async () => {
+        const addMessageSpy = vi
+            .spyOn(AiChatService, 'addMessage')
+            .mockResolvedValueOnce({ id: 'user-msg', role: 'user', content: 'How do I improve?', createdAt: new Date('2026-05-01T00:00:00.000Z') })
+            .mockResolvedValueOnce({ id: 'assistant-msg', role: 'assistant', content: 'Maaf, AI Assistant sedang tidak tersedia saat ini. Silakan coba lagi nanti.', createdAt: new Date('2026-05-01T00:01:00.000Z') });
+
+        prismaMock.aiChat.findUnique.mockResolvedValue({
+            id: 'chat-1',
+            userId: 'user-1',
+            messages: [],
+            user: { name: 'Alya' },
+        });
+        aiEngineServiceMock.personalChatStream.mockResolvedValue(createSseResponse(
+            'data: {"content":"partial answer"}\n\n' +
+            'data: {"type":"error","content":"Maaf, terjadi kesalahan sistem."}\n\n'
+        ));
+
+        const result = await AiChatService.sendMessage('chat-1', 'user-1', 'How do I improve?');
+
+        expect(addMessageSpy).toHaveBeenNthCalledWith(2, 'chat-1', 'user-1', 'assistant', 'Maaf, AI Assistant sedang tidak tersedia saat ini. Silakan coba lagi nanti.', undefined);
         expect(result.assistantMessage.content).toBe('Maaf, AI Assistant sedang tidak tersedia saat ini. Silakan coba lagi nanti.');
     });
 

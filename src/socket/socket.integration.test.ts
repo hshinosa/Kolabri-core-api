@@ -1,5 +1,7 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
+import type { StreamEvent } from '../services/aiEngine.service.js';
+
 const { prismaMock, aiEngineServiceMock, ChatLogMock, SilenceEventMock, jwtMock } = vi.hoisted(() => {
     const saveFn = vi.fn().mockResolvedValue(undefined);
     return {
@@ -12,7 +14,7 @@ const { prismaMock, aiEngineServiceMock, ChatLogMock, SilenceEventMock, jwtMock 
         },
         aiEngineServiceMock: {
             isAvailable: vi.fn(),
-            orchestratedChat: vi.fn(),
+            orchestratedChatStream: vi.fn(),
         },
         ChatLogMock: {
             find: vi.fn().mockReturnValue({
@@ -158,7 +160,7 @@ describe('Socket.IO Integration — Flow 2: Group Chat + AI Intervention', () =>
     });
 
     describe('AI question handling contract', () => {
-        it('orchestratedChat is called with correct parameters when @AI is mentioned', () => {
+        it('orchestratedChatStream request carries the cleaned question for @AI mentions', () => {
             const request = {
                 user_id: 'student-1',
                 group_id: 'group-1',
@@ -174,42 +176,57 @@ describe('Socket.IO Integration — Flow 2: Group Chat + AI Intervention', () =>
             expect(request.chat_room_id).toBe('cs-1');
         });
 
-        it('AI Engine orchestratedChat returns expected response shape', async () => {
-            aiEngineServiceMock.orchestratedChat.mockResolvedValue({
-                success: true,
-                bot_response: 'Machine learning adalah...',
-                action_taken: 'RESPOND',
-                should_notify_teacher: false,
-                quality_score: 75,
-                meta: { hot_percentage: 30, engagement_distribution: { cognitive: 50 } },
+        it('AI Engine orchestratedChatStream yields a done event with the full response shape', async () => {
+            aiEngineServiceMock.orchestratedChatStream.mockImplementation(async function* () {
+                yield { type: 'token', content: 'Machine learning adalah...' };
+                yield {
+                    type: 'done',
+                    content: 'Machine learning adalah...',
+                    action_taken: 'RESPOND',
+                    should_notify_teacher: false,
+                    quality_score: 75,
+                    analytics: { hot_percentage: 30, engagement_distribution: { cognitive: 50 } },
+                };
             });
 
-            const result = await aiEngineServiceMock.orchestratedChat({
+            const events: StreamEvent[] = [];
+            for await (const event of aiEngineServiceMock.orchestratedChatStream({
                 user_id: 'student-1', group_id: 'group-1', message: 'test',
-            });
+            })) {
+                events.push(event);
+            }
 
-            expect(result.success).toBe(true);
-            expect(result.bot_response).toBeTruthy();
-            expect(result.should_notify_teacher).toBe(false);
+            expect(events[0]).toEqual({ type: 'token', content: 'Machine learning adalah...' });
+            const done = events[events.length - 1];
+            expect(done.type).toBe('done');
+            expect(done.content).toBeTruthy();
+            expect(done.should_notify_teacher).toBe(false);
         });
 
-        it('AI Engine orchestratedChat triggers teacher notification on low quality', async () => {
-            aiEngineServiceMock.orchestratedChat.mockResolvedValue({
-                success: true,
-                bot_response: 'Response',
-                action_taken: 'INTERVENE',
-                should_notify_teacher: true,
-                quality_score: 25,
-                system_intervention: 'Diskusi perlu ditingkatkan',
-                intervention_type: 'quality_low',
+        it('AI Engine orchestratedChatStream triggers teacher notification on low quality', async () => {
+            aiEngineServiceMock.orchestratedChatStream.mockImplementation(async function* () {
+                yield {
+                    type: 'done',
+                    content: 'Response',
+                    action_taken: 'INTERVENE',
+                    should_notify_teacher: true,
+                    quality_score: 25,
+                    intervention: 'Diskusi perlu ditingkatkan',
+                    intervention_type: 'quality_low',
+                };
             });
 
-            const result = await aiEngineServiceMock.orchestratedChat({
+            const events: StreamEvent[] = [];
+            for await (const event of aiEngineServiceMock.orchestratedChatStream({
                 user_id: 'student-1', group_id: 'group-1', message: 'ok',
-            });
+            })) {
+                events.push(event);
+            }
 
-            expect(result.should_notify_teacher).toBe(true);
-            expect(result.system_intervention).toBeTruthy();
+            const done = events[0];
+            expect(done.type).toBe('done');
+            expect(done.should_notify_teacher).toBe(true);
+            expect(done.intervention).toBeTruthy();
         });
 
         it('AI Engine returns graceful fallback when unavailable', async () => {

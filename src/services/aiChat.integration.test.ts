@@ -7,7 +7,7 @@ const { prismaMock, aiServiceMock, aiEngineServiceMock } = vi.hoisted(() => ({
         aiProvider: { count: vi.fn(), findMany: vi.fn() },
     },
     aiServiceMock: { sendWithConfiguredFallback: vi.fn() },
-    aiEngineServiceMock: { personalChat: vi.fn(), personalChatStream: vi.fn(), isAvailable: vi.fn() },
+    aiEngineServiceMock: { personalChatStream: vi.fn(), isAvailable: vi.fn() },
 }));
 
 vi.mock('../config/database.js', () => ({ default: prismaMock }));
@@ -18,6 +18,27 @@ import { AiChatService } from './aiChat.service.js';
 
 const NOW = new Date('2026-06-01T00:00:00.000Z');
 const CHAT_BASE = { id: 'chat-1', userId: 'user-1' };
+const FALLBACK = 'Maaf, AI Assistant sedang tidak tersedia saat ini. Silakan coba lagi nanti.';
+
+function createSseResponse(payload: string): Response {
+    const bytes = new TextEncoder().encode(payload);
+    return {
+        ok: true,
+        status: 200,
+        body: {
+            getReader: () => {
+                let sent = false;
+                return {
+                    read: async () => {
+                        if (sent) return { done: true, value: undefined };
+                        sent = true;
+                        return { done: false, value: bytes };
+                    },
+                };
+            },
+        },
+    } as unknown as Response;
+}
 
 describe('AiChatService Integration — Flow 1: Student AI Chat', () => {
     beforeEach(() => {
@@ -64,16 +85,17 @@ describe('AiChatService Integration — Flow 1: Student AI Chat', () => {
         prismaMock.aiChatMessage.count.mockResolvedValue(2);
         prismaMock.aiChat.update.mockResolvedValue({});
         prismaMock.aiProvider.findMany.mockResolvedValue([]);
+        aiEngineServiceMock.personalChatStream.mockResolvedValue({ ok: false, body: null, status: 503 } as unknown as Response);
 
         const result = await AiChatService.sendMessage('chat-1', 'user-1', 'Halo');
 
-        expect(aiEngineServiceMock.personalChat).not.toHaveBeenCalled();
+        expect(aiEngineServiceMock.personalChatStream).toHaveBeenCalledWith('Halo', [], 'Hashfi', undefined);
         expect(aiServiceMock.sendWithConfiguredFallback).not.toHaveBeenCalled();
         expect(result.userMessage.content).toBe('Halo');
-        expect(result.assistantMessage.content).toBe('Maaf, AI Assistant sedang tidak tersedia saat ini. Silakan coba lagi nanti.');
+        expect(result.assistantMessage.content).toBe(FALLBACK);
     });
 
-    it('uses unified provider_context from DB when active providers exist', async () => {
+    it('leaves provider resolution to the engine even when active providers exist', async () => {
         prismaMock.aiChat.findUnique
             .mockResolvedValueOnce(CHAT_BASE)
             .mockResolvedValueOnce({ ...CHAT_BASE, messages: [], user: { name: 'Hashfi' } })
@@ -95,22 +117,20 @@ describe('AiChatService Integration — Flow 1: Student AI Chat', () => {
                 config: { defaultModel: 'gemini-1.5-pro', temperature: 0.3, maxTokens: 512 },
             },
         ]);
-        aiEngineServiceMock.personalChat.mockResolvedValue({ reply: 'Response', success: true, tokens_used: 10 });
+        aiEngineServiceMock.personalChatStream.mockResolvedValue(createSseResponse(
+            'data: {"content":"Response"}\n\n' +
+            'data: [DONE]\n\n'
+        ));
 
         const result = await AiChatService.sendMessage('chat-1', 'user-1', 'Halo');
 
-        expect(aiEngineServiceMock.personalChat).toHaveBeenCalledWith(
+        expect(aiEngineServiceMock.personalChatStream).toHaveBeenCalledWith(
             'Halo',
             [],
             'Hashfi',
-            expect.objectContaining({
-                version: '1.0',
-                provider: { name: 'gemini', displayName: 'Gemini' },
-                execution: { baseUrl: 'https://generativelanguage.googleapis.com/v1beta', model: 'gemini-1.5-pro', temperature: 0.3, maxTokens: 512 },
-                auth: { type: 'api-key', credential: expect.any(String) },
-                metadata: expect.objectContaining({ featureFamily: 'personal-chat' }),
-            }),
+            undefined,
         );
+        expect(prismaMock.aiProvider.findMany).not.toHaveBeenCalled();
         expect(aiServiceMock.sendWithConfiguredFallback).not.toHaveBeenCalled();
         expect(result.assistantMessage.content).toBe('Response');
     });
@@ -171,10 +191,12 @@ describe('AiChatService Integration — Flow 1: Student AI Chat', () => {
         prismaMock.aiChatMessage.count.mockResolvedValue(2);
         prismaMock.aiChat.update.mockResolvedValue({});
         prismaMock.aiProvider.count.mockResolvedValue(0);
-        aiEngineServiceMock.personalChat.mockResolvedValue({ reply: fallbackReply, success: false, tokens_used: 0, error: 'Connection refused' });
+        aiEngineServiceMock.personalChatStream.mockResolvedValue(createSseResponse(
+            'data: {"type":"error","content":"Connection refused"}\n\n'
+        ));
 
         const result = await AiChatService.sendMessage('chat-1', 'user-1', 'Help');
-        expect(result.assistantMessage.content).toBe(fallbackReply);
+        expect(result.assistantMessage.content).toBe(FALLBACK);
     });
 
     it('filters out the just-added user message from history before sending to AI', async () => {
@@ -196,11 +218,14 @@ describe('AiChatService Integration — Flow 1: Student AI Chat', () => {
         prismaMock.aiChatMessage.count.mockResolvedValue(5);
         prismaMock.aiChat.update.mockResolvedValue({});
         prismaMock.aiProvider.count.mockResolvedValue(0);
-        aiEngineServiceMock.personalChat.mockResolvedValue({ reply: 'Answer', success: true, tokens_used: 5 });
+        aiEngineServiceMock.personalChatStream.mockResolvedValue(createSseResponse(
+            'data: {"content":"Answer"}\n\n' +
+            'data: [DONE]\n\n'
+        ));
 
         await AiChatService.sendMessage('chat-1', 'user-1', 'New question');
 
-        const [, historyArg] = aiEngineServiceMock.personalChat.mock.calls[0];
+        const [, historyArg] = aiEngineServiceMock.personalChatStream.mock.calls[0];
         expect(historyArg).toEqual([
             { role: 'assistant', content: 'Previous reply' },
             { role: 'user', content: 'Previous question' },

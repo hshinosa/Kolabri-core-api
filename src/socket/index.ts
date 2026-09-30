@@ -29,7 +29,7 @@ import { registerPresence, trackUserInRoom, listUsersInRoom } from './presence.j
 import { registerDeleteMessage } from './messages.js';
 import { runSilenceIntervention } from './interventions.js';
 import { isStagedEscalationEnabled, findOrCreateState, advanceStage, shouldNotifyLecturer, markNotificationSent } from '../services/escalation.service.js';
-import type { StreamEvent } from '../services/aiEngine.service.js';
+import type { StreamEvent, OrchestrationResponse } from '../services/aiEngine.service.js';
 
 // PERF-AI-01: NO_FETCH eligibility — mirrors rag.py _should_retrieve() logic.
 // If true, the query skips retrieval and can be streamed token-by-token.
@@ -1092,7 +1092,7 @@ async function handleAIQuestion(
                   engagement_distribution?: Record<string, number>;
               }
             | undefined;
-        let orchestrationResult: Awaited<ReturnType<typeof aiEngineService.orchestratedChat>> | undefined;
+        let orchestrationResult: OrchestrationResponse | undefined;
         let filteredCitations: CitationPayload[] = [];
 
         if (!isAvailable) {
@@ -1253,8 +1253,16 @@ async function handleAIQuestion(
                     response = fullContent || 'Maaf, terjadi kesalahan saat memproses pesan.';
                 }
             } else {
-                // Existing FETCH path (non-streaming, grounding + guardrails)
-                const result = await aiEngineService.orchestratedChat({
+                // FETCH path (grounding + guardrails): consume the SSE stream and
+                // reassemble the same result shape the non-streaming call returned.
+                let result: OrchestrationResponse = {
+                    success: false,
+                    bot_response: '',
+                    action_taken: 'ERROR',
+                    should_notify_teacher: false,
+                };
+
+                for await (const event of aiEngineService.orchestratedChatStream({
                     user_id: userId,
                     group_id: groupId,
                     message: question.replace(/@ai/gi, '').trim(),
@@ -1275,7 +1283,35 @@ async function handleAIQuestion(
                         : undefined,
                     chat_history: chatHistory.length > 0 ? chatHistory : undefined,
                     provider_context: undefined,
-                });
+                })) {
+                    if (event.type === 'done') {
+                        result = {
+                            success: true,
+                            bot_response: event.content ?? '',
+                            system_intervention: event.intervention,
+                            intervention_type: event.intervention_type,
+                            action_taken: (event.sources?.length ?? 0) > 0 ? 'FETCH' : 'NO_FETCH',
+                            should_notify_teacher: event.should_notify_teacher ?? false,
+                            quality_score: event.quality_score,
+                            meta: event.analytics as unknown as OrchestrationResponse['meta'],
+                            guardrail_outcome: event.guardrail_outcome,
+                            guardrail_reason: event.guardrail_reason,
+                            scaffolding_level: event.scaffolding_level,
+                            scaffolding_outcome: event.scaffolding_outcome,
+                            citations: event.citations,
+                        };
+                    } else if (event.type === 'error') {
+                        result = {
+                            success: false,
+                            bot_response: event.content || 'Maaf, terjadi kesalahan sistem.',
+                            action_taken: 'ERROR',
+                            should_notify_teacher: false,
+                            error: event.content,
+                        };
+                    }
+                    // 'token'/'full' events are already folded into the 'done' payload;
+                    // FETCH replies are delivered as one message (no ai_chunk emits).
+                }
                 orchestrationResult = result;
 
                 if (result.success) {
@@ -1284,7 +1320,7 @@ async function handleAIQuestion(
                     shouldNotifyTeacher = result.should_notify_teacher;
 
                 // DEBUG: Log citations received from AI engine
-                logger.info(`[DEBUG citations non-streaming] session=${sessionDiscussionId} hasCitations=${!!result.citations} count=${result.citations?.length || 0}`);
+                logger.info(`[DEBUG citations fetch-stream] session=${sessionDiscussionId} hasCitations=${!!result.citations} count=${result.citations?.length || 0}`);
                     intervention = result.system_intervention;
                     interventionType = result.intervention_type;
                     engagementMeta = result.meta

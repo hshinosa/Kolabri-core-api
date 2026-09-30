@@ -242,17 +242,31 @@ export class AiChatService {
             .slice(-20);
 
         let assistantContent: string;
+        let assistantCitations: Array<{ source: string; page?: number; course_id?: string; course_material_id?: string }> | undefined;
 
         try {
-            const response = await aiEngineService.personalChat(
+            const streamResp = await aiEngineService.personalChatStream(
                 content,
                 history,
                 chat?.user?.name ?? undefined,
                 undefined,
             );
-            assistantContent = response.reply;
+
+            if (!streamResp.ok || !streamResp.body) {
+                throw new Error(`AI Engine stream responded with ${streamResp.status}`);
+            }
+
+            const collected = await AiChatService.collectStreamReply(streamResp.body);
+
+            if (collected.failed || collected.reply.length === 0) {
+                throw new Error('AI Engine stream failed');
+            }
+
+            assistantContent = collected.reply;
+            assistantCitations = collected.citations.length > 0 ? collected.citations : undefined;
         } catch {
             assistantContent = 'Maaf, AI Assistant sedang tidak tersedia saat ini. Silakan coba lagi nanti.';
+            assistantCitations = undefined;
         }
 
         const assistantMessage = await this.addMessage(
@@ -260,12 +274,79 @@ export class AiChatService {
             userId,
             'assistant',
             assistantContent,
+            assistantCitations,
         );
 
         return {
             userMessage,
             assistantMessage,
         };
+    }
+
+    /**
+     * Consume an SSE reply from the personal chat stream: concatenates content
+     * chunks, keeps the latest citations payload, and flags stream-level errors
+     * (error events or a broken stream) so callers can fall back.
+     */
+    private static async collectStreamReply(
+        body: ReadableStream<Uint8Array>,
+    ): Promise<{
+        reply: string;
+        citations: Array<{ source: string; page?: number; course_id?: string; course_material_id?: string }>;
+        failed: boolean;
+    }> {
+        let reply = '';
+        let citations: Array<{ source: string; page?: number; course_id?: string; course_material_id?: string }> = [];
+        let failed = false;
+
+        const applyEvent = (payload: string) => {
+            if (payload === '[DONE]') return;
+
+            let parsed: { type?: string; error?: unknown; content?: unknown; citations?: unknown };
+            try {
+                parsed = JSON.parse(payload);
+            } catch {
+                return;
+            }
+
+            if (parsed.type === 'error' || parsed.error) {
+                failed = true;
+                return;
+            }
+            if (Array.isArray(parsed.citations)) {
+                citations = parsed.citations as typeof citations;
+            }
+            if (typeof parsed.content === 'string') {
+                reply += parsed.content;
+            }
+        };
+
+        const reader = body.getReader();
+        const decoder = new TextDecoder();
+        let buffer = '';
+
+        while (true) {
+            const { done, value } = await reader.read();
+            if (done) break;
+
+            buffer += decoder.decode(value, { stream: true });
+            const lines = buffer.split('\n');
+            buffer = lines.pop() ?? '';
+
+            for (const line of lines) {
+                const trimmed = line.trim();
+                if (trimmed.startsWith('data: ')) {
+                    applyEvent(trimmed.slice(6));
+                }
+            }
+        }
+
+        const trailing = buffer.trim();
+        if (trailing.startsWith('data: ')) {
+            applyEvent(trailing.slice(6));
+        }
+
+        return { reply, citations, failed };
     }
 
     /**
