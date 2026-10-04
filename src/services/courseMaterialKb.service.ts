@@ -38,6 +38,25 @@ export class CourseMaterialKbService {
     }
 
     static async softDeleteForCourseMaterial(courseId: string, courseMaterialId: string) {
+        const rows = await prisma.knowledgeBase.findMany({
+            where: { courseId, courseMaterialId, deletedAt: null },
+            select: { id: true },
+        });
+
+        // Remove vectors too: soft-deleting the row alone leaves orphan chunks in
+        // Qdrant that still surface as citations for material the lecturer deleted.
+        for (const row of rows) {
+            try {
+                await aiEngineService.deleteDocument(row.id, `course_${courseId}`);
+            } catch (error) {
+                logger.warn('Failed to delete document from vector store', {
+                    knowledgeBaseId: row.id,
+                    courseId,
+                    error: error instanceof Error ? error.message : String(error),
+                });
+            }
+        }
+
         await prisma.knowledgeBase.updateMany({
             where: { courseId, courseMaterialId, deletedAt: null },
             data: { deletedAt: new Date(), courseMaterialId: null },
