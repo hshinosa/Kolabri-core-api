@@ -20,6 +20,9 @@ const analyzeTextSchema = z.object({
     text: z.string().min(1, 'Text is required').max(10000, 'Text must be less than 10000 characters'),
 });
 
+// Akses PUBLIK: laporan berbagi (token stateless, tanpa login) — harus sebelum verifyToken
+router.get('/shared/:token', AnalyticsController.getSharedReport);
+
 // All routes require authentication
 router.use(verifyToken);
 
@@ -35,6 +38,14 @@ router.get('/overview', requireLecturer, AnalyticsController.getAnalyticsOvervie
 router.get('/course/:courseId', requireLecturer, AnalyticsController.getCourseAnalytics);
 
 router.get('/courses/:courseId/students', requireLecturer, AnalyticsController.getStudentBreakdown);
+
+// Live refresh + tren per hari (sebelumnya 404, dipakai halaman analitik dosen)
+router.get('/courses/:courseId/live', requireLecturer, AnalyticsController.getCourseLive);
+router.get('/courses/:courseId/trends', requireLecturer, AnalyticsController.getCourseTrends);
+router.post('/courses/:courseId/share', requireLecturer, AnalyticsController.generateShareLink);
+
+// Alias export dengan query courseId (dipakai BFF export-section)
+router.get('/export', requireLecturer, AnalyticsController.exportProcessMining);
 
 router.get('/group/:groupId', requireLecturer, AnalyticsController.getGroupAnalytics);
 

@@ -143,6 +143,77 @@ export class AnalyticsService {
         };
     }
 
+    /**
+     * Tren per-hari (engagement/completion/attendance) untuk halaman analitik dosen.
+     * Endpoint /analytics/live & /trends sebelumnya 404 (tak pernah diimplement) —
+     * diimplement 2026-10-06 dari data chatlogs (Mongo) + sessionDiscussions (PG).
+     */
+    static async getCourseTrendPoints(
+        courseId: string,
+        metric: string = 'engagement',
+        startDate?: string,
+        endDate?: string
+    ) {
+        const groups = await prisma.group.findMany({
+            where: { courseId, deletedAt: null },
+            select: { id: true },
+        });
+        const ids = groups.map((g) => g.id);
+
+        const end = endDate ? new Date(endDate) : new Date();
+        end.setHours(23, 59, 59, 999);
+        const start = startDate ? new Date(startDate) : new Date(end.getTime() - 13 * 24 * 60 * 60 * 1000);
+        start.setHours(0, 0, 0, 0);
+
+        const dates: string[] = [];
+        for (let d = new Date(start); d <= end; d = new Date(d.getTime() + 24 * 60 * 60 * 1000)) {
+            dates.push(d.toISOString().slice(0, 10));
+        }
+        const byDate = new Map<string, number>(dates.map((d) => [d, 0]));
+
+        if (metric === 'attendance') {
+            const sessions = await prisma.sessionDiscussion.findMany({
+                where: { groupId: { in: ids }, deletedAt: null, closedAt: { gte: start, lte: end } },
+                select: { closedAt: true },
+            });
+            sessions.forEach((sn) => {
+                if (sn.closedAt) {
+                    const key = sn.closedAt.toISOString().slice(0, 10);
+                    byDate.set(key, (byDate.get(key) || 0) + 1);
+                }
+            });
+        } else if (ids.length > 0) {
+            const db = mongoose.connection.db;
+            if (db) {
+                const match: Record<string, unknown> = {
+                    groupId: { $in: ids },
+                    createdAt: { $gte: start, $lte: end },
+                };
+                if (metric === 'completion') {
+                    match.senderType = 'student';
+                }
+                const groupStage =
+                    metric === 'completion'
+                        ? [
+                              { $group: { _id: { day: { $dateToString: { format: '%Y-%m-%d', date: '$createdAt' } }, user: '$senderId' } } },
+                              { $group: { _id: '$_id.day', n: { $sum: 1 } } },
+                          ]
+                        : [{ $group: { _id: { $dateToString: { format: '%Y-%m-%d', date: '$createdAt' } }, n: { $sum: 1 } } }];
+                const rows = await db
+                    .collection('chatlogs')
+                    .aggregate([{ $match: match }, ...groupStage])
+                    .toArray();
+                rows.forEach((row) => {
+                    const r = row as unknown as { _id: string; n: number };
+                    if (byDate.has(r._id)) byDate.set(r._id, r.n);
+                });
+            }
+        }
+
+        const points = dates.map((date) => ({ date, value: byDate.get(date) || 0 }));
+        return { success: true, data: { points, metric } };
+    }
+
     static async getCourseAnalytics(courseId: string, userId: string | undefined) {
         const course = await prisma.course.findFirst({
             where: { id: courseId, deletedAt: null },

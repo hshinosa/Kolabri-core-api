@@ -1,4 +1,5 @@
 import { Request, Response, NextFunction } from 'express';
+import jwt from 'jsonwebtoken';
 import { AnalyticsService } from '../services/analytics.service.js';
 
 export class AnalyticsController {
@@ -71,8 +72,16 @@ export class AnalyticsController {
                 });
             }
 
+            // Mendukung GET /api/analytics/export?courseId=... (dipakai BFF export-section)
+            const courseId = req.params.courseId || (req.query.courseId as string);
+            if (!courseId) {
+                return res.status(400).json({
+                    error: { code: 'BAD_REQUEST', message: 'courseId is required' },
+                });
+            }
+
             const result = await AnalyticsService.exportProcessMining(
-                req.params.courseId,
+                courseId,
                 req.user?.userId,
                 format
             );
@@ -183,6 +192,133 @@ export class AnalyticsController {
         try {
             const result = await AnalyticsService.getAnalyticsOverview(req.user!.userId);
             res.json(result);
+        } catch (error) {
+            next(error);
+        }
+    }
+
+    /**
+     * GET /api/analytics/courses/:courseId/live
+     * Data segar per kelompok (refresh kartu analitik). Sebelumnya 404.
+     */
+    static async getCourseLive(req: Request, res: Response, next: NextFunction) {
+        try {
+            const result = (await AnalyticsService.getCourseAnalytics(
+                req.params.courseId,
+                req.user?.userId
+            )) as { groups?: unknown[]; summary?: unknown; course?: unknown };
+            res.json({
+                success: true,
+                data: {
+                    groups: result.groups ?? [],
+                    summary: result.summary ?? null,
+                    course: result.course ?? null,
+                },
+            });
+        } catch (error) {
+            next(error);
+        }
+    }
+
+    /**
+     * GET /api/analytics/courses/:courseId/trends?metric=engagement|completion|attendance
+     * Titik tren per hari. Sebelumnya 404.
+     */
+    static async getCourseTrends(req: Request, res: Response, next: NextFunction) {
+        try {
+            const result = await AnalyticsService.getCourseTrendPoints(
+                req.params.courseId,
+                (req.query.metric as string) || 'engagement',
+                (req.query.startDate as string) || (req.query.start_date as string),
+                (req.query.endDate as string) || (req.query.end_date as string)
+            );
+            res.json(result);
+        } catch (error) {
+            next(error);
+        }
+    }
+
+    /**
+     * POST /api/analytics/courses/:courseId/share
+     * Token berbagi laporan: stateless (JWT + exp), tanpa tabel baru.
+     * Sebelumnya 404.
+     */
+    static async generateShareLink(req: Request, res: Response, next: NextFunction) {
+        try {
+            const secret = process.env.JWT_SECRET;
+            if (!secret) {
+                return res.status(500).json({
+                    error: { code: 'CONFIG', message: 'JWT_SECRET not configured' },
+                });
+            }
+            const section = (req.body?.section as string) || '';
+            if (!section) {
+                return res.status(400).json({
+                    error: { code: 'VALIDATION', message: 'section is required' },
+                });
+            }
+            const days = Math.min(30, Math.max(1, Number(req.body?.expiresInDays) || 7));
+            const now = Math.floor(Date.now() / 1000);
+            const token = jwt.sign(
+                {
+                    courseId: req.params.courseId,
+                    section,
+                    studentId: req.body?.studentId,
+                    metric: req.body?.metric,
+                    iat: now,
+                    exp: now + days * 86400,
+                },
+                secret
+            );
+            res.json({
+                success: true,
+                data: {
+                    token,
+                    url: `/analytics/shared/${token}`,
+                    expiresAt: new Date((now + days * 86400) * 1000).toISOString(),
+                },
+            });
+        } catch (error) {
+            next(error);
+        }
+    }
+
+    /**
+     * GET /api/analytics/shared/:token — akses PUBLIK (tanpa login) ke laporan berbagi.
+     */
+    static async getSharedReport(req: Request, res: Response, next: NextFunction) {
+        try {
+            const secret = process.env.JWT_SECRET;
+            type SharedPayload = { courseId?: string; section?: string; exp?: number };
+            let payload: SharedPayload | null = null;
+            try {
+                payload = jwt.verify(req.params.token, secret || '') as SharedPayload;
+            } catch {
+                return res.status(404).json({
+                    error: { code: 'NOT_FOUND', message: 'Shared report not found or expired' },
+                });
+            }
+            if (!payload?.courseId) {
+                return res.status(404).json({
+                    error: { code: 'NOT_FOUND', message: 'Shared report not found or expired' },
+                });
+            }
+            const result = (await AnalyticsService.getCourseAnalytics(payload.courseId, undefined)) as {
+                course?: unknown;
+                summary?: unknown;
+                groups?: unknown[];
+            };
+            res.json({
+                success: true,
+                data: {
+                    section: payload.section || 'overview',
+                    expiresAt: payload.exp ? new Date(payload.exp * 1000).toISOString() : null,
+                    generatedAt: new Date().toISOString(),
+                    course: result.course ?? null,
+                    summary: result.summary ?? null,
+                    groups: result.groups ?? [],
+                },
+            });
         } catch (error) {
             next(error);
         }
