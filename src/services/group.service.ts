@@ -260,8 +260,10 @@ export class GroupService {
      * Join a group by join code
      */
     static async joinGroupByCode(joinCode: string, userId: string) {
-        const group = await prisma.group.findUnique({
-            where: { joinCode },
+        // deletedAt wajib difilter: kode grup lama tidak boleh bisa dipakai
+        // menyusup ke grup yang sudah soft-delete (temuan E2E 2026-10-06).
+        const group = await prisma.group.findFirst({
+            where: { joinCode, deletedAt: null },
             include: {
                 course: true,
                 members: true,
@@ -317,8 +319,8 @@ export class GroupService {
      * Invite members to a group (by group member or lecturer)
      */
     static async inviteMembers(groupId: string, memberIds: string[], userId: string, userRole: string) {
-        const group = await prisma.group.findUnique({
-            where: { id: groupId },
+        const group = await prisma.group.findFirst({
+            where: { id: groupId, deletedAt: null },
             include: {
                 course: true,
                 members: true,
@@ -485,8 +487,8 @@ export class GroupService {
      * Get group by ID with full details
      */
     static async getGroupById(groupId: string) {
-        const group = await prisma.group.findUnique({
-            where: { id: groupId },
+        const group = await prisma.group.findFirst({
+            where: { id: groupId, deletedAt: null },
             include: {
                 course: {
                     select: { id: true, code: true, name: true, ownerId: true },

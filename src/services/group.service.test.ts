@@ -230,7 +230,7 @@ describe('GroupService', () => {
     });
 
     it('rejects join by code when the group has reached the course maximum', async () => {
-        prismaMock.group.findUnique.mockResolvedValue({
+        prismaMock.group.findFirst.mockResolvedValue({
             id: 'group-1',
             courseId: 'course-1',
             course: { id: 'course-1', maxMembersPerGroup: 2 },
@@ -246,7 +246,7 @@ describe('GroupService', () => {
     });
 
     it('invites members when requested by a student group member', async () => {
-        prismaMock.group.findUnique.mockResolvedValue({
+        prismaMock.group.findFirst.mockResolvedValue({
             id: 'group-1',
             courseId: 'course-1',
             course: { ownerId: 'lecturer-1' },
@@ -266,7 +266,7 @@ describe('GroupService', () => {
     });
 
     it('rejects invite when adding members would exceed the course maximum', async () => {
-        prismaMock.group.findUnique.mockResolvedValue({
+        prismaMock.group.findFirst.mockResolvedValue({
             id: 'group-1',
             courseId: 'course-1',
             course: { ownerId: 'lecturer-1', maxMembersPerGroup: 3 },

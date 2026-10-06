@@ -1,5 +1,6 @@
 import { Request, Response, NextFunction } from 'express';
 import { AuthService } from '../services/auth.service.js';
+import { UserService } from '../services/user.service.js';
 import { AuthenticatedRequest } from '../middleware/auth.js';
 import { ApiError } from '../middleware/errorHandler.js';
 
@@ -108,6 +109,29 @@ export class AuthController {
 
             res.json({
                 data: user,
+            });
+        } catch (error) {
+            next(error);
+        }
+    }
+
+    /**
+     * PUT /api/users/me
+     * Perbarui profil milik sendiri (nama/email) untuk role apa pun.
+     */
+    static async updateProfile(req: AuthenticatedRequest, res: Response, next: NextFunction) {
+        try {
+            if (!req.user) {
+                return res.status(401).json({
+                    error: { code: 'UNAUTHORIZED', message: 'Not authenticated' },
+                });
+            }
+
+            const user = await UserService.updateUser(req.user.userId, req.body, req.user.userId);
+
+            res.json({
+                data: user,
+                meta: { message: 'Profil berhasil diperbarui' },
             });
         } catch (error) {
             next(error);

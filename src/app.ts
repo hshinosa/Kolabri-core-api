@@ -102,6 +102,9 @@ app.use('/api/chat', chatRoutes);
 app.use('/api/discussion-direction', discussionDirectionRoutes);
 app.use('/api/lecturer/discussion-health', discussionHealthRoutes);
 app.use('/api/analytics', analyticsRoutes);
+// /api/users: dipakai client-app untuk profil diri (PUT /api/users/me).
+// Endpoint admin di router yang sama tetap terkunci checkRole(['admin']).
+app.use('/api/users', userRoutes);
 app.use('/api/admin/users', userRoutes);
 app.use('/api/admin/dashboard', dashboardRoutes);
 app.use('/api/admin/courses', courseAdminRoutes);

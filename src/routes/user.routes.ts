@@ -1,6 +1,7 @@
 import { Router } from 'express';
 import multer from 'multer';
 import { z } from 'zod';
+import { AuthController } from '../controllers/auth.controller.js';
 import { UserController } from '../controllers/user.controller.js';
 import { AdminUserController } from '../controllers/admin-user.controller.js';
 import { verifyToken, checkRole } from '../middleware/auth.js';
@@ -37,6 +38,15 @@ const idSchema = z.object({
 });
 
 router.use(verifyToken);
+
+// Profil diri sendiri — boleh untuk semua role (client-app ProfileController PUT /api/users/me).
+// HARUS sebelum checkRole(['admin']) di bawah.
+router.put(
+    '/me',
+    validateBody(updateUserSchema),
+    AuthController.updateProfile
+);
+
 router.use(checkRole(['admin']));
 router.use(rateLimiter);
 
