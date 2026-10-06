@@ -1,3 +1,4 @@
+import mongoose from 'mongoose';
 import prisma from '../config/database.js';
 import { ApiError } from '../middleware/errorHandler.js';
 import { ChatLog } from '../models/ChatLog.js';
@@ -6,6 +7,74 @@ import { aiEngineService } from './aiEngine.service.js';
 import { Parser } from 'json2csv';
 
 export class AnalyticsService {
+    /**
+     * Distribusi fase SRL Zimmerman (forethought/performance/reflection) untuk
+     * kasus-kasus percakapan tertentu. Sumber: koleksi `activity_logs` yang
+     * ditulis ai-engine per pesan mahasiswa (Attributes.srl_phase & kawan-kawan).
+     * CaseID format ai-engine: `<groupId>_session_<sessionDiscussionId>`.
+     */
+    static async getSrlDistribution(caseIds: string[]) {
+        if (caseIds.length === 0) return null;
+        try {
+            const db = mongoose.connection.db;
+            if (!db) return null;
+            const col = db.collection('activity_logs');
+
+            const phaseRows = await col
+                .aggregate([
+                    { $match: { CaseID: { $in: caseIds }, Activity: 'Student_Message', 'Attributes.srl_phase': { $ne: null } } },
+                    { $group: { _id: '$Attributes.srl_phase', count: { $sum: 1 }, avgConf: { $avg: '$Attributes.srl_confidence' } } },
+                ])
+                .toArray();
+            if (phaseRows.length === 0) return null;
+
+            const distribution = { forethought: 0, performance: 0, reflection: 0 };
+            let total = 0;
+            let confSum = 0;
+            for (const row of phaseRows) {
+                const key = String(row._id);
+                const count = row.count || 0;
+                if (key in distribution) distribution[key as keyof typeof distribution] = count;
+                total += count;
+                confSum += (row.avgConf || 0) * count;
+            }
+
+            const subRows = await col
+                .aggregate([
+                    { $match: { CaseID: { $in: caseIds }, Activity: 'Student_Message', 'Attributes.srl_sub_phase': { $ne: null } } },
+                    { $group: { _id: '$Attributes.srl_sub_phase', count: { $sum: 1 } } },
+                ])
+                .toArray();
+            const subPhases: Record<string, number> = {};
+            for (const row of subRows) subPhases[String(row._id)] = row.count || 0;
+
+            const recentRows = await col
+                .find(
+                    { CaseID: { $in: caseIds }, Activity: 'Student_Message', 'Attributes.srl_phase': { $ne: null } },
+                    { projection: { Timestamp: 1, 'Attributes.srl_phase': 1, 'Attributes.srl_sub_phase': 1, 'Attributes.srl_confidence': 1, 'Attributes.original_text': 1 } },
+                )
+                .sort({ Timestamp: -1 })
+                .limit(3)
+                .toArray();
+
+            return {
+                distribution,
+                total,
+                avgConfidence: total > 0 ? Math.round((confSum / total) * 100) / 100 : null,
+                subPhases,
+                recent: recentRows.map((r) => ({
+                    phase: (r.Attributes as any)?.srl_phase ?? null,
+                    subPhase: (r.Attributes as any)?.srl_sub_phase ?? null,
+                    confidence: (r.Attributes as any)?.srl_confidence ?? null,
+                    at: r.Timestamp,
+                    text: String((r.Attributes as any)?.original_text ?? '').substring(0, 80),
+                })),
+            };
+        } catch {
+            return null;
+        }
+    }
+
     static async getGroupAnalytics(groupId: string, userId: string | undefined, role: string | undefined) {
         const group = await prisma.group.findFirst({
             where: { id: groupId, deletedAt: null },
@@ -27,6 +96,9 @@ export class AnalyticsService {
         const chatAnalytics = await chatAnalyticsService.getGroupAnalytics(groupId);
         const recentMessages = await ChatLog.find({ groupId, deletedAt: null })
             .sort({ createdAt: -1 }).limit(20).lean();
+        const srl = await this.getSrlDistribution(
+            group.sessionDiscussions.map((cs) => `${groupId}_session_${cs.id}`),
+        );
 
         return {
             success: true,
@@ -58,6 +130,7 @@ export class AnalyticsService {
                 local_message_count: chatAnalytics.messageCount,
                 participants: chatAnalytics.participants,
                 participantCount: chatAnalytics.participantCount,
+                srl,
             },
             recentActivity: recentMessages.map((msg) => ({
                 id: msg._id?.toString(),
@@ -110,6 +183,10 @@ export class AnalyticsService {
             : null;
         const groupsNeedingAttention = groupAnalytics.filter((g) => g.needsAttention && g.messageCount > 0).length;
         const trends = await this.getCourseTrends(courseId);
+        const courseCaseIds = course.groups.flatMap((g) =>
+            g.sessionDiscussions.map((sd) => `${g.id}_session_${sd.id}`),
+        );
+        const srl = await this.getSrlDistribution(courseCaseIds);
 
         return {
             success: true,
@@ -122,6 +199,7 @@ export class AnalyticsService {
             },
             groups: groupAnalytics,
             trends,
+            srl,
         };
     }
 
@@ -510,6 +588,9 @@ export class AnalyticsService {
                 reflectionsCount: sessionDiscussion.reflections.length,
             },
             participantStats,
+            srl: await this.getSrlDistribution([
+                `${sessionDiscussion.group.id}_session_${sessionDiscussion.id}`,
+            ]),
             groupAnalytics: {
                 qualityScore: analytics.qualityScore,
                 recommendation: analytics.recommendation,

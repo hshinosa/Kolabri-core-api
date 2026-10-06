@@ -320,6 +320,34 @@ export class AIEngineService {
         );
     }
 
+    /**
+     * Klasifikasi fase SRL Zimmerman untuk pesan diskusi biasa (non-@ai).
+     * Dipanggil fire-and-forget dari socket — kegagalan tidak boleh
+     * memengaruhi pengiriman chat. Klasifikasi + logging (bila ada sinyal)
+     * dilakukan ai-engine di POST /api/srl/classify.
+     */
+    async classifySrl(payload: {
+        message: string;
+        group_id: string;
+        chat_room_id: string;
+        user_id: string;
+        topic?: string;
+    }): Promise<void> {
+        try {
+            await this.fetchWithTimeout(
+                `${this.baseUrl}/api/srl/classify`,
+                {
+                    method: 'POST',
+                    headers: this.getHeaders(),
+                    body: JSON.stringify(payload),
+                },
+                ANALYTICS_TIMEOUT
+            );
+        } catch (error) {
+            logger.debug('SRL classification skipped:', sanitizeErrorForLog(error));
+        }
+    }
+
     private async fetchWithTimeout(
         url: string,
         options: RequestInit,

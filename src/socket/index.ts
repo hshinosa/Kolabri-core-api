@@ -581,6 +581,18 @@ export function initSocketIO(server: HttpServer): Server {
 
                 if (safeContent.toLowerCase().includes('@ai')) {
                     handleAIQuestion(sessionDiscussionId, authoritativeCourseId, authoritativeGroupId, sessionDiscussionId, safeContent, user.id);
+                } else {
+                    // SRL Zimmerman: klasifikasi pesan biasa supaya analitik dosen
+                    // (forethought/performance/reflection) tidak hanya berisi pesan @ai.
+                    // Fire-and-forget — tidak menambah latensi chat.
+                    aiEngineService.classifySrl({
+                        message: safeContent,
+                        group_id: authoritativeGroupId,
+                        chat_room_id: sessionDiscussionId,
+                        user_id: user.id,
+                    }).catch((err) => {
+                        logger.debug('SRL classify fire-and-forget failed:', err instanceof Error ? err.message : err);
+                    });
                 }
 
                 // Check discussion quality and intervene if needed (async, non-blocking)
