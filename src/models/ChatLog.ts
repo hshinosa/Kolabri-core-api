@@ -34,6 +34,7 @@ export interface IChatLog extends Document {
     content: string;
     isIntervention: boolean;
     deletedAt?: Date;
+    editedAt?: Date | null;
     version: number;
     replyTo?: IReplyTo;
     attachments: IAttachment[];
@@ -108,6 +109,7 @@ const ChatLogSchema = new Schema<IChatLog>(
         content: { type: String, default: '' },
         isIntervention: { type: Boolean, default: false },
         deletedAt: { type: Date, default: null },
+        editedAt: { type: Date, default: null },
         version: { type: Number, default: 0 },
         replyTo: { type: ReplyToSchema, required: false },
         attachments: { type: [AttachmentSchema], default: [] },

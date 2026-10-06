@@ -43,10 +43,43 @@ export const typingSchema = z.object({
     isTyping: z.boolean(),
 });
 
-export const deleteMessageSchema = z.object({
-    messageId: z.string().min(1, 'Message ID is required'),
-    roomId: z.string().min(1, 'Room ID is required'),
-});
+interface RoomPayload {
+    roomId?: string;
+    sessionDiscussionId?: string;
+}
+
+export const deleteMessageSchema = z
+    .object({
+        messageId: z.string().min(1, 'Message ID is required'),
+        roomId: z.string().min(1, 'Room ID is required').optional(),
+        // Older clients send the room as `sessionDiscussionId`; accept both so a
+        // payload rename cannot silently disable deletion again.
+        sessionDiscussionId: z.string().min(1, 'Room ID is required').optional(),
+    })
+    .refine((data: RoomPayload) => Boolean(data.roomId ?? data.sessionDiscussionId), {
+        message: 'Room ID is required',
+        path: ['roomId'],
+    });
+
+export const editMessageSchema = z
+    .object({
+        messageId: z.string().min(1, 'Message ID is required'),
+        content: z
+            .string()
+            .min(1, 'Message content is required')
+            .max(10000, 'Message too long'),
+        roomId: z.string().min(1, 'Room ID is required').optional(),
+        sessionDiscussionId: z.string().min(1, 'Room ID is required').optional(),
+    })
+    .refine((data: RoomPayload) => Boolean(data.roomId ?? data.sessionDiscussionId), {
+        message: 'Room ID is required',
+        path: ['roomId'],
+    });
+
+/** Resolve the room id from either payload spelling. */
+export function resolveRoomId(data: RoomPayload): string {
+    return data.roomId ?? data.sessionDiscussionId ?? '';
+}
 
 export const loadMoreMessagesSchema = z.object({
     sessionDiscussionId: z.string().uuid('Invalid session discussion ID'),

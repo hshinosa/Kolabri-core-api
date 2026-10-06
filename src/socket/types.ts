@@ -18,6 +18,7 @@ export interface ChatHistoryItem {
     content: string;
     isIntervention: boolean;
     deletedAt?: Date;
+    editedAt?: Date | null;
     replyTo?: IReplyTo;
     attachments: IAttachment[];
     mentions: string[];

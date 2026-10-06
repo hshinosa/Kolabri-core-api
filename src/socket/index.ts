@@ -25,7 +25,7 @@ import { joinRoomSchema, sendMessageSchema, typingSchema, deleteMessageSchema, l
 const silenceTimers = new Map<string, NodeJS.Timeout>();
 import { SILENCE_TIMEOUT_MS, INTERVENTION_COOLDOWN_MS, MESSAGES_BEFORE_CHECK, incrementMessageCount, shouldRunQualityCheck, tryAcquireSilenceLock } from './interventionGate.js';
 import { registerPresence, trackUserInRoom, listUsersInRoom } from './presence.js';
-import { registerDeleteMessage } from './messages.js';
+import { registerDeleteMessage, registerEditMessage } from './messages.js';
 import { runSilenceIntervention } from './interventions.js';
 import { isStagedEscalationEnabled, findOrCreateState, advanceStage, shouldNotifyLecturer, markNotificationSent } from '../services/escalation.service.js';
 import type { StreamEvent, OrchestrationResponse } from '../services/aiEngine.service.js';
@@ -311,6 +311,7 @@ export function initSocketIO(server: HttpServer): Server {
                     scaffoldingLevel: msg.scaffoldingLevel ?? undefined,
                     isRelevant: msg.isRelevant ?? undefined,
                     citations: msg.citations?.length ? msg.citations : undefined,
+                    editedAt: msg.editedAt ? msg.editedAt.toISOString() : null,
                     createdAt: msg.createdAt.toISOString(),
                 }));
 
@@ -695,6 +696,7 @@ export function initSocketIO(server: HttpServer): Server {
                     scaffoldingLevel: msg.scaffoldingLevel ?? undefined,
                     isRelevant: msg.isRelevant ?? undefined,
                     citations: msg.citations?.length ? msg.citations : undefined,
+                    editedAt: msg.editedAt ? msg.editedAt.toISOString() : null,
                     createdAt: msg.createdAt.toISOString(),
                 }));
 
@@ -710,6 +712,7 @@ export function initSocketIO(server: HttpServer): Server {
 
         // Delete message (only own messages)
         registerDeleteMessage(io, socket);
+        registerEditMessage(io, socket);
 
         socket.on('pin_message', async (data: {
             messageId: string;

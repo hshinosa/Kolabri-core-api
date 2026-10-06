@@ -9,6 +9,7 @@ const EVENT_LIMITS: Record<string, EventLimit> = {
     typing:         { maxRequests: 30, windowMs: 10000 },
     leave_room:     { maxRequests: 10, windowMs: 60000 },
     delete_message: { maxRequests: 20, windowMs: 60000 },
+    edit_message:   { maxRequests: 20, windowMs: 60000 },
     load_more_messages: { maxRequests: 20, windowMs: 60000 },
 };
 
