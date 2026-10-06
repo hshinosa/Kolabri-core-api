@@ -17,6 +17,7 @@ const BATCH_INGEST_TIMEOUT = 120000;
 const ANALYTICS_TIMEOUT = 15000;
 const INTERVENTION_TIMEOUT = 20000;
 const HEALTH_TIMEOUT = 5000;
+const STREAM_TIMEOUT = 120000; // harus > cold-start reranker (~45s) + LLM pertama
 const DELETE_TIMEOUT = 10000;
 
 // Types
@@ -845,11 +846,14 @@ export class AIEngineService {
      */
     async *orchestratedChatStream(request: OrchestrationRequest): AsyncGenerator<StreamEvent> {
         try {
+            // Headers stream bisa tertahan sampai engine selesai warm-up reranker
+            // (~45 detik setelah restart) — LLM_TIMEOUT 30s membatalkan @ai
+            // pertama pasca-restart (bug E2E 2026-10-06: citations kosong).
             const response = await this.fetchWithTimeout(`${this.baseUrl}/api/chat/stream`, {
                 method: 'POST',
                 headers: this.getHeaders(),
                 body: JSON.stringify(request),
-            }, LLM_TIMEOUT);
+            }, STREAM_TIMEOUT);
 
             if (!response.ok) {
                 throw new Error(`AI Engine stream responded with ${response.status}`);
