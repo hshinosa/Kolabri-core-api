@@ -484,4 +484,76 @@ export class CourseService {
             enrolledAt: e.enrolledAt,
         }));
     }
+
+    /**
+     * GET /api/courses/:id/sessions — lecturer-only per-session overview.
+     * Feeds the lecturer "Sesi & Analisis" tab: every discussion session in the
+     * course with group/week context, goal, summary presence and counts.
+     * Detailed analysis (quality score, recommendation, timeline, ringkasan text)
+     * is served separately per session by /api/analytics/session-discussion/:id
+     * and /api/session-discussions/:id/summary.
+     */
+    static async listSessionsForLecturer(courseId: string, userId: string) {
+        const course = await prisma.course.findUnique({
+            where: { id: courseId },
+        });
+
+        if (!course) {
+            throw ApiError.notFound('Course not found');
+        }
+        if (course.ownerId !== userId) {
+            throw ApiError.forbidden('You do not own this course');
+        }
+
+        const sessions = await prisma.sessionDiscussion.findMany({
+            where: { deletedAt: null, group: { courseId } },
+            include: {
+                group: {
+                    select: {
+                        id: true,
+                        name: true,
+                        _count: { select: { members: true } },
+                    },
+                },
+                goals: {
+                    orderBy: { createdAt: 'desc' },
+                    take: 1,
+                    select: { content: true, createdAt: true },
+                },
+                _count: { select: { reflections: true } },
+            },
+            orderBy: { createdAt: 'desc' },
+        });
+
+        const weekIds = [...new Set(sessions.map((s) => s.weekId).filter(Boolean))] as string[];
+        const weeks = weekIds.length
+            ? await prisma.courseWeek.findMany({
+                  where: { id: { in: weekIds } },
+                  select: { id: true, weekIndex: true, title: true },
+              })
+            : [];
+        const weekMap = new Map(weeks.map((w) => [w.id, w]));
+
+        return sessions.map((s) => {
+            const week = s.weekId ? weekMap.get(s.weekId) : undefined;
+            return {
+                id: s.id,
+                name: s.name,
+                description: s.description,
+                groupId: s.group.id,
+                groupName: s.group.name,
+                membersCount: s.group._count.members,
+                weekId: s.weekId,
+                weekIndex: week?.weekIndex ?? null,
+                weekTitle: week?.title ?? null,
+                createdAt: s.createdAt,
+                closedAt: s.closedAt,
+                hasGoal: s.goals.length > 0,
+                goal: s.goals[0]?.content ?? null,
+                hasSummary: !!s.summary,
+                summaryGeneratedAt: s.summaryGeneratedAt,
+                reflectionsCount: s._count.reflections,
+            };
+        });
+    }
 }

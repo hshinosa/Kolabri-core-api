@@ -94,6 +94,9 @@ router.get('/:id/my-goal', requireStudent, CourseController.getMyGoal);
 router.get('/:id/students', CourseController.getStudents);
 router.get('/:id/messages', CourseController.getMessages);
 
+// Lecturer-only: discussion sessions overview (Sesi & Analisis tab)
+router.get('/:id/sessions', requireLecturer, CourseController.listSessions);
+
 // Course groups (lecturer and students can create/view)
 router.get('/:id/groups', GroupController.getCourseGroups);
 router.post('/:id/groups', validateBody(createGroupSchema), GroupController.createInCourse);

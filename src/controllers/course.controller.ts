@@ -154,6 +154,22 @@ export class CourseController {
     }
 
     /**
+     * GET /api/courses/:id/sessions
+     * Lecturer-only: every discussion session in the course (owner check inside).
+     */
+    static async listSessions(req: AuthenticatedRequest, res: Response, next: NextFunction) {
+        try {
+            const sessions = await CourseService.listSessionsForLecturer(req.params.id, req.user!.userId);
+
+            res.json({
+                data: sessions,
+            });
+        } catch (error) {
+            next(error);
+        }
+    }
+
+    /**
      * POST /api/courses/:id/knowledge-base
      * Upload PDF to knowledge base (lecturer only)
      */
