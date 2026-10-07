@@ -174,6 +174,8 @@ describe("AuthService", () => {
   });
 
   it("rotates refresh tokens: chain refresh works, old token reuse kills session", async () => {
+    // grace dimatikan → jalur reuse murni (kill sesi) diuji di sini
+    process.env.REFRESH_ROTATION_GRACE_SECONDS = "0";
     prismaMock.user.findFirst.mockResolvedValue({
       id: "user-1",
       email: "alya@example.com",
@@ -218,6 +220,42 @@ describe("AuthService", () => {
     expect(await isRevokedBefore("user-1", Math.floor(Date.now() / 1000))).toBe(
       true,
     );
+    delete process.env.REFRESH_ROTATION_GRACE_SECONDS;
+  });
+
+  it("parallel refresh within grace window does NOT kill the session (F3)", async () => {
+    process.env.REFRESH_ROTATION_GRACE_SECONDS = "10";
+    prismaMock.user.findFirst.mockResolvedValue({
+      id: "user-1",
+      email: "alya@example.com",
+      role: "student",
+      isActive: true,
+      password: "stored-hash",
+    });
+    bcryptMock.compare.mockResolvedValue(true);
+
+    const login = await AuthService.login({
+      email: "alya@example.com",
+      password: "secret123",
+    });
+    const originalRefresh = login.refreshToken;
+
+    // rotasi pertama (pemenang race paralel)
+    const first = await AuthService.refreshAccessToken(originalRefresh);
+
+    // permintaan PARALEL kedua masih memegang token lama → grace window:
+    // tidak dianggap reuse, sesi tetap hidup
+    const parallel = await AuthService.refreshAccessToken(originalRefresh);
+    expect(parallel.accessToken).toBeDefined();
+    expect(parallel.refreshToken).toBe(first.refreshToken); // hasil rotasi yang sama
+
+    // sesi belum mati: refresh dgn token hasil rotasi tetap jalan
+    const next = await AuthService.refreshAccessToken(first.refreshToken);
+    expect(next.accessToken).toBeDefined();
+    expect(await isRevokedBefore("user-1", Math.floor(Date.now() / 1000))).toBe(
+      false,
+    );
+    delete process.env.REFRESH_ROTATION_GRACE_SECONDS;
   });
 
   // ---- H5 (F2): logout mencabut access JWT lama ----

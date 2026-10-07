@@ -19,14 +19,15 @@ const isValidObjectId = (id: string): boolean =>
 // All message routes require auth
 router.use(verifyToken);
 
-// All message routes require chat membership verification.
-// `assertChatMembership` also rejects non-string / non-UUID `conversation_id`
-// (NoSQL operator injection via the extended query parser) before any query
-// reaches MongoDB.
-router.use(assertChatMembership);
+// Semua route pesan memasang `assertChatMembership` PER ROUTE (bukan
+// router.use): middleware route-level masih memiliki `req.params.id`,
+// sehingga `GET /messages/:id` bisa resolve membership dari message tsb
+// (router.use membuat param kosong →400 → F1 regresi M9).
+// Middleware juga menolak `conversation_id` non-string/non-UUID (NoSQL).
 
 router.get(
   "/messages/search",
+  assertChatMembership,
   // Type + length validation: object/array `conversation_id` and oversized `q`
   // are rejected with 400 before reaching the Mongo filter.
   validateQuery(chatSearchQuerySchema),
@@ -69,6 +70,7 @@ router.get(
 
 router.get(
   "/messages/pinned",
+  assertChatMembership,
   validateQuery(chatPinnedQuerySchema),
   async (req, res, next) => {
     try {
@@ -102,7 +104,7 @@ router.get(
   },
 );
 
-router.post("/messages/:id/pin", async (req, res, next) => {
+router.post("/messages/:id/pin", assertChatMembership, async (req, res, next) => {
   try {
     const { id } = req.params;
     if (!isValidObjectId(id))
@@ -140,7 +142,7 @@ router.post("/messages/:id/pin", async (req, res, next) => {
   }
 });
 
-router.post("/messages/:id/unpin", async (req, res, next) => {
+router.post("/messages/:id/unpin", assertChatMembership, async (req, res, next) => {
   try {
     const { id } = req.params;
     if (!isValidObjectId(id))
@@ -162,7 +164,7 @@ router.post("/messages/:id/unpin", async (req, res, next) => {
   }
 });
 
-router.delete("/messages/:id/pin", async (req, res, next) => {
+router.delete("/messages/:id/pin", assertChatMembership, async (req, res, next) => {
   try {
     const { id } = req.params;
     if (!isValidObjectId(id))
@@ -184,7 +186,7 @@ router.delete("/messages/:id/pin", async (req, res, next) => {
   }
 });
 
-router.patch("/messages/:id/topic", async (req, res, next) => {
+router.patch("/messages/:id/topic", assertChatMembership, async (req, res, next) => {
   try {
     const { id } = req.params;
     if (!isValidObjectId(id))
@@ -211,7 +213,7 @@ router.patch("/messages/:id/topic", async (req, res, next) => {
 // M9: fetch a single message (ownership + conversation binding checks).
 // `assertChatMembership` above already resolved membership from the message's
 // REAL conversation, so this endpoint cannot be used to read foreign chats.
-router.get("/messages/:id", async (req, res, next) => {
+router.get("/messages/:id", assertChatMembership, async (req, res, next) => {
   try {
     const { id } = req.params;
     if (!isValidObjectId(id))

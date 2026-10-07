@@ -301,10 +301,11 @@ export function initSocketIO(server: HttpServer): Server {
               }
             }
 
-            // M4: the gate is per user — a goal submitted by another member
-            // must not open this member's gate.
+            // Goal BERSAMA per sesi (satu baris utk seluruh kelompok) —
+            // dulu dipakai per-user tapi model bisnis tidak membuat baris
+            // per anggota, jadi anggota non-pembuat terkunci (regresi F2).
             const goal = await prisma.learningGoal.findFirst({
-              where: { sessionDiscussionId, userId: socket.user.userId },
+              where: { sessionDiscussionId },
               select: { id: true },
             });
             if (!goal) {

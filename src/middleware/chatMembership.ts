@@ -60,6 +60,12 @@ export async function assertChatMembership(
 
     // Case 2: message ID in params (pin, unpin, topic)
     if (!groupId && req.params.id) {
+      // id malformed → 404 bersih (mencegah mongoose CastError → 500)
+      if (!/^[0-9a-fA-F]{24}$/.test(req.params.id)) {
+        return res
+          .status(404)
+          .json({ error: { code: "NOT_FOUND", message: "Message not found" } });
+      }
       const message = await ChatLog.findById(req.params.id)
         .select("groupId sessionDiscussionId")
         .lean();

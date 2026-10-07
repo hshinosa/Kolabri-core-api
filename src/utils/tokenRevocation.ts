@@ -24,6 +24,22 @@ interface LocalEntry {
 const localRevokedBefore = new Map<string, LocalEntry>();
 const localUsedRefreshJti = new Map<string, LocalEntry>();
 
+// Grace window rotasi (F3): hasil rotasi disimpan singkat utk permintaan
+// refresh PARALEL (multi-tab/XHR serentak) — jti lama dalam grace tidak
+// dianggap reuse.
+const localRotatedRefresh = new Map<
+  string,
+  { token: string; expiresAt: number }
+>();
+// Grace default10 dtk; bisa di-set/dimatikan lewat env (0 = langsung anggap
+// reuse penuh) — dipakai test utk menguji kedua jalur.
+export function refreshRotationGraceSeconds(): number {
+  const raw = process.env.REFRESH_ROTATION_GRACE_SECONDS;
+  if (raw === undefined || raw === "") return 10;
+  const v = Number(raw);
+  return Number.isFinite(v) && v >= 0 ? v :10;
+}
+
 export function nowSeconds(): number {
   return Math.floor(Date.now() / 1000);
 }
@@ -152,8 +168,56 @@ export async function isRefreshUsed(jti: string): Promise<boolean> {
   return localRead(localUsedRefreshJti, jti) !== null;
 }
 
+/** Simpan hasil rotasi utk jti lama (grace window —F3). */
+export async function saveRotatedRefresh(
+  oldJti: string,
+  newRefreshToken: string,
+  graceSeconds: number = refreshRotationGraceSeconds(),
+): Promise<void> {
+  if (!oldJti || graceSeconds <= 0) return;
+  const key = `auth:refresh_rotated:${oldJti}`;
+  localRotatedRefresh.set(oldJti, {
+    token: newRefreshToken,
+    expiresAt: Date.now() + graceSeconds * 1000,
+  });
+  const redis = getRedis();
+  if (!redis) return;
+  try {
+    await redis.set(key, newRefreshToken, "EX", graceSeconds);
+  } catch (error) {
+    logger.warn(
+      "tokenRevocation: saveRotatedRefresh redis failed, memory fallback",
+      error as Error,
+    );
+  }
+}
+
+/** Ambil hasil rotasi utk jti lama bila masih dalam grace (F3). */
+export async function getRotatedRefresh(
+  oldJti: string,
+): Promise<string | null> {
+  if (!oldJti) return null;
+  const redis = getRedis();
+  if (redis) {
+    try {
+      const v = await redis.get(`auth:refresh_rotated:${oldJti}`);
+      if (v) return v;
+    } catch (error) {
+      logger.warn(
+        "tokenRevocation: getRotatedRefresh redis failed, memory fallback",
+        error as Error,
+      );
+    }
+  }
+  const entry = localRotatedRefresh.get(oldJti);
+  if (entry && entry.expiresAt > Date.now()) return entry.token;
+  if (entry) localRotatedRefresh.delete(oldJti);
+  return null;
+}
+
 /** Bersihkan state in-process (khusus unit test). */
 export function _resetTokenRevocationForTests(): void {
   localRevokedBefore.clear();
   localUsedRefreshJti.clear();
+  localRotatedRefresh.clear();
 }

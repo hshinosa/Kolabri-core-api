@@ -8,10 +8,12 @@ import { JwtPayload } from "../middleware/auth.js";
 import { getRedis } from "../config/redis.js";
 import {
   getRevokedBefore,
+  getRotatedRefresh,
   isRefreshUsed,
   isRevokedBefore,
   markRefreshUsed,
   nowSeconds,
+  saveRotatedRefresh,
   setRevokedBefore,
 } from "../utils/tokenRevocation.js";
 
@@ -277,6 +279,27 @@ export class AuthService {
         userId?: string;
       } | null;
       if (unverified?.jti && (await isRefreshUsed(unverified.jti))) {
+        // F3: permintaan refresh PARALEL (multi-tab / XHR serentak) memakai
+        // jti yang sama dalam grace window singkat — bukan pencurian.
+        const graceToken = await getRotatedRefresh(unverified.jti);
+        if (graceToken) {
+          try {
+            const g = jwt.verify(
+              refreshToken,
+              secret,
+            ) as RefreshTokenPayload;
+            if (g.type === "refresh" && g.userId) {
+              const access = this.generateAccessToken({
+                userId: g.userId,
+                email: g.email,
+                role: g.role,
+              });
+              return { accessToken: access, refreshToken: graceToken };
+            }
+          } catch {
+            // token rusak → jatuh ke jalur reuse asli di bawah
+          }
+        }
         if (unverified.userId) {
           await setRevokedBefore(unverified.userId);
         }
@@ -327,6 +350,11 @@ export class AuthService {
         email: decoded.email,
         role: decoded.role,
       });
+
+      // F3: simpan hasil rotasi singkat utk permintaan paralel dgn jti lama
+      if (decoded.jti) {
+        await saveRotatedRefresh(decoded.jti, newRefreshToken);
+      }
 
       return {
         accessToken: newAccessToken,
