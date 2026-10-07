@@ -16,11 +16,16 @@ const EVENT_LIMITS: Record<string, EventLimit> = {
 const VIOLATION_WINDOW_MS = 60000;
 const DISCONNECT_THRESHOLD = 3;
 
+// Matikan sementara (env SOCKET_RATE_LIMIT=0): semua event socket lolos tanpa
+// dibatasi — dipakai saat menonaktifkan anti-spam untuk penggunaan internal.
+const SOCKET_RATE_LIMIT_ENABLED = process.env.SOCKET_RATE_LIMIT !== "0";
+
 export class SocketRateLimiter {
     private timestamps = new Map<string, Map<string, number[]>>();
     private violations = new Map<string, number[]>();
 
     isAllowed(socketId: string, event: string): boolean {
+        if (!SOCKET_RATE_LIMIT_ENABLED) return true;
         const limit = EVENT_LIMITS[event];
         if (!limit) return true;
 
@@ -44,6 +49,7 @@ export class SocketRateLimiter {
     }
 
     getRetryAfter(socketId: string, event: string): number {
+        if (!SOCKET_RATE_LIMIT_ENABLED) return 0;
         const limit = EVENT_LIMITS[event];
         if (!limit) return 0;
 

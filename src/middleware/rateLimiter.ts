@@ -15,10 +15,15 @@ function buildStore(prefix: string): Options['store'] | undefined {
     } as unknown as ConstructorParameters<typeof RedisStore>[0]) as unknown as Options['store'];
 }
 
+// Matikan sementara (env RATE_LIMIT_DISABLED=1): semua request dilewati tanpa
+// dibatasi — rate limit global dimatikan sementara untuk penggunaan internal.
+const RATE_LIMIT_DISABLED = process.env.RATE_LIMIT_DISABLED === "1";
+
 export const rateLimiter = rateLimit({
     windowMs: Number(process.env.RATE_LIMIT_WINDOW_MS) || 15 * 60 * 1000,
     max: () => Number(process.env.RATE_LIMIT_MAX_REQUESTS) || 100,
     store: buildStore('general'),
+    skip: () => RATE_LIMIT_DISABLED,
     keyGenerator: (req) => {
         const authReq = req as AuthenticatedRequest;
         return authReq.user?.userId || req.ip || 'anonymous';
