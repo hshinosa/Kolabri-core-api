@@ -163,19 +163,25 @@ describe('AiChatController', () => {
                 },
             },
         });
-        const req = mockReq({ params: { id: 'chat-1' }, body: { content: 'Hi there' } });
+        const req = mockReq({
+            params: { id: 'chat-1' },
+            body: { content: 'Hi there', week_index: 3, focus_course_id: 'course-1' },
+        });
         const res = mockRes();
         const next = mockNext();
 
         await AiChatController.streamMessage(req as Request, res as Response, next);
 
         expect(mockAiChatService.addMessage).toHaveBeenNthCalledWith(1, 'chat-1', 'user-1', 'user', 'Hi there');
+        // week_index + focus_course_id diteruskan ke engine (fokus materi per-minggu)
         expect(mockAiEngineService.personalChatStream).toHaveBeenCalledWith(
             'Hi there',
             [{ role: 'assistant', content: 'Previous answer' }],
             'Alice',
             undefined,
             ['course-1'],
+            3,
+            'course-1',
         );
         expect(mockAiChatService.addMessage).toHaveBeenNthCalledWith(2, 'chat-1', 'user-1', 'assistant', 'Hello', undefined);
         expect(res.setHeader).toHaveBeenCalledWith('Content-Type', 'text/event-stream');
@@ -242,7 +248,15 @@ describe('AiChatController', () => {
 
         await AiChatController.streamMessage(req as Request, res as Response, next);
 
-        expect(mockAiEngineService.personalChatStream).toHaveBeenCalledWith('Hi there', [], 'Alice', undefined, []);
+        expect(mockAiEngineService.personalChatStream).toHaveBeenCalledWith(
+            'Hi there',
+            [],
+            'Alice',
+            undefined,
+            [],
+            undefined,
+            undefined,
+        );
         expect(mockAiChatService.addMessage).toHaveBeenNthCalledWith(2, 'chat-1', 'user-1', 'assistant', fallbackText);
         expect(res.write).toHaveBeenCalledWith(`data: ${JSON.stringify({ content: fallbackText })}\n\n`);
         expect(res.write).toHaveBeenCalledWith('data: [DONE]\n\n');

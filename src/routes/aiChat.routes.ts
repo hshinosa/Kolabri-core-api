@@ -13,6 +13,9 @@ const createChatSchema = z.object({
 
 const sendMessageSchema = z.object({
     content: z.string().min(1).max(10000),
+    // Fokus materi per-minggu (opsional) — di-forward ke engine personal chat
+    week_index: z.number().int().min(1).max(60).optional(),
+    focus_course_id: z.string().max(64).optional(),
 });
 
 const updateTitleSchema = z.object({

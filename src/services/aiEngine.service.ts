@@ -818,6 +818,8 @@ export class AIEngineService {
         userName?: string,
         providerContext?: ProviderContextV1,
         courseIds: string[] = [],
+        weekIndex?: number,
+        focusCourseId?: string,
     ): Promise<globalThis.Response> {
         return await this.resilient(() => this.fetchWithTimeout(
             `${this.baseUrl}/api/chat/personal/stream`,
@@ -830,6 +832,8 @@ export class AIEngineService {
                     user_name: userName,
                     provider_context: providerContext,
                     course_ids: courseIds,
+                    week_index: weekIndex ?? null,
+                    focus_course_id: focusCourseId ?? null,
                 }),
             },
             LLM_TIMEOUT

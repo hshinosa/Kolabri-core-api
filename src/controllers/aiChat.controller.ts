@@ -137,7 +137,7 @@ export class AiChatController {
 
     static async streamMessage(req: AuthenticatedRequest, res: Response, next: NextFunction) {
         try {
-            const { content } = req.body;
+            const { content, week_index, focus_course_id } = req.body;
             const userId = req.user!.userId;
             const chatId = req.params.id;
 
@@ -174,6 +174,8 @@ export class AiChatController {
                 chat?.userName ?? undefined,
                 undefined,
                 courseIds,
+                week_index,
+                focus_course_id,
             );
 
             if (!streamResp.ok || !streamResp.body) {
