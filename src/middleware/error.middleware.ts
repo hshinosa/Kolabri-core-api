@@ -2,6 +2,26 @@ import { Request, Response, NextFunction } from 'express';
 import { logger } from '../utils/logger.js';
 import { v4 as uuidv4 } from 'uuid';
 
+/**
+ * M10: a malformed JSON body used to surface as400 `INTERNAL_ERROR` with the
+ * raw `JSON.parse` message. Map body-parser parse failures to a clean
+ * `VALIDATION_ERROR` instead of leaking the parser internals.
+ */
+function normalizeBodyParseError(err: AppError): AppError | null {
+    const bodyParserErr = err as AppError & { type?: string };
+    const isParseFailure =
+        bodyParserErr.type === 'entity.parse.failed' ||
+        (err instanceof SyntaxError &&
+            ((bodyParserErr as AppError & { status?: number }).status === 400 ||
+                (bodyParserErr as AppError & { statusCode?: number }).statusCode === 400));
+
+    if (isParseFailure) {
+        return new ApiError(400, 'VALIDATION_ERROR', 'Request body is not valid JSON');
+    }
+
+    return null;
+}
+
 function normalizeUploadError(err: AppError): AppError {
     if (err.statusCode) {
         return err;
@@ -114,7 +134,7 @@ export function errorHandler(
     res: Response,
     _next: NextFunction
 ): void {
-    const normalizedError = normalizeUploadError(err);
+    const normalizedError = normalizeBodyParseError(err) ?? normalizeUploadError(err);
     const statusCode = normalizedError.statusCode || 500;
     const code = normalizedError.code || 'INTERNAL_ERROR';
     const requestId = (req as any).requestId || 'unknown';

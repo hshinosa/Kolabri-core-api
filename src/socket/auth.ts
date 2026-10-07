@@ -38,6 +38,13 @@ export async function authMiddleware(socket: Socket, next: NextFn): Promise<void
 
         const decoded = jwt.verify(token as string, secret) as JwtPayload;
 
+        // H3 (F2): token berbagi analytics tanpa klaim identitas tidak boleh
+        // membuka sesi socket — tanpa cek ini prisma mengabaikan id:undefined.
+        if (typeof decoded.userId !== 'string' || decoded.userId.trim() === '') {
+            logger.warn('Socket auth rejected: token missing userId claim');
+            return next(new Error('Invalid token'));
+        }
+
         const user = await prisma.user.findFirst({
             where: { id: decoded.userId, deletedAt: null, isActive: true },
             select: { id: true },

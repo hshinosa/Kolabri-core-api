@@ -99,4 +99,23 @@ describe('authMiddleware', () => {
         expect(next).toHaveBeenCalledWith(expect.any(Error));
         expect((next.mock.calls[0]?.[0] as Error).message).toBe('Authentication required');
     });
+
+    it('rejects share tokens that carry no userId claim', async () => {
+        const next = vi.fn();
+        const socket = {
+            handshake: {
+                auth: { token: 'share-token' },
+                query: {},
+            },
+        };
+        verifyMock.mockReturnValue({ courseId: 'IF203', section: 'overview' });
+
+        await authMiddleware(socket as any, next);
+
+        expect(next).toHaveBeenCalledWith(expect.any(Error));
+        expect((next.mock.calls[0]?.[0] as Error).message).toBe('Invalid token');
+        expect(findFirstMock).not.toHaveBeenCalled();
+        expect(loggerMock.warn).toHaveBeenCalled();
+    });
+
 });

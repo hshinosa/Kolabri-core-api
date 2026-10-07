@@ -1,4 +1,5 @@
 import type { NextFunction, Request, Response } from 'express';
+import jwt from 'jsonwebtoken';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { ApiError } from '../middleware/errorHandler.js';
 import { AnalyticsService } from '../services/analytics.service.js';
@@ -8,6 +9,9 @@ vi.mock('../services/analytics.service.js', () => ({
     AnalyticsService: {
         getGroupAnalytics: vi.fn(),
         getCourseAnalytics: vi.fn(),
+        getStudentBreakdown: vi.fn(),
+        getCourseTrendPoints: vi.fn(),
+        assertCourseOwner: vi.fn(),
         analyzeText: vi.fn(),
         getGroupQualityStatus: vi.fn(),
         getSessionDiscussionAnalytics: vi.fn(),
@@ -155,4 +159,158 @@ describe('AnalyticsController Integration — Flow 6: SRL & Analytics', () => {
 
         expect(next).toHaveBeenCalledWith(expect.objectContaining({ message: 'Group not found' }));
     });
+
+    it('forwards ownership context to getStudentBreakdown (H4)', async () => {
+        vi.mocked(AnalyticsService.getStudentBreakdown).mockResolvedValue({
+            data: [],
+            meta: { total: 0, per_page: 15, current_page: 1, last_page: 0 },
+        } as any);
+
+        const req = mockReq({ params: { courseId: 'IF212' } });
+        const res = mockRes();
+        const next = mockNext();
+
+        await AnalyticsController.getStudentBreakdown(req, res, next);
+
+        expect(AnalyticsService.getStudentBreakdown).toHaveBeenCalledWith(
+            'IF212',
+            expect.objectContaining({ page: 1, perPage: 15 }),
+            'lecturer-1',
+            'lecturer'
+        );
+        expect(next).not.toHaveBeenCalled();
+    });
+
+    it('forwards ownership context to getCourseTrends (H4)', async () => {
+        vi.mocked(AnalyticsService.getCourseTrendPoints).mockResolvedValue({
+            success: true,
+            data: { points: [], metric: 'engagement' },
+        } as any);
+
+        const req = mockReq({ params: { courseId: 'IF212' } });
+        const res = mockRes();
+        const next = mockNext();
+
+        await AnalyticsController.getCourseTrends(req, res, next);
+
+        expect(AnalyticsService.getCourseTrendPoints).toHaveBeenCalledWith(
+            'IF212',
+            'engagement',
+            undefined,
+            undefined,
+            'lecturer-1',
+            'lecturer'
+        );
+        expect(res.json).toHaveBeenCalledWith(expect.objectContaining({ success: true }));
+        expect(next).not.toHaveBeenCalled();
+    });
+
+    it('rejects share-link creation when the lecturer does not own the course (H4/F-05)', async () => {
+        vi.mocked(AnalyticsService.assertCourseOwner).mockRejectedValue(
+            ApiError.forbidden('You do not own this course')
+        );
+
+        const req = mockReq({ params: { courseId: 'IF212' }, body: { section: 'overview' } });
+        const res = mockRes();
+        const next = mockNext();
+
+        await AnalyticsController.generateShareLink(req, res, next);
+
+        expect(AnalyticsService.assertCourseOwner).toHaveBeenCalledWith('IF212', 'lecturer-1', 'lecturer');
+        expect(next).toHaveBeenCalledWith(expect.objectContaining({ message: 'You do not own this course' }));
+        expect(res.json).not.toHaveBeenCalled();
+    });
+
+    it('issues a share token for the course owner (H4/F-05)', async () => {
+        vi.mocked(AnalyticsService.assertCourseOwner).mockResolvedValue(undefined);
+        const previousSecret = process.env.JWT_SECRET;
+        process.env.JWT_SECRET = 'shared-report-secret';
+
+        try {
+            const req = mockReq({ params: { courseId: 'IF203' }, body: { section: 'overview' } });
+            const res = mockRes();
+            const next = mockNext();
+
+            await AnalyticsController.generateShareLink(req, res, next);
+
+            expect(next).not.toHaveBeenCalled();
+            expect(res.json).toHaveBeenCalledWith(expect.objectContaining({ success: true }));
+            const body = (res.json as any).mock.calls[0][0] as { data: { token: string; url: string } };
+            expect(typeof body.data.token).toBe('string');
+            expect(body.data.url).toContain('/analytics/shared/');
+            expect(jwt.verify(body.data.token, 'shared-report-secret')).toMatchObject({
+                courseId: 'IF203',
+                section: 'overview',
+            });
+        } finally {
+            if (previousSecret === undefined) delete process.env.JWT_SECRET;
+            else process.env.JWT_SECRET = previousSecret;
+        }
+    });
+
+    it('serves the public shared report without a session (H3)', async () => {
+        const previousSecret = process.env.JWT_SECRET;
+        process.env.JWT_SECRET = 'shared-report-secret';
+
+        try {
+            const token = jwt.sign(
+                { courseId: 'IF203', section: 'overview' },
+                'shared-report-secret',
+                { expiresIn: '1h' }
+            );
+            vi.mocked(AnalyticsService.getCourseAnalytics).mockResolvedValue({
+                success: true,
+                course: { id: 'IF203', name: 'Algoritma', code: 'IF203' },
+                summary: { totalGroups: 1, totalMessages: 0, averageQualityScore: null, groupsNeedingAttention: 0 },
+                groups: [],
+            } as any);
+
+            const req = mockReq({ params: { token } });
+            delete (req as unknown as { user?: unknown }).user;
+            const res = mockRes();
+            const next = mockNext();
+
+            await AnalyticsController.getSharedReport(req, res, next);
+
+            expect(AnalyticsService.getCourseAnalytics).toHaveBeenCalledWith('IF203', undefined, {
+                skipOwnership: true,
+            });
+            expect(res.json).toHaveBeenCalledWith(
+                expect.objectContaining({
+                    success: true,
+                    data: expect.objectContaining({ section: 'overview' }),
+                })
+            );
+            expect(next).not.toHaveBeenCalled();
+        } finally {
+            if (previousSecret === undefined) delete process.env.JWT_SECRET;
+            else process.env.JWT_SECRET = previousSecret;
+        }
+    });
+
+    it('returns 404 for an invalid shared report token (H3)', async () => {
+        const previousSecret = process.env.JWT_SECRET;
+        process.env.JWT_SECRET = 'shared-report-secret';
+
+        try {
+            const req = mockReq({ params: { token: 'not-a-valid-token' } });
+            delete (req as unknown as { user?: unknown }).user;
+            const res = mockRes();
+            const next = mockNext();
+
+            await AnalyticsController.getSharedReport(req, res, next);
+
+            expect(res.status).toHaveBeenCalledWith(404);
+            expect(res.json).toHaveBeenCalledWith(
+                expect.objectContaining({
+                    error: expect.objectContaining({ code: 'NOT_FOUND' }),
+                })
+            );
+            expect(next).not.toHaveBeenCalled();
+        } finally {
+            if (previousSecret === undefined) delete process.env.JWT_SECRET;
+            else process.env.JWT_SECRET = previousSecret;
+        }
+    });
+
 });

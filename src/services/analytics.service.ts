@@ -153,6 +153,24 @@ export class AnalyticsService {
     }
 
     /**
+     * Cek ownership course sebelum data analitik dibuka (H4 / F-03..F-05).
+     * Pola sama dengan getCourseAnalytics: hanya pemilik course
+     * (ownerId === userId) yang boleh; admin tetap boleh; sisanya 403.
+     * Fail-closed: tanpa userId → dianggap bukan pemilik.
+     */
+    static async assertCourseOwner(courseId: string, userId: string | undefined, role: string | undefined) {
+        const course = await prisma.course.findFirst({
+            where: { id: courseId, deletedAt: null },
+            select: { ownerId: true },
+        });
+        if (!course) throw ApiError.notFound('Course not found');
+        if (role === 'admin') return;
+        if (!userId || course.ownerId !== userId) {
+            throw ApiError.forbidden('You do not own this course');
+        }
+    }
+
+    /**
      * Tren per-hari (engagement/completion/attendance) untuk halaman analitik dosen.
      * Endpoint /analytics/live & /trends sebelumnya 404 (tak pernah diimplement) —
      * diimplement 2026-10-06 dari data chatlogs (Mongo) + sessionDiscussions (PG).
@@ -161,8 +179,13 @@ export class AnalyticsService {
         courseId: string,
         metric: string = 'engagement',
         startDate?: string,
-        endDate?: string
+        endDate?: string,
+        userId?: string,
+        role?: string
     ) {
+        // H4 (F-04): dosen lain tidak boleh membaca tren course yang bukan miliknya
+        await this.assertCourseOwner(courseId, userId, role);
+
         const groups = await prisma.group.findMany({
             where: { courseId, deletedAt: null },
             select: { id: true },
@@ -223,7 +246,11 @@ export class AnalyticsService {
         return { success: true, data: { points, metric } };
     }
 
-    static async getCourseAnalytics(courseId: string, userId: string | undefined) {
+    static async getCourseAnalytics(
+        courseId: string,
+        userId: string | undefined,
+        opts?: { skipOwnership?: boolean }
+    ) {
         const course = await prisma.course.findFirst({
             where: { id: courseId, deletedAt: null },
             include: {
@@ -237,7 +264,10 @@ export class AnalyticsService {
         });
 
         if (!course) throw ApiError.notFound('Course not found');
-        if (course.ownerId !== userId) throw ApiError.forbidden('You do not own this course');
+        // skipOwnership HANYA untuk pembacaan lewat token berbagi (getSharedReport):
+        // otorisasinya adalah token share-nya sendiri (sudah diverifikasi controller,
+        // punya exp & terbatas pada courseId di payload), bukan sesi user.
+        if (!opts?.skipOwnership && course.ownerId !== userId) throw ApiError.forbidden('You do not own this course');
 
         const groupAnalytics = await Promise.all(
             course.groups.map(async (group) => {
@@ -295,8 +325,14 @@ export class AnalyticsService {
             maxScore?: number;
             startDate?: string;
             endDate?: string;
-        }
+        },
+        userId?: string,
+        role?: string
     ) {
+        // H4 (F-03): dosen lain tidak boleh membaca breakdown mahasiswa course
+        // yang bukan miliknya (sebelumnya langsung courseStudent.findMany).
+        await this.assertCourseOwner(courseId, userId, role);
+
         const { page, perPage, sortBy, sortDir, search, minScore, maxScore, startDate, endDate } = options;
 
         const enrollments = await prisma.courseStudent.findMany({

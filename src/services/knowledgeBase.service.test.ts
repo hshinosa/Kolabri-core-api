@@ -51,7 +51,8 @@ describe('KnowledgeBaseService', () => {
                 originalname: 'notes.pdf',
                 mimetype: 'application/pdf',
                 size: 1024,
-                buffer: Buffer.from('pdf-content'),
+                // real PDF magic bytes (content sniffing, M6)
+                buffer: Buffer.from('%PDF-1.4\n1 0 obj\n'),
             },
             'lecturer-1'
         );
@@ -93,6 +94,48 @@ describe('KnowledgeBaseService', () => {
         ).rejects.toMatchObject({
             statusCode: 400,
             message: 'Only PDF files are allowed',
+        });
+    });
+
+    it('rejects an HTML payload disguised as text/plain (F-05)', async () => {
+        prismaMock.course.findUnique.mockResolvedValue({ id: 'course-1', ownerId: 'lecturer-1' });
+
+        await expect(
+            KnowledgeBaseService.uploadBatch(
+                'course-1',
+                [
+                    {
+                        originalname: 'RACE-UJI-batch.txt',
+                        mimetype: 'text/plain',
+                        size: 64,
+                        buffer: Buffer.from('<html><script>alert(document.cookie)</script></html>'),
+                    },
+                ],
+                'lecturer-1'
+            )
+        ).rejects.toMatchObject({
+            statusCode: 400,
+            message: 'No valid files to upload',
+        });
+    });
+
+    it('rejects a single upload whose bytes are not a PDF (F-05)', async () => {
+        prismaMock.course.findUnique.mockResolvedValue({ id: 'course-1', ownerId: 'lecturer-1' });
+
+        await expect(
+            KnowledgeBaseService.uploadFile(
+                'course-1',
+                {
+                    originalname: 'xss.pdf',
+                    mimetype: 'application/pdf',
+                    size: 64,
+                    buffer: Buffer.from('<html><script>alert(1)</script></html>'),
+                },
+                'lecturer-1'
+            )
+        ).rejects.toMatchObject({
+            statusCode: 400,
+            message: 'HTML files are not allowed',
         });
     });
 
@@ -140,8 +183,8 @@ describe('KnowledgeBaseService', () => {
         const result = await KnowledgeBaseService.uploadBatch(
             'course-1',
             [
-                { originalname: 'notes.pdf', mimetype: 'application/pdf', size: 1024, buffer: Buffer.from('pdf') },
-                { originalname: 'diagram.png', mimetype: 'image/png', size: 2048, buffer: Buffer.from('img') },
+                { originalname: 'notes.pdf', mimetype: 'application/pdf', size: 1024, buffer: Buffer.from('%PDF-1.4\n1 0 obj\n') },
+                { originalname: 'diagram.png', mimetype: 'image/png', size: 2048, buffer: Buffer.concat([Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a]), Buffer.from('IHDR')]) },
                 { originalname: 'script.exe', mimetype: 'application/x-msdownload', size: 300, buffer: Buffer.from('bad') },
             ],
             'lecturer-1'

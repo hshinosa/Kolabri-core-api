@@ -42,7 +42,9 @@ export class AnalyticsController {
 
             const result = await AnalyticsService.getStudentBreakdown(
                 req.params.courseId,
-                { page, perPage, sortBy, sortDir, search, minScore, maxScore, startDate, endDate }
+                { page, perPage, sortBy, sortDir, search, minScore, maxScore, startDate, endDate },
+                req.user?.userId,
+                req.user?.role
             );
             res.json(result);
         } catch (error) {
@@ -230,7 +232,9 @@ export class AnalyticsController {
                 req.params.courseId,
                 (req.query.metric as string) || 'engagement',
                 (req.query.startDate as string) || (req.query.start_date as string),
-                (req.query.endDate as string) || (req.query.end_date as string)
+                (req.query.endDate as string) || (req.query.end_date as string),
+                req.user?.userId,
+                req.user?.role
             );
             res.json(result);
         } catch (error) {
@@ -245,6 +249,12 @@ export class AnalyticsController {
      */
     static async generateShareLink(req: Request, res: Response, next: NextFunction) {
         try {
+            // H4 (F-05): tautan share hanya boleh dibuat pemilik course (admin tetap boleh)
+            await AnalyticsService.assertCourseOwner(
+                req.params.courseId,
+                req.user?.userId,
+                req.user?.role
+            );
             const secret = process.env.JWT_SECRET;
             if (!secret) {
                 return res.status(500).json({
@@ -303,7 +313,11 @@ export class AnalyticsController {
                     error: { code: 'NOT_FOUND', message: 'Shared report not found or expired' },
                 });
             }
-            const result = (await AnalyticsService.getCourseAnalytics(payload.courseId, undefined)) as {
+            const result = (await AnalyticsService.getCourseAnalytics(
+                payload.courseId,
+                undefined,
+                { skipOwnership: true }
+            )) as {
                 course?: unknown;
                 summary?: unknown;
                 groups?: unknown[];

@@ -1,4 +1,5 @@
 import prisma from '../config/database.js';
+import { checkBaseUrlSafety } from '../utils/urlGuard.js';
 import { ApiError } from '../middleware/errorHandler.js';
 import { decrypt, encrypt, maskApiKey } from '../utils/encryption.js';
 import { AdminProviderService } from './adminProvider.service.js';
@@ -112,6 +113,9 @@ export class AiProviderService {
     }
 
     static async createProvider(data: CreateAiProviderInput, actorUserId: string) {
+        // SSRF guard (H2): literal + DNS checks before the URL is persisted.
+        await this.assertSafeBaseUrl(data.baseUrl);
+
         const existingProvider = await aiProviderDelegate.findUnique({
             where: { name: data.name },
             select: { id: true },
@@ -166,6 +170,10 @@ export class AiProviderService {
 
         if (!existingProvider) {
             throw ApiError.notFound('AI provider not found');
+        }
+
+        if (data.baseUrl) {
+            await this.assertSafeBaseUrl(data.baseUrl);
         }
 
         const provider = await aiProviderDelegate.update({
@@ -259,6 +267,13 @@ export class AiProviderService {
 
         if (!provider) {
             throw ApiError.notFound('AI provider not found');
+        }
+
+        // SSRF guard (H2): re-validate the stored base URL at use time —
+        // rows written before this fix (or via a future bug) never reach
+        // ai-engine with an internal target.
+        if (provider.baseUrl) {
+            await this.assertSafeBaseUrl(provider.baseUrl);
         }
 
         const apiKey = decrypt(provider.apiKey);
@@ -395,6 +410,21 @@ export class AiProviderService {
         }
 
         return result;
+    }
+
+    /**
+     * SSRF guard (H2): rejects base URLs that are internal by literal checks
+     * or by DNS resolution (anti-rebinding). Throws 400 with the safe reason.
+     */
+    private static async assertSafeBaseUrl(baseUrl?: string | null): Promise<void> {
+        if (!baseUrl) {
+            return;
+        }
+
+        const reason = await checkBaseUrlSafety(baseUrl);
+        if (reason) {
+            throw ApiError.badRequest('Invalid base URL', { reason });
+        }
     }
 
     private static serializeProvider(provider: AiProviderEntity) {

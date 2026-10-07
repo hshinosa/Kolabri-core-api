@@ -229,6 +229,31 @@ describe('GroupService', () => {
         });
     });
 
+    it('maps a lost join race (Prisma P2002) to400 without leaking the code', async () => {
+        prismaMock.group.findUnique.mockResolvedValue({
+            id: 'group-1',
+            courseId: 'course-1',
+            course: { id: 'course-1' },
+            members: [],
+        });
+        prismaMock.courseStudent.findUnique.mockResolvedValue({ courseId: 'course-1', userId: 'student-1' });
+        prismaMock.groupMember.findUnique.mockResolvedValue(null);
+        // Two parallel joins: the first creates the row, the second trips the
+        // unique(groupId, userId) constraint after its own pre-check passed.
+        prismaMock.groupMember.create.mockRejectedValue(
+            Object.assign(new Error('Unique constraint failed on the fields: (`groupId`,`userId`)'), { code: 'P2002' }),
+        );
+
+        await expect(GroupService.joinGroupByCode('ABC12345', 'student-1')).rejects.toMatchObject({
+            statusCode: 400,
+            message: 'You are already a member of this group',
+        });
+
+        const error = await GroupService.joinGroupByCode('ABC12345', 'student-1').catch((e: Error) => e);
+        expect((error as Error).message).not.toContain('P2002');
+        expect((error as { statusCode?: number }).statusCode).toBe(400);
+    });
+
     it('rejects join by code when the group has reached the course maximum', async () => {
         prismaMock.group.findFirst.mockResolvedValue({
             id: 'group-1',

@@ -34,7 +34,7 @@ function makePdfFile(overrides: Record<string, unknown> = {}) {
         originalname: 'materi.pdf',
         mimetype: 'application/pdf',
         size: 1024,
-        buffer: Buffer.from('fake-pdf-content'),
+        buffer: Buffer.from('%PDF-1.4\n1 0 obj\nendobj\n'),
         ...overrides,
     };
 }

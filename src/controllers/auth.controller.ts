@@ -1,140 +1,153 @@
-import { Request, Response, NextFunction } from 'express';
-import { AuthService } from '../services/auth.service.js';
-import { UserService } from '../services/user.service.js';
-import { AuthenticatedRequest } from '../middleware/auth.js';
-import { ApiError } from '../middleware/errorHandler.js';
+import { Request, Response, NextFunction } from "express";
+import { AuthService } from "../services/auth.service.js";
+import { UserService } from "../services/user.service.js";
+import { AuthenticatedRequest } from "../middleware/auth.js";
+import { ApiError } from "../middleware/errorHandler.js";
 
 export class AuthController {
-    /**
-     * POST /api/auth/register
-     * Register a new user
-     */
-    static async register(req: Request, res: Response, next: NextFunction) {
-        try {
-            const result = await AuthService.register(req.body);
+  /**
+   * POST /api/auth/register
+   * Register a new user
+   */
+  static async register(req: Request, res: Response, next: NextFunction) {
+    try {
+      const result = await AuthService.register(req.body);
 
-            res.status(201).json({
-                data: result,
-                meta: {
-                    message: 'User registered successfully',
-                },
-            });
-        } catch (error) {
-            next(error);
-        }
+      res.status(201).json({
+        data: result,
+        meta: {
+          message: "User registered successfully",
+        },
+      });
+    } catch (error) {
+      next(error);
     }
+  }
 
-    /**
-     * POST /api/auth/login
-     * Login user and return access + refresh tokens
-     */
-    static async login(req: Request, res: Response, next: NextFunction) {
-        try {
-            const result = await AuthService.login(req.body);
+  /**
+   * POST /api/auth/login
+   * Login user and return access + refresh tokens
+   */
+  static async login(req: Request, res: Response, next: NextFunction) {
+    try {
+      const result = await AuthService.login(req.body);
 
-            res.json({
-                data: result,
-                meta: {
-                    message: 'Login successful',
-                },
-            });
-        } catch (error) {
-            next(error);
-        }
+      res.json({
+        data: result,
+        meta: {
+          message: "Login successful",
+        },
+      });
+    } catch (error) {
+      next(error);
     }
+  }
 
-    /**
-     * POST /api/auth/refresh
-     * Refresh access token using refresh token
-     */
-    static async refresh(req: Request, res: Response, next: NextFunction) {
-        try {
-            const { refreshToken } = req.body;
+  /**
+   * POST /api/auth/refresh
+   * Refresh access token using refresh token
+   */
+  static async refresh(req: Request, res: Response, next: NextFunction) {
+    try {
+      const { refreshToken } = req.body;
 
-            if (!refreshToken) {
-                return next(ApiError.badRequest('Refresh token required'));
-            }
+      if (!refreshToken) {
+        return next(ApiError.badRequest("Refresh token required"));
+      }
 
-            const result = await AuthService.refreshAccessToken(refreshToken);
+      const result = await AuthService.refreshAccessToken(refreshToken);
 
-            res.json({
-                data: result,
-                meta: {
-                    message: 'Token refreshed successfully',
-                },
-            });
-        } catch (error) {
-            next(error);
-        }
+      res.json({
+        data: result,
+        meta: {
+          message: "Token refreshed successfully",
+        },
+      });
+    } catch (error) {
+      next(error);
     }
+  }
 
-    /**
-     * POST /api/auth/logout
-     * Logout and revoke refresh token
-     */
-    static async logout(req: Request, res: Response, next: NextFunction) {
-        try {
-            const { refreshToken } = req.body;
+  /**
+   * POST /api/auth/logout
+   * Logout and revoke refresh token
+   */
+  static async logout(req: Request, res: Response, next: NextFunction) {
+    try {
+      const { refreshToken } = req.body;
 
-            if (!refreshToken) {
-                return next(ApiError.badRequest('Refresh token required'));
-            }
+      if (!refreshToken) {
+        return next(ApiError.badRequest("Refresh token required"));
+      }
 
-            const result = await AuthService.logout(refreshToken);
+      const result = await AuthService.logout(refreshToken);
 
-            res.json({
-                data: result,
-                meta: {
-                    message: 'Logged out successfully',
-                },
-            });
-        } catch (error) {
-            next(error);
-        }
+      res.json({
+        data: result,
+        meta: {
+          message: "Logged out successfully",
+        },
+      });
+    } catch (error) {
+      next(error);
     }
+  }
 
-    /**
-     * GET /api/auth/me
-     * Get current user profile
-     */
-    static async getProfile(req: AuthenticatedRequest, res: Response, next: NextFunction) {
-        try {
-            if (!req.user) {
-                return res.status(401).json({
-                    error: { code: 'UNAUTHORIZED', message: 'Not authenticated' },
-                });
-            }
+  /**
+   * GET /api/auth/me
+   * Get current user profile
+   */
+  static async getProfile(
+    req: AuthenticatedRequest,
+    res: Response,
+    next: NextFunction,
+  ) {
+    try {
+      if (!req.user) {
+        return res.status(401).json({
+          error: { code: "UNAUTHORIZED", message: "Not authenticated" },
+        });
+      }
 
-            const user = await AuthService.getProfile(req.user.userId);
+      const user = await AuthService.getProfile(req.user.userId);
 
-            res.json({
-                data: user,
-            });
-        } catch (error) {
-            next(error);
-        }
+      res.json({
+        data: user,
+      });
+    } catch (error) {
+      next(error);
     }
+  }
 
-    /**
-     * PUT /api/users/me
-     * Perbarui profil milik sendiri (nama/email) untuk role apa pun.
-     */
-    static async updateProfile(req: AuthenticatedRequest, res: Response, next: NextFunction) {
-        try {
-            if (!req.user) {
-                return res.status(401).json({
-                    error: { code: 'UNAUTHORIZED', message: 'Not authenticated' },
-                });
-            }
+  /**
+   * PUT /api/users/me
+   * Perbarui profil milik sendiri (nama/email) untuk role apa pun.
+   */
+  static async updateProfile(
+    req: AuthenticatedRequest,
+    res: Response,
+    next: NextFunction,
+  ) {
+    try {
+      if (!req.user) {
+        return res.status(401).json({
+          error: { code: "UNAUTHORIZED", message: "Not authenticated" },
+        });
+      }
 
-            const user = await UserService.updateUser(req.user.userId, req.body, req.user.userId);
+      const user = await UserService.updateUser(
+        req.user.userId,
+        req.body,
+        req.user.userId,
+        req.user.role,
+      );
 
-            res.json({
-                data: user,
-                meta: { message: 'Profil berhasil diperbarui' },
-            });
-        } catch (error) {
-            next(error);
-        }
+      res.json({
+        data: user,
+        meta: { message: "Profil berhasil diperbarui" },
+      });
+    } catch (error) {
+      next(error);
     }
+  }
 }

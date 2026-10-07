@@ -1,103 +1,127 @@
- import { Router } from 'express';
- import mongoose from 'mongoose';
- import { verifyToken } from '../middleware/auth.js';
- import { assertChatMembership } from '../middleware/chatMembership.js';
- import { ChatLog } from '../models/ChatLog.js';
- 
- const router = Router();
- 
- const isValidObjectId = (id: string): boolean => mongoose.Types.ObjectId.isValid(id);
- 
- // All message routes require auth
- router.use(verifyToken);
- 
- // All message routes require chat membership verification
- router.use(assertChatMembership);
-router.get('/messages/search', async (req, res, next) => {
-  try {
-    const { conversation_id, q, limit = '20' } = req.query as Record<string, string>;
+import { Router } from "express";
+import mongoose from "mongoose";
+import { verifyToken } from "../middleware/auth.js";
+import { assertChatMembership } from "../middleware/chatMembership.js";
+import { ChatLog } from "../models/ChatLog.js";
+import { validateQuery } from "../validators/validate.js";
+import {
+  chatPinnedQuerySchema,
+  chatSearchQuerySchema,
+  type ChatSearchQuery,
+} from "../validators/chat.validator.js";
+import { escapeRegExp } from "../utils/regex.js";
 
-    if (!conversation_id || !q || q.trim().length < 2) {
-      return res.status(400).json({ error: { code: 'BAD_REQUEST', message: 'conversation_id and q (min 2 chars) required' } });
+const router = Router();
+
+const isValidObjectId = (id: string): boolean =>
+  mongoose.Types.ObjectId.isValid(id);
+
+// All message routes require auth
+router.use(verifyToken);
+
+// All message routes require chat membership verification.
+// `assertChatMembership` also rejects non-string / non-UUID `conversation_id`
+// (NoSQL operator injection via the extended query parser) before any query
+// reaches MongoDB.
+router.use(assertChatMembership);
+
+router.get(
+  "/messages/search",
+  // Type + length validation: object/array `conversation_id` and oversized `q`
+  // are rejected with 400 before reaching the Mongo filter.
+  validateQuery(chatSearchQuerySchema),
+  async (req, res, next) => {
+    try {
+      const { conversation_id, q, limit } =
+        req.query as unknown as ChatSearchQuery;
+
+      const messages = await ChatLog.find({
+        sessionDiscussionId: conversation_id,
+        // `q` is user input compiled by MongoDB: escape it so metacharacters
+        // stay literal (no wildcard bypass, no ReDoS, no 500 on `[a-`).
+        content: { $regex: escapeRegExp(q), $options: "i" },
+        deletedAt: null,
+      })
+        .sort({ createdAt: -1 })
+        .limit(limit)
+        .select("_id content senderName createdAt");
+
+      const data = messages.map((m) => ({
+        id: m._id.toString(),
+        content: m.content,
+        highlighted_content: m.content,
+        sender_name: m.senderName,
+        created_at: m.createdAt.toISOString(),
+      }));
+
+      res.json({
+        data,
+        pagination: {
+          has_more: false,
+          next_cursor: null,
+        },
+      });
+    } catch (error) {
+      next(error);
     }
+  },
+);
 
-    const messages = await ChatLog.find({
-      sessionDiscussionId: conversation_id,
-      content: { $regex: q.trim(), $options: 'i' },
-      deletedAt: null,
-    })
-      .sort({ createdAt: -1 })
-      .limit(parseInt(limit, 10))
-      .select('_id content senderName createdAt');
+router.get(
+  "/messages/pinned",
+  validateQuery(chatPinnedQuerySchema),
+  async (req, res, next) => {
+    try {
+      const { conversation_id } = req.query as unknown as {
+        conversation_id: string;
+      };
 
-    const data = messages.map((m) => ({
-      id: m._id.toString(),
-      content: m.content,
-      highlighted_content: m.content,
-      sender_name: m.senderName,
-      created_at: m.createdAt.toISOString(),
-    }));
+      const pinned = await ChatLog.find({
+        sessionDiscussionId: conversation_id,
+        isPinned: true,
+        deletedAt: null,
+      })
+        .sort({ pinnedAt: -1, createdAt: -1 })
+        .limit(100)
+        .select("_id content senderName pinnedAt pinnedBy createdAt");
 
-    res.json({
-      data,
-      pagination: {
-        has_more: false,
-        next_cursor: null,
-      },
-    });
-  } catch (error) {
-    next(error);
-  }
-});
+      const data = pinned.map((m) => ({
+        id: m._id.toString(),
+        message_id: m._id.toString(),
+        conversation_id: m.sessionDiscussionId,
+        pinned_by: m.pinnedBy || "unknown",
+        content: m.content,
+        sender_name: m.senderName,
+        pinned_at: (m.pinnedAt || m.createdAt).toISOString(),
+      }));
 
-router.get('/messages/pinned', async (req, res, next) => {
-  try {
-    const { conversation_id } = req.query as Record<string, string>;
-
-    if (!conversation_id) {
-      return res.status(400).json({ error: { code: 'BAD_REQUEST', message: 'conversation_id required' } });
+      res.json({ data });
+    } catch (error) {
+      next(error);
     }
+  },
+);
 
-    const pinned = await ChatLog.find({
-      sessionDiscussionId: conversation_id,
-      isPinned: true,
-      deletedAt: null,
-    })
-      .sort({ pinnedAt: -1, createdAt: -1 })
-      .limit(100)
-      .select('_id content senderName pinnedAt pinnedBy createdAt');
-
-    const data = pinned.map((m) => ({
-      id: m._id.toString(),
-      message_id: m._id.toString(),
-      conversation_id: m.sessionDiscussionId,
-      pinned_by: m.pinnedBy || 'unknown',
-      content: m.content,
-      sender_name: m.senderName,
-      pinned_at: (m.pinnedAt || m.createdAt).toISOString(),
-    }));
-
-    res.json({ data });
-  } catch (error) {
-    next(error);
-  }
-});
-
-router.post('/messages/:id/pin', async (req, res, next) => {
+router.post("/messages/:id/pin", async (req, res, next) => {
   try {
     const { id } = req.params;
-    if (!isValidObjectId(id)) return res.status(404).json({ message: 'Message not found in this conversation' });
+    if (!isValidObjectId(id))
+      return res
+        .status(404)
+        .json({ message: "Message not found in this conversation" });
     const { conversation_id, content, sender_name } = req.body || {};
     const user = (req as any).user;
 
     const message = await ChatLog.findById(id);
     if (!message || message.sessionDiscussionId !== conversation_id) {
-      return res.status(404).json({ message: 'Message not found in this conversation' });
+      return res
+        .status(404)
+        .json({ message: "Message not found in this conversation" });
     }
 
     message.isPinned = true;
     message.pinnedAt = new Date();
-    message.pinnedBy = user?.userId || sender_name || 'unknown';
+    message.pinnedBy = user?.userId || sender_name || "unknown";
     await message.save();
 
     const pinnedData = {
@@ -116,14 +140,15 @@ router.post('/messages/:id/pin', async (req, res, next) => {
   }
 });
 
-router.post('/messages/:id/unpin', async (req, res, next) => {
+router.post("/messages/:id/unpin", async (req, res, next) => {
   try {
     const { id } = req.params;
-    if (!isValidObjectId(id)) return res.status(404).json({ message: 'Message not found' });
+    if (!isValidObjectId(id))
+      return res.status(404).json({ message: "Message not found" });
 
     const message = await ChatLog.findById(id);
     if (!message) {
-      return res.status(404).json({ message: 'Message not found' });
+      return res.status(404).json({ message: "Message not found" });
     }
 
     message.isPinned = false;
@@ -137,14 +162,15 @@ router.post('/messages/:id/unpin', async (req, res, next) => {
   }
 });
 
-router.delete('/messages/:id/pin', async (req, res, next) => {
+router.delete("/messages/:id/pin", async (req, res, next) => {
   try {
     const { id } = req.params;
-    if (!isValidObjectId(id)) return res.status(404).json({ message: 'Message not found' });
+    if (!isValidObjectId(id))
+      return res.status(404).json({ message: "Message not found" });
 
     const message = await ChatLog.findById(id);
     if (!message) {
-      return res.status(404).json({ message: 'Message not found' });
+      return res.status(404).json({ message: "Message not found" });
     }
 
     message.isPinned = false;
@@ -158,21 +184,62 @@ router.delete('/messages/:id/pin', async (req, res, next) => {
   }
 });
 
-router.patch('/messages/:id/topic', async (req, res, next) => {
+router.patch("/messages/:id/topic", async (req, res, next) => {
   try {
     const { id } = req.params;
-    if (!isValidObjectId(id)) return res.status(404).json({ message: 'Message not found' });
+    if (!isValidObjectId(id))
+      return res.status(404).json({ message: "Message not found" });
     const { topic, conversation_id } = req.body || {};
 
     const message = await ChatLog.findById(id);
     if (!message || message.sessionDiscussionId !== conversation_id) {
-      return res.status(404).json({ message: 'Message not found' });
+      return res.status(404).json({ message: "Message not found" });
     }
 
     message.topic = topic && topic.trim() ? topic.trim() : undefined;
     await message.save();
 
-    res.json({ success: true, data: { id: message._id.toString(), topic: message.topic } });
+    res.json({
+      success: true,
+      data: { id: message._id.toString(), topic: message.topic },
+    });
+  } catch (error) {
+    next(error);
+  }
+});
+
+// M9: fetch a single message (ownership + conversation binding checks).
+// `assertChatMembership` above already resolved membership from the message's
+// REAL conversation, so this endpoint cannot be used to read foreign chats.
+router.get("/messages/:id", async (req, res, next) => {
+  try {
+    const { id } = req.params;
+    if (!isValidObjectId(id))
+      return res.status(404).json({ message: "Message not found" });
+
+    const message = await ChatLog.findById(id);
+    if (!message) {
+      return res.status(404).json({ message: "Message not found" });
+    }
+
+    res.json({
+      data: {
+        id: message._id.toString(),
+        conversation_id: message.sessionDiscussionId,
+        group_id: message.groupId,
+        course_id: message.courseId,
+        sender_id: message.senderId,
+        sender_name: message.senderName,
+        sender_type: message.senderType,
+        content: message.content,
+        version: message.version,
+        created_at: message.createdAt
+          ? message.createdAt.toISOString()
+          : null,
+        edited_at: message.editedAt ? message.editedAt.toISOString() : null,
+        deleted_at: message.deletedAt ? message.deletedAt.toISOString() : null,
+      },
+    });
   } catch (error) {
     next(error);
   }

@@ -178,6 +178,21 @@ describe('Error Middleware', () => {
             process.env.NODE_ENV = originalEnv;
         });
 
+        it('should map a malformed JSON body to400 VALIDATION_ERROR (M10)', () => {
+            const parseError = Object.assign(new SyntaxError("Unexpected end of JSON input"), {
+                type: 'entity.parse.failed',
+                status: 400,
+                statusCode: 400,
+            });
+
+            errorHandler(parseError as any, mockReq as Request, mockRes as Response, mockNext);
+
+            expect(mockRes.status).toHaveBeenCalledWith(400);
+            const jsonCall = (mockRes.json as any).mock.calls[0][0];
+            expect(jsonCall.error.code).toBe('VALIDATION_ERROR');
+            expect(jsonCall.error.message).not.toContain('Unexpected end of JSON input');
+        });
+
         it('should handle anonymous users', () => {
             delete (mockReq as any).user;
             const error = ApiError.internal('Server error');

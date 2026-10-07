@@ -1,423 +1,624 @@
-import { beforeEach, describe, expect, it, vi } from 'vitest';
+import { beforeEach, describe, expect, it, vi } from "vitest";
 
-const { prismaMock, cacheMock, generateJoinCodeMock } = vi.hoisted(() => ({
+const { prismaMock, cacheMock, generateJoinCodeMock, chatLogMock } = vi.hoisted(
+  () => ({
     prismaMock: {
-        course: { findUnique: vi.fn(), findFirst: vi.fn(), findMany: vi.fn(), create: vi.fn(), update: vi.fn() },
-        courseStudent: { findUnique: vi.fn(), create: vi.fn(), findMany: vi.fn() },
+      course: {
+        findUnique: vi.fn(),
+        findFirst: vi.fn(),
+        findMany: vi.fn(),
+        create: vi.fn(),
+        update: vi.fn(),
+      },
+      courseStudent: {
+        findUnique: vi.fn(),
+        create: vi.fn(),
+        findMany: vi.fn(),
+      },
     },
     cacheMock: { get: vi.fn(), set: vi.fn(), invalidatePattern: vi.fn() },
     generateJoinCodeMock: vi.fn(),
+    chatLogMock: { find: vi.fn() },
+  }),
+);
+
+vi.mock("../config/database.js", () => ({
+  default: prismaMock,
 }));
 
-vi.mock('../config/database.js', () => ({
-    default: prismaMock,
+vi.mock("../models/ChatLog.js", () => ({
+  ChatLog: chatLogMock,
 }));
 
-vi.mock('../utils/helpers.js', () => ({
-    generateJoinCode: generateJoinCodeMock,
+vi.mock("../utils/helpers.js", () => ({
+  generateJoinCode: generateJoinCodeMock,
 }));
 
-vi.mock('../utils/cache.js', () => ({
-    cache: cacheMock,
+vi.mock("../utils/cache.js", () => ({
+  cache: cacheMock,
 }));
 
-import { CourseService } from './course.service.js';
+import { CourseService } from "./course.service.js";
 
-describe('CourseService', () => {
-    beforeEach(() => {
-        vi.clearAllMocks();
+describe("CourseService", () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+  });
+
+  it("creates a course with a unique join code and invalidates cached course lists", async () => {
+    prismaMock.course.findUnique
+      .mockResolvedValueOnce(null)
+      .mockResolvedValueOnce({ id: "existing-join-code" })
+      .mockResolvedValueOnce(null);
+    generateJoinCodeMock
+      .mockReturnValueOnce("ABC123")
+      .mockReturnValueOnce("XYZ789");
+    prismaMock.course.create.mockResolvedValue({
+      id: "course-1",
+      code: "IF101",
+      joinCode: "XYZ789",
     });
 
-    it('creates a course with a unique join code and invalidates cached course lists', async () => {
-        prismaMock.course.findUnique
-            .mockResolvedValueOnce(null)
-            .mockResolvedValueOnce({ id: 'existing-join-code' })
-            .mockResolvedValueOnce(null);
-        generateJoinCodeMock.mockReturnValueOnce('ABC123').mockReturnValueOnce('XYZ789');
-        prismaMock.course.create.mockResolvedValue({
-            id: 'course-1',
-            code: 'IF101',
-            joinCode: 'XYZ789',
-        });
+    const result = await CourseService.createCourse(
+      {
+        code: "IF101",
+        name: "Intro AI",
+        description: "Basics",
+        ai_guardrail_preset: "balanced",
+        ai_guardrail_allow_rewrite: true,
+        ai_guardrail_allow_flag_only: false,
+      },
+      "lecturer-1",
+    );
 
-        const result = await CourseService.createCourse(
+    expect(prismaMock.course.create).toHaveBeenCalledWith({
+      data: {
+        code: "IF101",
+        name: "Intro AI",
+        description: "Basics",
+        joinCode: "XYZ789",
+        minMembersPerGroup: undefined,
+        maxMembersPerGroup: undefined,
+        aiGuardrailConfig: {
+          preset: "balanced",
+          allowRewrite: true,
+          allowFlagOnly: false,
+        },
+        aiScaffoldingConfig: {
+          scaffoldingLevel: "auto",
+          enabled: true,
+        },
+        semester: undefined,
+        academicYear: undefined,
+        ownerId: "lecturer-1",
+      },
+      include: {
+        owner: {
+          select: { id: true, name: true, email: true },
+        },
+      },
+    });
+    expect(cacheMock.invalidatePattern).toHaveBeenCalledWith(
+      "courses:lecturer-1:",
+    );
+    expect(result).toEqual({
+      id: "course-1",
+      code: "IF101",
+      joinCode: "XYZ789",
+    });
+  });
+
+  it("rejects duplicate course codes", async () => {
+    prismaMock.course.findUnique.mockResolvedValue({ id: "course-1" });
+
+    await expect(
+      CourseService.createCourse(
+        { code: "IF101", name: "Intro AI" },
+        "lecturer-1",
+      ),
+    ).rejects.toMatchObject({
+      statusCode: 409,
+      message: "Course code already exists",
+    });
+  });
+
+  it("fails when a unique join code cannot be generated after max attempts", async () => {
+    prismaMock.course.findUnique
+      .mockResolvedValueOnce(null)
+      .mockResolvedValue({ id: "collision" });
+    generateJoinCodeMock.mockReturnValue("SAME01");
+
+    await expect(
+      CourseService.createCourse(
+        { code: "IF101", name: "Intro AI" },
+        "lecturer-1",
+      ),
+    ).rejects.toMatchObject({
+      statusCode: 500,
+      message: "Failed to generate unique join code",
+    });
+  });
+
+  it("updates AI guardrail policy fields for a lecturer-owned course", async () => {
+    prismaMock.course.findFirst.mockResolvedValueOnce({
+      id: "course-1",
+      ownerId: "lecturer-1",
+    });
+    prismaMock.course.update = vi.fn().mockResolvedValue({ id: "course-1" });
+
+    await CourseService.updateCourse("course-1", "lecturer-1", {
+      ai_guardrail_preset: "strict",
+      ai_guardrail_allow_rewrite: false,
+      ai_guardrail_allow_flag_only: true,
+    });
+
+    expect(prismaMock.course.update).toHaveBeenCalledWith({
+      where: { id: "course-1" },
+      data: {
+        aiGuardrailConfig: {
+          preset: "strict",
+          allowRewrite: false,
+          allowFlagOnly: true,
+        },
+      },
+    });
+  });
+
+  it("joins an active course when the student is not yet enrolled", async () => {
+    prismaMock.course.findFirst.mockResolvedValue({
+      id: "course-1",
+      code: "IF101",
+      name: "Intro AI",
+      description: "Basics",
+      isArchived: false,
+      isActive: true,
+    });
+    prismaMock.courseStudent.findUnique.mockResolvedValue(null);
+
+    const result = await CourseService.joinCourse(
+      { join_code: "JOIN01" },
+      "student-1",
+    );
+
+    expect(prismaMock.course.findFirst).toHaveBeenCalledWith({
+      where: { joinCode: "JOIN01", deletedAt: null },
+    });
+    expect(prismaMock.courseStudent.create).toHaveBeenCalledWith({
+      data: {
+        courseId: "course-1",
+        userId: "student-1",
+      },
+    });
+    expect(result).toEqual({
+      id: "course-1",
+      code: "IF101",
+      name: "Intro AI",
+      description: "Basics",
+    });
+  });
+
+  it("rejects archived courses when joining", async () => {
+    prismaMock.course.findFirst.mockResolvedValue({
+      isArchived: true,
+      isActive: true,
+    });
+
+    await expect(
+      CourseService.joinCourse({ join_code: "JOIN01" }, "student-1"),
+    ).rejects.toMatchObject({
+      statusCode: 403,
+      message: "This course is archived",
+    });
+  });
+
+  it("rejects inactive courses when joining", async () => {
+    prismaMock.course.findFirst.mockResolvedValue({
+      isArchived: false,
+      isActive: false,
+    });
+
+    await expect(
+      CourseService.joinCourse({ join_code: "JOIN01" }, "student-1"),
+    ).rejects.toMatchObject({
+      statusCode: 403,
+      message: "This course is no longer active",
+    });
+  });
+
+  it("rejects duplicate enrollments when joining a course", async () => {
+    prismaMock.course.findFirst.mockResolvedValue({
+      id: "course-1",
+      isArchived: false,
+      isActive: true,
+    });
+    prismaMock.courseStudent.findUnique.mockResolvedValue({
+      id: "enrollment-1",
+    });
+
+    await expect(
+      CourseService.joinCourse({ join_code: "JOIN01" }, "student-1"),
+    ).rejects.toMatchObject({
+      statusCode: 409,
+      message: "Already enrolled in this course",
+    });
+  });
+
+  it("rejects soft-deleted courses (findFirst returns null when deletedAt is set)", async () => {
+    prismaMock.course.findFirst.mockResolvedValue(null);
+
+    await expect(
+      CourseService.joinCourse({ join_code: "JOIN01" }, "student-1"),
+    ).rejects.toMatchObject({
+      statusCode: 404,
+      message: "Invalid join code",
+    });
+  });
+
+  it("returns cached courses without querying prisma again", async () => {
+    cacheMock.get.mockReturnValue([{ id: "cached-course" }]);
+
+    const result = await CourseService.getMyCourses("user-1", "lecturer");
+
+    expect(prismaMock.course.findMany).not.toHaveBeenCalled();
+    expect(result).toEqual([{ id: "cached-course" }]);
+  });
+
+  it("maps lecturer courses and caches the result", async () => {
+    cacheMock.get.mockReturnValue(null);
+    prismaMock.course.findMany.mockResolvedValue([
+      {
+        id: "course-1",
+        code: "IF101",
+        name: "Intro AI",
+        description: "Basics",
+        joinCode: "JOIN01",
+        owner: { id: "lecturer-1", name: "Dr. AI" },
+        createdAt: new Date("2026-05-01T00:00:00.000Z"),
+        _count: { students: 10, groups: 3 },
+      },
+    ]);
+
+    const result = await CourseService.getMyCourses("lecturer-1", "lecturer");
+
+    expect(result).toEqual([
+      {
+        id: "course-1",
+        code: "IF101",
+        name: "Intro AI",
+        description: "Basics",
+        joinCode: "JOIN01",
+        owner: { id: "lecturer-1", name: "Dr. AI" },
+        students_count: 10,
+        groups_count: 3,
+        createdAt: new Date("2026-05-01T00:00:00.000Z"),
+      },
+    ]);
+    expect(cacheMock.set).toHaveBeenCalledWith(
+      "courses:lecturer-1:lecturer",
+      result,
+      180000,
+    );
+  });
+
+  it("filters archived student courses and maps owner data", async () => {
+    cacheMock.get.mockReturnValue(null);
+    prismaMock.courseStudent.findMany.mockResolvedValue([
+      {
+        enrolledAt: new Date("2026-05-01T00:00:00.000Z"),
+        course: {
+          id: "course-1",
+          code: "IF101",
+          name: "Intro AI",
+          description: "Basics",
+          isArchived: false,
+          owner: { id: "lecturer-1", name: "Dr. AI" },
+          _count: { students: 10 },
+        },
+      },
+      {
+        enrolledAt: new Date("2026-05-02T00:00:00.000Z"),
+        course: {
+          id: "course-2",
+          code: "IF102",
+          name: "Archived",
+          description: "Skip",
+          isArchived: true,
+          owner: { id: "lecturer-2", name: "Dr. Skip" },
+          _count: { students: 20 },
+        },
+      },
+    ]);
+
+    const result = await CourseService.getMyCourses("student-1", "student");
+
+    expect(result).toEqual([
+      {
+        id: "course-1",
+        code: "IF101",
+        name: "Intro AI",
+        description: "Basics",
+        ownerName: "Dr. AI",
+        owner: { id: "lecturer-1", name: "Dr. AI" },
+        students_count: 10,
+        enrolledAt: new Date("2026-05-01T00:00:00.000Z"),
+      },
+    ]);
+  });
+
+  it("returns lecturer course details with join code and aggregated group goals", async () => {
+    prismaMock.course.findUnique.mockResolvedValue({
+      id: "course-1",
+      code: "IF101",
+      name: "Intro AI",
+      description: "Basics",
+      joinCode: "JOIN01",
+      minMembersPerGroup: 1,
+      maxMembersPerGroup: 8,
+      aiGuardrailConfig: {
+        preset: "balanced",
+        allowRewrite: true,
+        allowFlagOnly: false,
+      },
+      ownerId: "lecturer-1",
+      isArchived: false,
+      createdAt: new Date("2026-05-01T00:00:00.000Z"),
+      owner: { id: "lecturer-1", name: "Dr. AI", email: "ai@example.com" },
+      groups: [
+        {
+          id: "group-1",
+          name: "Group 1",
+          members: [
             {
-                code: 'IF101',
-                name: 'Intro AI',
-                description: 'Basics',
-                ai_guardrail_preset: 'balanced',
-                ai_guardrail_allow_rewrite: true,
-                ai_guardrail_allow_flag_only: false,
+              user: {
+                id: "student-1",
+                name: "Student",
+                email: "s@example.com",
+              },
             },
-            'lecturer-1'
-        );
-
-        expect(prismaMock.course.create).toHaveBeenCalledWith({
-            data: {
-                code: 'IF101',
-                name: 'Intro AI',
-                description: 'Basics',
-                joinCode: 'XYZ789',
-                minMembersPerGroup: undefined,
-                maxMembersPerGroup: undefined,
-                aiGuardrailConfig: {
-                    preset: 'balanced',
-                    allowRewrite: true,
-                    allowFlagOnly: false,
-                },
-                aiScaffoldingConfig: {
-                    scaffoldingLevel: 'auto',
-                    enabled: true,
-                },
-                semester: undefined,
-                academicYear: undefined,
-                ownerId: 'lecturer-1',
-            },
-            include: {
-                owner: {
-                    select: { id: true, name: true, email: true },
-                },
-            },
-        });
-        expect(cacheMock.invalidatePattern).toHaveBeenCalledWith('courses:lecturer-1:');
-        expect(result).toEqual({ id: 'course-1', code: 'IF101', joinCode: 'XYZ789' });
+          ],
+          sessionDiscussions: [
+            { _count: { goals: 2 } },
+            { _count: { goals: 1 } },
+          ],
+          _count: { members: 1, sessionDiscussions: 2 },
+        },
+      ],
+      knowledgeBases: [
+        {
+          id: "kb-1",
+          fileName: "notes.pdf",
+          fileSize: 100,
+          mimeType: "application/pdf",
+          vectorStatus: "processed",
+          errorMessage: null,
+          uploadedAt: new Date("2026-05-01T00:00:00.000Z"),
+          processedAt: new Date("2026-05-01T01:00:00.000Z"),
+        },
+      ],
+      _count: { students: 10, groups: 1 },
     });
 
-    it('rejects duplicate course codes', async () => {
-        prismaMock.course.findUnique.mockResolvedValue({ id: 'course-1' });
+    const result = await CourseService.getCourseDetails(
+      "course-1",
+      "lecturer-1",
+      "lecturer",
+    );
 
-        await expect(
-            CourseService.createCourse({ code: 'IF101', name: 'Intro AI' }, 'lecturer-1')
-        ).rejects.toMatchObject({
-            statusCode: 409,
-            message: 'Course code already exists',
-        });
+    expect(result).toEqual({
+      id: "course-1",
+      code: "IF101",
+      name: "Intro AI",
+      description: "Basics",
+      join_code: "JOIN01",
+      min_members_per_group: 1,
+      max_members_per_group: 8,
+      ai_guardrail_preset: "balanced",
+      ai_guardrail_allow_rewrite: true,
+      ai_guardrail_allow_flag_only: false,
+      ai_scaffolding_enabled: true,
+      ai_scaffolding_level: "auto",
+      owner: { id: "lecturer-1", name: "Dr. AI", email: "ai@example.com" },
+      groups: [
+        {
+          id: "group-1",
+          name: "Group 1",
+          members: [
+            { id: "student-1", name: "Student", email: "s@example.com" },
+          ],
+          goalsCount: 3,
+          sessionDiscussionsCount: 2,
+        },
+      ],
+      knowledge_base: [
+        {
+          id: "kb-1",
+          file_name: "notes.pdf",
+          file_size: 100,
+          file_type: "application/pdf",
+          vector_status: "processed",
+          uploaded_at: new Date("2026-05-01T00:00:00.000Z"),
+          processed_at: new Date("2026-05-01T01:00:00.000Z"),
+          error_message: null,
+        },
+      ],
+      students_count: 10,
+      groups_count: 1,
+      createdAt: new Date("2026-05-01T00:00:00.000Z"),
+    });
+  });
+
+  it("hides join code from students in course details", async () => {
+    prismaMock.course.findUnique.mockResolvedValue({
+      id: "course-1",
+      code: "IF101",
+      name: "Intro AI",
+      description: "Basics",
+      joinCode: "JOIN01",
+      ownerId: "lecturer-1",
+      isArchived: false,
+      createdAt: new Date("2026-05-01T00:00:00.000Z"),
+      owner: { id: "lecturer-1", name: "Dr. AI", email: "ai@example.com" },
+      groups: [],
+      knowledgeBases: [],
+      _count: { students: 10, groups: 0 },
+    });
+    prismaMock.courseStudent.findUnique.mockResolvedValue({
+      id: "enrollment-1",
     });
 
-    it('fails when a unique join code cannot be generated after max attempts', async () => {
-        prismaMock.course.findUnique.mockResolvedValueOnce(null).mockResolvedValue({ id: 'collision' });
-        generateJoinCodeMock.mockReturnValue('SAME01');
+    const result = await CourseService.getCourseDetails(
+      "course-1",
+      "student-1",
+      "student",
+    );
 
-        await expect(
-            CourseService.createCourse({ code: 'IF101', name: 'Intro AI' }, 'lecturer-1')
-        ).rejects.toMatchObject({
-            statusCode: 500,
-            message: 'Failed to generate unique join code',
-        });
+    expect(result.join_code).toBeUndefined();
+  });
+
+  it("returns course students for owners and enrolled students", async () => {
+    prismaMock.course.findUnique.mockResolvedValue({
+      id: "course-1",
+      ownerId: "lecturer-1",
+    });
+    prismaMock.courseStudent.findUnique.mockResolvedValue({
+      id: "enrollment-1",
+    });
+    prismaMock.courseStudent.findMany.mockResolvedValue([
+      {
+        user: { id: "student-1", name: "Student One", email: "s1@example.com" },
+        enrolledAt: new Date("2026-05-01T00:00:00.000Z"),
+      },
+    ]);
+
+    const result = await CourseService.getCourseStudents(
+      "course-1",
+      "student-1",
+    );
+
+    expect(result).toEqual([
+      {
+        id: "student-1",
+        name: "Student One",
+        email: "s1@example.com",
+        enrolledAt: new Date("2026-05-01T00:00:00.000Z"),
+      },
+    ]);
+  });
+
+  it("rejects course student access for unrelated users", async () => {
+    prismaMock.course.findUnique.mockResolvedValue({
+      id: "course-1",
+      ownerId: "lecturer-1",
+    });
+    prismaMock.courseStudent.findUnique.mockResolvedValue(null);
+
+    await expect(
+      CourseService.getCourseStudents("course-1", "outsider-1"),
+    ).rejects.toMatchObject({
+      statusCode: 403,
+      message:
+        "You must be the course owner or an enrolled student to view students",
+    });
+  });
+
+  describe("getCourseMessages (enrollment guard, fix C2/F-02)", () => {
+    function mockChatLogFind(messages: unknown[]) {
+      const leanFn = vi.fn().mockResolvedValue(messages);
+      const limitFn = vi.fn().mockReturnValue({ lean: leanFn });
+      const sortFn = vi.fn().mockReturnValue({ limit: limitFn });
+      chatLogMock.find.mockReturnValue({ sort: sortFn });
+      return { sortFn, limitFn, leanFn };
+    }
+
+    it("returns messages for the course owner", async () => {
+      prismaMock.course.findUnique.mockResolvedValue({
+        id: "course-1",
+        ownerId: "lecturer-1",
+      });
+      const chain = mockChatLogFind([{ content: "hello" }]);
+
+      const result = await CourseService.getCourseMessages(
+        "course-1",
+        "lecturer-1",
+        100,
+      );
+
+      expect(result).toEqual([{ content: "hello" }]);
+      expect(chatLogMock.find).toHaveBeenCalledWith({
+        courseId: "course-1",
+        deletedAt: null,
+      });
+      expect(chain.sortFn).toHaveBeenCalledWith({ createdAt: -1 });
+      expect(chain.limitFn).toHaveBeenCalledWith(100);
     });
 
-    it('updates AI guardrail policy fields for a lecturer-owned course', async () => {
-        prismaMock.course.findFirst.mockResolvedValueOnce({ id: 'course-1', ownerId: 'lecturer-1' });
-        prismaMock.course.update = vi.fn().mockResolvedValue({ id: 'course-1' });
+    it("returns messages for an enrolled student", async () => {
+      prismaMock.course.findUnique.mockResolvedValue({
+        id: "course-1",
+        ownerId: "lecturer-1",
+      });
+      prismaMock.courseStudent.findUnique.mockResolvedValue({
+        id: "enrollment-1",
+      });
+      mockChatLogFind([{ content: "from class" }]);
 
-        await CourseService.updateCourse('course-1', 'lecturer-1', {
-            ai_guardrail_preset: 'strict',
-            ai_guardrail_allow_rewrite: false,
-            ai_guardrail_allow_flag_only: true,
-        });
+      const result = await CourseService.getCourseMessages(
+        "course-1",
+        "student-1",
+        50,
+      );
 
-        expect(prismaMock.course.update).toHaveBeenCalledWith({
-            where: { id: 'course-1' },
-            data: {
-                aiGuardrailConfig: {
-                    preset: 'strict',
-                    allowRewrite: false,
-                    allowFlagOnly: true,
-                },
-            },
-        });
+      expect(result).toHaveLength(1);
+      expect(prismaMock.courseStudent.findUnique).toHaveBeenCalledWith({
+        where: {
+          courseId_userId: { courseId: "course-1", userId: "student-1" },
+        },
+      });
     });
 
-    it('joins an active course when the student is not yet enrolled', async () => {
-        prismaMock.course.findFirst.mockResolvedValue({
-            id: 'course-1',
-            code: 'IF101',
-            name: 'Intro AI',
-            description: 'Basics',
-            isArchived: false,
-            isActive: true,
-        });
-        prismaMock.courseStudent.findUnique.mockResolvedValue(null);
+    it("throws 403 for a lecturer who does not own the course", async () => {
+      prismaMock.course.findUnique.mockResolvedValue({
+        id: "course-1",
+        ownerId: "other-lecturer",
+      });
+      prismaMock.courseStudent.findUnique.mockResolvedValue(null);
 
-        const result = await CourseService.joinCourse({ join_code: 'JOIN01' }, 'student-1');
-
-        expect(prismaMock.course.findFirst).toHaveBeenCalledWith({
-            where: { joinCode: 'JOIN01', deletedAt: null },
-        });
-        expect(prismaMock.courseStudent.create).toHaveBeenCalledWith({
-            data: {
-                courseId: 'course-1',
-                userId: 'student-1',
-            },
-        });
-        expect(result).toEqual({
-            id: 'course-1',
-            code: 'IF101',
-            name: 'Intro AI',
-            description: 'Basics',
-        });
+      await expect(
+        CourseService.getCourseMessages("course-1", "intruding-lecturer", 100),
+      ).rejects.toMatchObject({
+        statusCode: 403,
+        code: "FORBIDDEN",
+      });
+      expect(chatLogMock.find).not.toHaveBeenCalled();
     });
 
-    it('rejects archived courses when joining', async () => {
-        prismaMock.course.findFirst.mockResolvedValue({ isArchived: true, isActive: true });
+    it("throws 403 for a student who is not enrolled", async () => {
+      prismaMock.course.findUnique.mockResolvedValue({
+        id: "course-1",
+        ownerId: "lecturer-1",
+      });
+      prismaMock.courseStudent.findUnique.mockResolvedValue(null);
 
-        await expect(CourseService.joinCourse({ join_code: 'JOIN01' }, 'student-1')).rejects.toMatchObject({
-            statusCode: 403,
-            message: 'This course is archived',
-        });
+      await expect(
+        CourseService.getCourseMessages("course-1", "outsider-student", 100),
+      ).rejects.toMatchObject({
+        statusCode: 403,
+        message:
+          "You must be the course owner or an enrolled student to view course messages",
+      });
+      expect(chatLogMock.find).not.toHaveBeenCalled();
     });
 
-    it('rejects inactive courses when joining', async () => {
-        prismaMock.course.findFirst.mockResolvedValue({ isArchived: false, isActive: false });
+    it("throws 404 when the course does not exist", async () => {
+      prismaMock.course.findUnique.mockResolvedValue(null);
 
-        await expect(CourseService.joinCourse({ join_code: 'JOIN01' }, 'student-1')).rejects.toMatchObject({
-            statusCode: 403,
-            message: 'This course is no longer active',
-        });
+      await expect(
+        CourseService.getCourseMessages("missing-course", "student-1", 100),
+      ).rejects.toMatchObject({
+        statusCode: 404,
+        message: "Course not found",
+      });
+      expect(chatLogMock.find).not.toHaveBeenCalled();
     });
-
-    it('rejects duplicate enrollments when joining a course', async () => {
-        prismaMock.course.findFirst.mockResolvedValue({
-            id: 'course-1',
-            isArchived: false,
-            isActive: true,
-        });
-        prismaMock.courseStudent.findUnique.mockResolvedValue({ id: 'enrollment-1' });
-
-        await expect(CourseService.joinCourse({ join_code: 'JOIN01' }, 'student-1')).rejects.toMatchObject({
-            statusCode: 409,
-            message: 'Already enrolled in this course',
-        });
-    });
-
-    it('rejects soft-deleted courses (findFirst returns null when deletedAt is set)', async () => {
-        prismaMock.course.findFirst.mockResolvedValue(null);
-
-        await expect(CourseService.joinCourse({ join_code: 'JOIN01' }, 'student-1')).rejects.toMatchObject({
-            statusCode: 404,
-            message: 'Invalid join code',
-        });
-    });
-
-    it('returns cached courses without querying prisma again', async () => {
-        cacheMock.get.mockReturnValue([{ id: 'cached-course' }]);
-
-        const result = await CourseService.getMyCourses('user-1', 'lecturer');
-
-        expect(prismaMock.course.findMany).not.toHaveBeenCalled();
-        expect(result).toEqual([{ id: 'cached-course' }]);
-    });
-
-    it('maps lecturer courses and caches the result', async () => {
-        cacheMock.get.mockReturnValue(null);
-        prismaMock.course.findMany.mockResolvedValue([
-            {
-                id: 'course-1',
-                code: 'IF101',
-                name: 'Intro AI',
-                description: 'Basics',
-                joinCode: 'JOIN01',
-                owner: { id: 'lecturer-1', name: 'Dr. AI' },
-                createdAt: new Date('2026-05-01T00:00:00.000Z'),
-                _count: { students: 10, groups: 3 },
-            },
-        ]);
-
-        const result = await CourseService.getMyCourses('lecturer-1', 'lecturer');
-
-        expect(result).toEqual([
-            {
-                id: 'course-1',
-                code: 'IF101',
-                name: 'Intro AI',
-                description: 'Basics',
-                joinCode: 'JOIN01',
-                owner: { id: 'lecturer-1', name: 'Dr. AI' },
-                students_count: 10,
-                groups_count: 3,
-                createdAt: new Date('2026-05-01T00:00:00.000Z'),
-            },
-        ]);
-        expect(cacheMock.set).toHaveBeenCalledWith('courses:lecturer-1:lecturer', result, 180000);
-    });
-
-    it('filters archived student courses and maps owner data', async () => {
-        cacheMock.get.mockReturnValue(null);
-        prismaMock.courseStudent.findMany.mockResolvedValue([
-            {
-                enrolledAt: new Date('2026-05-01T00:00:00.000Z'),
-                course: {
-                    id: 'course-1',
-                    code: 'IF101',
-                    name: 'Intro AI',
-                    description: 'Basics',
-                    isArchived: false,
-                    owner: { id: 'lecturer-1', name: 'Dr. AI' },
-                    _count: { students: 10 },
-                },
-            },
-            {
-                enrolledAt: new Date('2026-05-02T00:00:00.000Z'),
-                course: {
-                    id: 'course-2',
-                    code: 'IF102',
-                    name: 'Archived',
-                    description: 'Skip',
-                    isArchived: true,
-                    owner: { id: 'lecturer-2', name: 'Dr. Skip' },
-                    _count: { students: 20 },
-                },
-            },
-        ]);
-
-        const result = await CourseService.getMyCourses('student-1', 'student');
-
-        expect(result).toEqual([
-            {
-                id: 'course-1',
-                code: 'IF101',
-                name: 'Intro AI',
-                description: 'Basics',
-                ownerName: 'Dr. AI',
-                owner: { id: 'lecturer-1', name: 'Dr. AI' },
-                students_count: 10,
-                enrolledAt: new Date('2026-05-01T00:00:00.000Z'),
-            },
-        ]);
-    });
-
-    it('returns lecturer course details with join code and aggregated group goals', async () => {
-        prismaMock.course.findUnique.mockResolvedValue({
-            id: 'course-1',
-            code: 'IF101',
-            name: 'Intro AI',
-            description: 'Basics',
-            joinCode: 'JOIN01',
-            minMembersPerGroup: 1,
-            maxMembersPerGroup: 8,
-            aiGuardrailConfig: { preset: 'balanced', allowRewrite: true, allowFlagOnly: false },
-            ownerId: 'lecturer-1',
-            isArchived: false,
-            createdAt: new Date('2026-05-01T00:00:00.000Z'),
-            owner: { id: 'lecturer-1', name: 'Dr. AI', email: 'ai@example.com' },
-            groups: [
-                {
-                    id: 'group-1',
-                    name: 'Group 1',
-                    members: [{ user: { id: 'student-1', name: 'Student', email: 's@example.com' } }],
-                    sessionDiscussions: [{ _count: { goals: 2 } }, { _count: { goals: 1 } }],
-                    _count: { members: 1, sessionDiscussions: 2 },
-                },
-            ],
-            knowledgeBases: [
-                {
-                    id: 'kb-1',
-                    fileName: 'notes.pdf',
-                    fileSize: 100,
-                    mimeType: 'application/pdf',
-                    vectorStatus: 'processed',
-                    errorMessage: null,
-                    uploadedAt: new Date('2026-05-01T00:00:00.000Z'),
-                    processedAt: new Date('2026-05-01T01:00:00.000Z'),
-                },
-            ],
-            _count: { students: 10, groups: 1 },
-        });
-
-        const result = await CourseService.getCourseDetails('course-1', 'lecturer-1', 'lecturer');
-
-        expect(result).toEqual({
-            id: 'course-1',
-            code: 'IF101',
-            name: 'Intro AI',
-            description: 'Basics',
-            join_code: 'JOIN01',
-            min_members_per_group: 1,
-            max_members_per_group: 8,
-            ai_guardrail_preset: 'balanced',
-            ai_guardrail_allow_rewrite: true,
-            ai_guardrail_allow_flag_only: false,
-            ai_scaffolding_enabled: true,
-            ai_scaffolding_level: 'auto',
-            owner: { id: 'lecturer-1', name: 'Dr. AI', email: 'ai@example.com' },
-            groups: [
-                {
-                    id: 'group-1',
-                    name: 'Group 1',
-                    members: [{ id: 'student-1', name: 'Student', email: 's@example.com' }],
-                    goalsCount: 3,
-                    sessionDiscussionsCount: 2,
-                },
-            ],
-            knowledge_base: [
-                {
-                    id: 'kb-1',
-                    file_name: 'notes.pdf',
-                    file_size: 100,
-                    file_type: 'application/pdf',
-                    vector_status: 'processed',
-                    uploaded_at: new Date('2026-05-01T00:00:00.000Z'),
-                    processed_at: new Date('2026-05-01T01:00:00.000Z'),
-                    error_message: null,
-                },
-            ],
-            students_count: 10,
-            groups_count: 1,
-            createdAt: new Date('2026-05-01T00:00:00.000Z'),
-        });
-    });
-
-    it('hides join code from students in course details', async () => {
-        prismaMock.course.findUnique.mockResolvedValue({
-            id: 'course-1',
-            code: 'IF101',
-            name: 'Intro AI',
-            description: 'Basics',
-            joinCode: 'JOIN01',
-            ownerId: 'lecturer-1',
-            isArchived: false,
-            createdAt: new Date('2026-05-01T00:00:00.000Z'),
-            owner: { id: 'lecturer-1', name: 'Dr. AI', email: 'ai@example.com' },
-            groups: [],
-            knowledgeBases: [],
-            _count: { students: 10, groups: 0 },
-        });
-        prismaMock.courseStudent.findUnique.mockResolvedValue({ id: 'enrollment-1' });
-
-        const result = await CourseService.getCourseDetails('course-1', 'student-1', 'student');
-
-        expect(result.join_code).toBeUndefined();
-    });
-
-    it('returns course students for owners and enrolled students', async () => {
-        prismaMock.course.findUnique.mockResolvedValue({ id: 'course-1', ownerId: 'lecturer-1' });
-        prismaMock.courseStudent.findUnique.mockResolvedValue({ id: 'enrollment-1' });
-        prismaMock.courseStudent.findMany.mockResolvedValue([
-            {
-                user: { id: 'student-1', name: 'Student One', email: 's1@example.com' },
-                enrolledAt: new Date('2026-05-01T00:00:00.000Z'),
-            },
-        ]);
-
-        const result = await CourseService.getCourseStudents('course-1', 'student-1');
-
-        expect(result).toEqual([
-            {
-                id: 'student-1',
-                name: 'Student One',
-                email: 's1@example.com',
-                enrolledAt: new Date('2026-05-01T00:00:00.000Z'),
-            },
-        ]);
-    });
-
-    it('rejects course student access for unrelated users', async () => {
-        prismaMock.course.findUnique.mockResolvedValue({ id: 'course-1', ownerId: 'lecturer-1' });
-        prismaMock.courseStudent.findUnique.mockResolvedValue(null);
-
-        await expect(CourseService.getCourseStudents('course-1', 'outsider-1')).rejects.toMatchObject({
-            statusCode: 403,
-            message: 'You must be the course owner or an enrolled student to view students',
-        });
-    });
+  });
 });

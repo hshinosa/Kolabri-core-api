@@ -25,7 +25,12 @@ function authenticate(request: IncomingMessage) {
     }
 
     try {
-        return jwt.verify(token, secret) as JwtPayload;
+        const payload = jwt.verify(token, secret) as JwtPayload;
+        // H3 (F2): tolak token tanpa klaim identitas (mis. token berbagi analytics)
+        if (typeof payload.userId !== 'string' || payload.userId.trim() === '') {
+            return null;
+        }
+        return payload;
     } catch {
         return null;
     }

@@ -305,12 +305,22 @@ export class GroupService {
         }
 
         // Add member
-        await prisma.groupMember.create({
-            data: {
-                groupId: group.id,
-                userId,
-            },
-        });
+        try {
+            await prisma.groupMember.create({
+                data: {
+                    groupId: group.id,
+                    userId,
+                },
+            });
+        } catch (error) {
+            // M10: a parallel join can lose the race after the check above and
+            // trip the unique(groupId, userId) constraint. Translate Prisma's
+            // P2002 into a plain 400 instead of leaking the internal code (500).
+            if ((error as { code?: string } | null)?.code === 'P2002') {
+                throw ApiError.badRequest('You are already a member of this group');
+            }
+            throw error;
+        }
 
         return this.getGroupById(group.id);
     }
