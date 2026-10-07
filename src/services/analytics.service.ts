@@ -15,6 +15,16 @@ export class AnalyticsService {
      */
     static async getSrlDistribution(caseIds: string[]) {
         if (caseIds.length === 0) return null;
+        return this.srlAggregate({ CaseID: { $in: caseIds } });
+    }
+
+    /** SRL pribadi satu mahasiswa (Resource = "Student_<userId>"). */
+    static async getStudentSrl(userId: string) {
+        return this.srlAggregate({ Resource: `Student_${userId}` });
+    }
+
+    private static async srlAggregate(baseMatch: Record<string, unknown>) {
+        const matchStage = { ...baseMatch, Activity: 'Student_Message', 'Attributes.srl_phase': { $ne: null } };
         try {
             const db = mongoose.connection.db;
             if (!db) return null;
@@ -22,7 +32,7 @@ export class AnalyticsService {
 
             const phaseRows = await col
                 .aggregate([
-                    { $match: { CaseID: { $in: caseIds }, Activity: 'Student_Message', 'Attributes.srl_phase': { $ne: null } } },
+                    { $match: matchStage },
                     { $group: { _id: '$Attributes.srl_phase', count: { $sum: 1 }, avgConf: { $avg: '$Attributes.srl_confidence' } } },
                 ])
                 .toArray();
@@ -41,7 +51,7 @@ export class AnalyticsService {
 
             const subRows = await col
                 .aggregate([
-                    { $match: { CaseID: { $in: caseIds }, Activity: 'Student_Message', 'Attributes.srl_sub_phase': { $ne: null } } },
+                    { $match: { ...baseMatch, Activity: 'Student_Message', 'Attributes.srl_sub_phase': { $ne: null } } },
                     { $group: { _id: '$Attributes.srl_sub_phase', count: { $sum: 1 } } },
                 ])
                 .toArray();
@@ -49,8 +59,7 @@ export class AnalyticsService {
             for (const row of subRows) subPhases[String(row._id)] = row.count || 0;
 
             const recentRows = await col
-                .find(
-                    { CaseID: { $in: caseIds }, Activity: 'Student_Message', 'Attributes.srl_phase': { $ne: null } },
+                .find(matchStage,
                     { projection: { Timestamp: 1, 'Attributes.srl_phase': 1, 'Attributes.srl_sub_phase': 1, 'Attributes.srl_confidence': 1, 'Attributes.original_text': 1 } },
                 )
                 .sort({ Timestamp: -1 })

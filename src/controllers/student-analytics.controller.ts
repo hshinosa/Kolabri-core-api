@@ -45,6 +45,22 @@ export class StudentAnalyticsController {
         }
     }
 
+    /** SRL Zimmerman pribadi mahasiswa (dari classifier AI engine). */
+    static async getMySrl(req: Request, res: Response, next: NextFunction) {
+        try {
+            const userId = req.user?.userId;
+
+            if (!userId) {
+                return res.status(401).json({ error: 'Unauthorized' });
+            }
+
+            const srl = await AnalyticsService.getStudentSrl(userId);
+            res.json({ data: srl });
+        } catch (error) {
+            next(error);
+        }
+    }
+
     static async getRecentActivity(req: Request, res: Response, next: NextFunction) {
         try {
             const userId = req.user?.userId;

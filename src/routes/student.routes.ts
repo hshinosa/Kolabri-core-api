@@ -9,5 +9,6 @@ router.use(verifyToken);
 router.get('/analytics', StudentAnalyticsController.getStudentAnalytics);
 router.get('/stats', StudentAnalyticsController.getStudentStats);
 router.get('/activity/recent', StudentAnalyticsController.getRecentActivity);
+router.get('/srl', StudentAnalyticsController.getMySrl);
 
 export default router;
