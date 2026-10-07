@@ -34,7 +34,10 @@ async function bootstrap() {
 
         setupWebSocket(server);
 
-        server.listen(env.PORT, () => {
+        // BACKLOG-4096: default Node511 menolak SYN saat burst handshake
+        // massal (>1000 serentak, terukur ~6% xhr error) — samakan dgn
+        // somaxconn4096 di host.
+        server.listen(env.PORT, 4096, () => {
             logger.info(`Kolabri Core API running on port ${env.PORT}`);
             logger.info(`Environment: ${env.NODE_ENV}`);
             logger.info(`Health check: http://localhost:${env.PORT}/health`);
