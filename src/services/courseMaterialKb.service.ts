@@ -203,9 +203,30 @@ export class CourseMaterialKbService {
     }
 
     static async clearWeekOnUnassign(courseId: string, courseMaterialId: string) {
+        // F7 pass2: ambil id dokumen DULU (sebelum di-null-kan) supaya metadata
+        // minggu ikut dibersihkan di vector store — tanpa ini chunk Qdrant
+        // tetap membawa week_index basi dan tetap ter-boost/citation.
+        const rows = await prisma.knowledgeBase.findMany({
+            where: { courseId, courseMaterialId, deletedAt: null },
+            select: { id: true },
+        });
         await prisma.knowledgeBase.updateMany({
             where: { courseId, courseMaterialId, deletedAt: null },
             data: { weekId: null, weekIndex: null },
         });
+        for (const row of rows) {
+            const ok = await aiEngineService.updateDocumentMetadata(
+                row.id,
+                `course_${courseId}`,
+                { week_index: null, week_id: null }
+            );
+            if (!ok) {
+                logger.warn('Failed to clear week metadata from vector store', {
+                    knowledgeBaseId: row.id,
+                    courseId,
+                    courseMaterialId,
+                });
+            }
+        }
     }
 }

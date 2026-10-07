@@ -15,6 +15,7 @@ import {
   nowSeconds,
   saveRotatedRefresh,
   setRevokedBefore,
+  bumpRevokedBefore,
 } from "../utils/tokenRevocation.js";
 
 const SALT_ROUNDS = 10;
@@ -365,11 +366,15 @@ export class AuthService {
           ? Math.max(nowSeconds(), decoded.iat + 1)
           : undefined;
 
+      // P2-02: role hasil refresh harus dari kolom users.role TERBARU —
+      // refresh tak boleh mempertahankan role lama setelah demote.
+      const freshRole = user.role;
+
       const newAccessToken = this.generateAccessToken(
         {
           userId: decoded.userId,
           email: decoded.email,
-          role: decoded.role,
+          role: freshRole,
         },
         newIat,
       );
@@ -378,7 +383,7 @@ export class AuthService {
         {
           userId: decoded.userId,
           email: decoded.email,
-          role: decoded.role,
+          role: freshRole,
         },
         newIat,
       );
@@ -414,11 +419,8 @@ export class AuthService {
     const decoded = jwt.decode(refreshToken) as { userId?: string } | null;
     if (decoded && typeof decoded.userId === "string" && decoded.userId) {
       // TTL ≥ sisa umur refresh token, minimal 1 jam (fixplan H5).
-      await setRevokedBefore(
-        decoded.userId,
-        Math.floor(Date.now() / 1000),
-        Math.max(ttl, 60 * 60),
-      );
+      // bump: watermark harus melampaui iat token hasil rotasi (pass2-F2).
+      await bumpRevokedBefore(decoded.userId, Math.max(ttl, 60 * 60));
     }
 
     return {

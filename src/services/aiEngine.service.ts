@@ -564,6 +564,34 @@ export class AIEngineService {
     }
 
     /**
+     * F7 pass2: merge metadata (mis. week_index/week_id = null saat unassign)
+     * ke semua chunk satu document — tanpa re-ingest penuh.
+     */
+    async updateDocumentMetadata(
+        documentId: string,
+        collectionName: string,
+        metadata: Record<string, string | number | null>
+    ): Promise<boolean> {
+        try {
+            return await this.resilient(async () => {
+                const response = await this.fetchWithTimeout(
+                    `${this.baseUrl}/api/documents/${documentId}/metadata`,
+                    {
+                        method: 'PATCH',
+                        headers: this.getHeaders(),
+                        body: JSON.stringify({ metadata, collection_name: collectionName }),
+                    },
+                    DELETE_TIMEOUT
+                );
+                return response.ok;
+            });
+        } catch (error) {
+            logger.error('AI Engine update metadata failed:', sanitizeErrorForLog(error));
+            return false;
+        }
+    }
+
+    /**
      * Batch upload documents (supports ZIP files and multiple documents)
      * Supports: PDF, DOCX, PPTX, TXT, MD, images (PNG, JPG, etc.)
      * 

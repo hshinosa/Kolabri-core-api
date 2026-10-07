@@ -98,6 +98,29 @@ export async function setRevokedBefore(
   }
 }
 
+/**
+ * Logout/reset password: cabut SEMUA token walau ada iat di masa depan.
+ * Rotasi refresh menaikkan iat token baru (max(now, iat+1)) — pada burst,
+ * iat bisa sedikit melebihi wall-clock; guard monotonik menolak penulisan
+ * `now` yang lebih kecil → token "kebal logout" (pass2-F2). Dengan bump,
+ * watermark selalu diset ≥ token tertinggi yang mungkin beredar
+ * (prev+1 ≥ iat token hasil rotasi terakhir), sehingga logout TIDAK PERNAH
+ * bisa ditolak guard monotonik.
+ */
+export async function bumpRevokedBefore(
+  userId: string,
+  ttlSeconds?: number,
+): Promise<void> {
+  if (!userId) return;
+  const prev = await getRevokedBefore(userId);
+  const at = Math.max(nowSeconds(), (prev ?? 0) + 1);
+  if (ttlSeconds !== undefined) {
+    await setRevokedBefore(userId, at, ttlSeconds);
+  } else {
+    await setRevokedBefore(userId, at);
+  }
+}
+
 /** Ambil watermark (detik) untuk user; null bila tidak ada. */
 export async function getRevokedBefore(userId: string): Promise<number | null> {
   if (!userId) return null;

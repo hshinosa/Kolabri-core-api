@@ -6,6 +6,7 @@ import type { Server, Socket } from 'socket.io';
 import { logger } from '../utils/logger.js';
 import { JwtPayload } from '../middleware/auth.js';
 import prisma from '../config/database.js';
+import { isRevokedBefore } from '../utils/tokenRevocation.js';
 import type { AuthenticatedSocket } from './types.js';
 
 type NextFn = Parameters<Parameters<Server['use']>[0]>[1];
@@ -28,11 +29,17 @@ export async function authMiddleware(socket: Socket, next: NextFn): Promise<void
             return next(new Error('Server configuration error'));
         }
 
-        // PERF-WS-02: Check token cache first
-        const cached = tokenCache.get(token as string);
-        if (cached && Date.now() < cached.exp) {
-            authed.user = cached.user;
-            logger.debug(`Socket auth cache hit for user: ${cached.user.userId}`);
+        // F3 pass2: token yang sudah dicabut (logout/reset) tidak boleh
+        // membuka socket walau lolos jwt.verify — cek sebelum pakai cache.
+        const preCached = tokenCache.get(token as string);
+        if (preCached && Date.now() < preCached.exp) {
+            if (await isRevokedBefore(preCached.user.userId, preCached.user.iat)) {
+                tokenCache.delete(token as string);
+                logger.warn(`Socket auth rejected: revoked token (cache) for ${preCached.user.userId}`);
+                return next(new Error('Token revoked'));
+            }
+            authed.user = preCached.user;
+            logger.debug(`Socket auth cache hit for user: ${preCached.user.userId}`);
             return next();
         }
 
@@ -53,6 +60,12 @@ export async function authMiddleware(socket: Socket, next: NextFn): Promise<void
         if (!user) {
             logger.warn(`Socket auth rejected: User ${decoded.userId} not found or inactive`);
             return next(new Error('User not found'));
+        }
+
+        // F3 pass2: cabut sesi logout/reset — samakan dgn jalur HTTP.
+        if (await isRevokedBefore(decoded.userId, decoded.iat)) {
+            logger.warn(`Socket auth rejected: revoked token for ${decoded.userId}`);
+            return next(new Error('Token revoked'));
         }
 
         // PERF-WS-02: Cache the verified JWT payload for future connections

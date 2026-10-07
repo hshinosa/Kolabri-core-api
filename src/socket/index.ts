@@ -852,6 +852,8 @@ export function initSocketIO(server: HttpServer): Server {
               select: {
                 id: true,
                 groupId: true,
+                closedAt: true,
+                weekId: true,
                 group: { select: { courseId: true, deletedAt: true } },
               },
             });
@@ -878,6 +880,42 @@ export function initSocketIO(server: HttpServer): Server {
               message: "Access denied to this group",
             });
             return;
+          }
+
+          // F4 pass2: load_more adalah jalur BACA — wajib lalui gate pre-read
+          // & goal yang sama dgn join_room (sisi tulis sudah aman karena
+          // send_message butuh join).
+          if (socket.user.role === "student" && !sessionDiscussionRecord.closedAt) {
+            if (sessionDiscussionRecord.weekId) {
+              const preRead =
+                await prisma.sessionDiscussionPreReadCompletion.findUnique({
+                  where: {
+                    userId_sessionDiscussionId: {
+                      userId: socket.user.userId,
+                      sessionDiscussionId,
+                    },
+                  },
+                  select: { id: true },
+                });
+              if (!preRead) {
+                socket.emit("server_error", {
+                  message: "Selesaikan pre-read sebelum membaca sesi diskusi",
+                  code: "PRE_READ_REQUIRED",
+                });
+                return;
+              }
+            }
+            const goal = await prisma.learningGoal.findFirst({
+              where: { sessionDiscussionId },
+              select: { id: true },
+            });
+            if (!goal) {
+              socket.emit("server_error", {
+                message: "Tetapkan tujuan pembelajaran sebelum membaca sesi diskusi",
+                code: "GOAL_REQUIRED",
+              });
+              return;
+            }
           }
 
           const beforeObjectId = new mongoose.Types.ObjectId(beforeMessageId);
@@ -965,6 +1003,14 @@ export function initSocketIO(server: HttpServer): Server {
           });
           return;
         }
+        // F1 pass2: pin wajib dari dalam room (konsisten dgn edit/delete) —
+        // tanpa ini non-anggota bisa menyematkan pin lintas grup.
+        if (!socket.rooms.has(data.conversationId)) {
+          socket.emit("server_error", {
+            message: "You must be in the room to pin messages",
+          });
+          return;
+        }
         try {
           const message = await ChatLog.findById(data.messageId);
           if (!message || message.sessionDiscussionId !== data.conversationId) {
@@ -1009,6 +1055,13 @@ export function initSocketIO(server: HttpServer): Server {
         if (!data.messageId || !data.conversationId) {
           socket.emit("server_error", {
             message: "messageId and conversationId required",
+          });
+          return;
+        }
+        // F1 pass2: unpin juga wajib dari dalam room.
+        if (!socket.rooms.has(data.conversationId)) {
+          socket.emit("server_error", {
+            message: "You must be in the room to unpin messages",
           });
           return;
         }

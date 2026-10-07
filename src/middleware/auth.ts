@@ -65,22 +65,35 @@ export async function verifyToken(
       throw ApiError.unauthorized("Token revoked");
     }
 
+    // P2-02 (pass2 HIGH): role yang berlaku adalah kolom users.role TERBARU,
+    // bukan klaim pada token lama — demote (mis. bulk-role-change) langsung
+    // berlaku maksimal 30 dtk kemudian, tanpa menunggu token kedaluwarsa.
+    let effectiveRole: NonNullable<JwtPayload["role"]> = decoded.role;
     const cached = userActiveCache.get(decoded.userId);
     if (cached === null) {
       const user = await prisma.user.findFirst({
         where: { id: decoded.userId, deletedAt: null, isActive: true },
-        select: { id: true },
+        select: { id: true, role: true },
       });
       if (!user) {
         userActiveCache.set(decoded.userId, false);
         return next(ApiError.unauthorized("User not found"));
       }
-      userActiveCache.set(decoded.userId, true);
-    } else if (cached === false) {
+      // kolom users.role (enum string) — klaim JWT memakai union yang sama.
+      // Fallback ke klaim token bila kolom kosong (ketahanan, bukan bypass:
+      // role hasil DB selalu menang saat ada).
+      const dbRole = (user.role ?? decoded.role) as NonNullable<
+        JwtPayload["role"]
+      >;
+      userActiveCache.set(decoded.userId, true, user.role ?? null);
+      effectiveRole = dbRole;
+    } else if (!cached.isActive) {
       return next(ApiError.unauthorized("User not found"));
+    } else if (cached.role) {
+      effectiveRole = cached.role as NonNullable<JwtPayload["role"]>;
     }
 
-    req.user = decoded;
+    req.user = { ...decoded, role: effectiveRole };
     next();
   } catch (error) {
     if (error instanceof jwt.TokenExpiredError) {

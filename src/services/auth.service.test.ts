@@ -229,6 +229,35 @@ describe("AuthService", () => {
     delete process.env.REFRESH_ROTATION_GRACE_SECONDS;
   });
 
+  it("pass2-F2: logout selalu menang atas iat yang terdorong ke depan", async () => {
+    // Burst rotasi dalam detik yang sama → iat token baru naik +1 per rotasi
+    // (max(now, iat+1)), melampaui wall-clock. Guard monotonik menolak
+    // penulisan `now` yang lebih kecil → tanpa bump, logout jadi no-op.
+    const login = await AuthService.login({
+      email: "alya@example.com",
+      password: "secret123",
+    });
+    let refreshToken = login.refreshToken;
+    let accessToken = login.accessToken;
+    for (let i = 0; i < 5; i++) {
+      const r = await AuthService.refreshAccessToken(refreshToken);
+      refreshToken = r.refreshToken;
+      accessToken = r.accessToken;
+    }
+    const dec = jwt.decode(accessToken) as jwt.JwtPayload;
+    // iat hasil burst berada di depan (atau tepat di) wall-clock
+    await AuthService.logout(refreshToken);
+    // bumpRevokedBefore menutup token tertinggi sekalipun iat > now:
+    expect(await isRevokedBefore("user-1", dec.iat)).toBe(true);
+    // token baru setelah logout (re-login) tetap hidup:
+    const login2 = await AuthService.login({
+      email: "alya@example.com",
+      password: "secret123",
+    });
+    const dec2 = jwt.decode(login2.accessToken) as jwt.JwtPayload;
+    expect(await isRevokedBefore("user-1", dec2.iat)).toBe(false);
+  });
+
   it("parallel refresh within grace window does NOT kill the session (F3)", async () => {
     process.env.REFRESH_ROTATION_GRACE_SECONDS = "10";
     prismaMock.user.findFirst.mockResolvedValue({

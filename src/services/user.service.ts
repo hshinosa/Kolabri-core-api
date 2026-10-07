@@ -4,6 +4,7 @@ import { ApiError } from "../middleware/errorHandler.js";
 import { AuditLogService } from "./audit-log.service.js";
 import { broadcastAdminEvent } from "../websocket/server.js";
 import { userActiveCache } from "../utils/userActiveCache.js";
+import { bumpRevokedBefore } from "../utils/tokenRevocation.js";
 import {
   CreateUserInput,
   ListUsersQuery,
@@ -343,6 +344,10 @@ export class UserService {
       },
     });
 
+    // P2-10 (pass2): reset password oleh admin = akun mungkin terkompromi —
+    // cabut SEMUA sesi aktif (access + refresh terbit ≤ detik ini).
+    await bumpRevokedBefore(id);
+
     await AuditLogService.logAction({
       action: "UPDATE",
       entityType: "User",
@@ -431,19 +436,41 @@ export class UserService {
       throw ApiError.badRequest("At least one user must be selected");
     }
 
-    const existingUsers = await prisma.user.findMany({
-      where: { id: { in: uniqueUserIds } },
-      select: { id: true },
-    });
-
-    if (existingUsers.length !== uniqueUserIds.length) {
-      throw ApiError.notFound("One or more users were not found");
+    // P2-11 (pass2): guard self & last-admin (selaras dgn deleteUser).
+    if (actorUserId && uniqueUserIds.includes(actorUserId) && role !== "admin") {
+      throw ApiError.badRequest("Cannot change your own role");
+    }
+    if (role !== "admin") {
+      // Jangan biarkan seluruh admin aktif diturunkan sekaligus (kunci
+      // akses operator). Guard self di atas memastikan actor tak pernah
+      // ada dalam batch demote, jadi sisa admin = adminCount - demotingAdmins.
+      const adminCount = await prisma.user.count({
+        where: { role: "admin", deletedAt: null, isActive: true },
+      });
+      const demotingAdmins = await prisma.user.count({
+        where: {
+          id: { in: uniqueUserIds },
+          role: "admin",
+          deletedAt: null,
+          isActive: true,
+        },
+      });
+      if (demotingAdmins > 0 && adminCount - demotingAdmins <= 0) {
+        throw ApiError.badRequest(
+          "Cannot demote the last active administrator",
+        );
+      }
     }
 
     const result = await prisma.user.updateMany({
       where: { id: { in: uniqueUserIds } },
       data: { role },
     });
+
+    // P2-02: role berubah → buang cache supaya verifyToken membaca role baru
+    for (const id of uniqueUserIds) {
+      userActiveCache.invalidate(id);
+    }
 
     await AuditLogService.logAction({
       action: "UPDATE",

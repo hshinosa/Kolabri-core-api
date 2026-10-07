@@ -95,6 +95,9 @@ export function registerPresence(_io: Server, socket: AuthenticatedSocket): void
         const typingParsed = typingSchema.safeParse(data);
         if (!typingParsed.success) return;
         if (!socket.user) return;
+        // F5 pass2: hanya anggota room yang boleh broadcast presence —
+        // tanpa ini siapa pun bisa menyuntik 'user_typing' lintas grup.
+        if (!socket.rooms.has(data.roomId)) return;
 
         socket.to(data.roomId).emit('user_typing', {
             userId: socket.user.userId,
@@ -104,7 +107,7 @@ export function registerPresence(_io: Server, socket: AuthenticatedSocket): void
     });
 
     socket.on('leave_room', (roomId: string) => {
-        if (socket.user) {
+        if (socket.user && socket.rooms.has(roomId)) {
             socket.to(roomId).emit('user_typing', {
                 userId: socket.user.userId,
                 userName: socketDisplayName(socket),

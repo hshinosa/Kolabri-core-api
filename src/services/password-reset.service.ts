@@ -2,7 +2,7 @@ import { PrismaClient } from "@prisma/client";
 import crypto from "crypto";
 import bcrypt from "bcrypt";
 import { ApiError } from "../middleware/errorHandler.js";
-import { setRevokedBefore } from "../utils/tokenRevocation.js";
+import { bumpRevokedBefore } from "../utils/tokenRevocation.js";
 
 const prisma = new PrismaClient();
 
@@ -78,7 +78,7 @@ export class PasswordResetService {
     // H5 (F5): ganti password = akhiri SEMUA sesi lama — watermark
     // revoked_before (TTL 7 hari) membuat access & refresh JWT yang terbit
     // sebelum detik ini 401 di verifyToken / refresh.
-    await setRevokedBefore(updatedUser.id);
+    await bumpRevokedBefore(updatedUser.id);
 
     return { message: "Password reset successful" };
   }
