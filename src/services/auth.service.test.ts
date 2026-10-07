@@ -257,4 +257,35 @@ describe("AuthService", () => {
     const newAccess = jwt.decode(relogin.accessToken) as jwt.JwtPayload;
     expect(await isRevokedBefore("user-1", newAccess.iat)).toBe(false);
   });
+
+  it("re-login in the SAME second as logout still yields a live token (regresi T1)", async () => {
+    prismaMock.user.findFirst.mockResolvedValue({
+      id: "user-1",
+      email: "alya@example.com",
+      role: "student",
+      isActive: true,
+      password: "stored-hash",
+    });
+    bcryptMock.compare.mockResolvedValue(true);
+
+    // logout terjadi tepat di detik ini → watermark = detik ini
+    const { nowSeconds, setRevokedBefore } = await import(
+      "../utils/tokenRevocation.js"
+    );
+    const logoutAt = nowSeconds();
+    await setRevokedBefore("user-1", logoutAt);
+
+    // re-login TANPA jeda (detik yang sama dengan logout)
+    const relogin = await AuthService.login({
+      email: "alya@example.com",
+      password: "secret123",
+    });
+    const access = jwt.decode(relogin.accessToken) as jwt.JwtPayload;
+
+    // iat token baru digeser melewati watermark → tidak ikut mati
+    expect(access.iat).toBeGreaterThan(logoutAt);
+    expect(await isRevokedBefore("user-1", access.iat)).toBe(false);
+    // token lama (iat <= watermark) tetap mati
+    expect(await isRevokedBefore("user-1", logoutAt)).toBe(true);
+  });
 });

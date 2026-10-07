@@ -7,9 +7,11 @@ import { RegisterInput, LoginInput } from "../validators/auth.validator.js";
 import { JwtPayload } from "../middleware/auth.js";
 import { getRedis } from "../config/redis.js";
 import {
+  getRevokedBefore,
   isRefreshUsed,
   isRevokedBefore,
   markRefreshUsed,
+  nowSeconds,
   setRevokedBefore,
 } from "../utils/tokenRevocation.js";
 
@@ -145,18 +147,32 @@ export class AuthService {
       throw ApiError.unauthorized("Invalid email or password");
     }
 
-    // Generate access and refresh tokens
-    const accessToken = this.generateAccessToken({
-      userId: user.id,
-      email: user.email,
-      role: user.role,
-    });
+    // Token baru harus iat > watermark revocation terakhir (logout/reset),
+    // kalau tidak, re-login di detik yang sama dengan logout ikut dianggap
+    // mati oleh verifyToken (regresi T1 pasca-fix H5).
+    const watermark = await getRevokedBefore(user.id);
+    const now = nowSeconds();
+    const tokenIat =
+      watermark !== null && now <= watermark ? watermark + 1 : now;
 
-    const refreshToken = this.generateRefreshToken({
-      userId: user.id,
-      email: user.email,
-      role: user.role,
-    });
+    // Generate access and refresh tokens
+    const accessToken = this.generateAccessToken(
+      {
+        userId: user.id,
+        email: user.email,
+        role: user.role,
+      },
+      tokenIat,
+    );
+
+    const refreshToken = this.generateRefreshToken(
+      {
+        userId: user.id,
+        email: user.email,
+        role: user.role,
+      },
+      tokenIat,
+    );
 
     return {
       accessToken,
@@ -197,7 +213,10 @@ export class AuthService {
    * Generate access token (short-lived)
    * Default: 1 day. Can be overridden via JWT_EXPIRES_IN env (e.g. "1d", "24h", "1440m").
    */
-  private static generateAccessToken(payload: JwtPayload): string {
+  private static generateAccessToken(
+    payload: JwtPayload,
+    iat?: number,
+  ): string {
     const secret = process.env.JWT_SECRET;
     const expiresIn = process.env.JWT_EXPIRES_IN || "1d";
 
@@ -209,7 +228,8 @@ export class AuthService {
     if (process.env.NODE_ENV === "test" || process.env.VITEST) {
       signOptions.jwtid = `${payload.userId}-${Date.now()}-${Math.random().toString(36).slice(2)}`;
     }
-    return jwt.sign(payload, secret, signOptions);
+    const body = iat !== undefined ? { ...payload, iat } : payload;
+    return jwt.sign(body, secret, signOptions);
   }
 
   /**
@@ -217,6 +237,7 @@ export class AuthService {
    */
   private static generateRefreshToken(
     payload: Omit<JwtPayload, "type">,
+    iat?: number,
   ): string {
     const secret = process.env.JWT_REFRESH_SECRET || process.env.JWT_SECRET;
 
@@ -227,6 +248,7 @@ export class AuthService {
     const refreshPayload: RefreshTokenPayload = {
       ...payload,
       type: "refresh",
+      ...(iat !== undefined ? { iat } : {}),
     };
 
     // jti = serial rotasi: refresh token dicatat di `auth:refresh:<jti>`
