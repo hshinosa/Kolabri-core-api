@@ -11,7 +11,9 @@ export const registerSchema = z.object({
         .string()
         .min(8, 'Password must be at least 8 characters')
         .max(100, 'Password must be less than 100 characters'),
-    role: z.enum(['student', 'lecturer', 'admin']).default('student'),
+    // Admin TIDAK boleh dari registrasi publik (celah eskalasi privilese —
+    // cukup POST role=admin utk akun admin penuh). Admin dibuat via seed/DB.
+    role: z.enum(['student', 'lecturer']).default('student'),
 });
 
 export const loginSchema = z.object({
