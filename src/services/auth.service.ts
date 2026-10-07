@@ -289,11 +289,18 @@ export class AuthService {
               secret,
             ) as RefreshTokenPayload;
             if (g.type === "refresh" && g.userId) {
-              const access = this.generateAccessToken({
-                userId: g.userId,
-                email: g.email,
-                role: g.role,
-              });
+              const graceIat =
+                typeof g.iat === "number"
+                  ? Math.max(nowSeconds(), g.iat + 1)
+                  : undefined;
+              const access = this.generateAccessToken(
+                {
+                  userId: g.userId,
+                  email: g.email,
+                  role: g.role,
+                },
+                graceIat,
+              );
               return { accessToken: access, refreshToken: graceToken };
             }
           } catch {
@@ -301,7 +308,13 @@ export class AuthService {
           }
         }
         if (unverified.userId) {
-          await setRevokedBefore(unverified.userId);
+          // Kill sesi: watermark harus ≥ token paling baru yang terbit
+          // (iat sengaja digeser ke depan saat rotasi → now bisa lebih kecil
+          // dari iat token yang sudah beredar — monotonik mencegah turun).
+          const prev =
+            (await getRevokedBefore(unverified.userId)) ?? 0;
+          const killAt = Math.max(nowSeconds(), prev + 1);
+          await setRevokedBefore(unverified.userId, killAt);
         }
         throw ApiError.unauthorized("Refresh token reuse detected");
       }
@@ -338,18 +351,37 @@ export class AuthService {
         await markRefreshUsed(decoded.jti, ttl);
       }
 
-      // Generate new access token
-      const newAccessToken = this.generateAccessToken({
-        userId: decoded.userId,
-        email: decoded.email,
-        role: decoded.role,
-      });
+      // F5: rotasi mencabut access token lama — watermark = iat refresh tsb
+      // (semua token terbit ≤ iat refresh mati; device lain dgn iat lebih
+      // baru tak terpengaruh). Ditaruh SEBELUM penerbitan token baru.
+      if (typeof decoded.iat === "number") {
+        await setRevokedBefore(decoded.userId, decoded.iat);
+      }
 
-      const newRefreshToken = this.generateRefreshToken({
-        userId: decoded.userId,
-        email: decoded.email,
-        role: decoded.role,
-      });
+      // Token baru wajib iat > watermark (kalau rotasi terjadi di detik yang
+      // sama dgn iat refresh lama, default iat=now akan ikut mati — pola F4).
+      const newIat =
+        typeof decoded.iat === "number"
+          ? Math.max(nowSeconds(), decoded.iat + 1)
+          : undefined;
+
+      const newAccessToken = this.generateAccessToken(
+        {
+          userId: decoded.userId,
+          email: decoded.email,
+          role: decoded.role,
+        },
+        newIat,
+      );
+
+      const newRefreshToken = this.generateRefreshToken(
+        {
+          userId: decoded.userId,
+          email: decoded.email,
+          role: decoded.role,
+        },
+        newIat,
+      );
 
       // F3: simpan hasil rotasi singkat utk permintaan paralel dgn jti lama
       if (decoded.jti) {

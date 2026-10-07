@@ -218,7 +218,8 @@ export class SessionDiscussionService {
     const presentCount = students.filter((s) => s.status === "present").length;
     const absentCount = students.filter((s) => s.status === "absent").length;
 
-    await prisma.attendanceSession.create({
+    try {
+      await prisma.attendanceSession.create({
       data: {
         id: sessionId,
         courseId,
@@ -250,6 +251,14 @@ export class SessionDiscussionService {
         },
       },
     });
+    } catch (error) {
+      // TOCTOU defence: baris attendance sudah dibuat pihak lain (race) —
+      // unique constraint sessionDiscussionId menang, jangan gagalkan close.
+      if ((error as { code?: string })?.code === "P2002") {
+        return;
+      }
+      throw error;
+    }
   }
 
   /**

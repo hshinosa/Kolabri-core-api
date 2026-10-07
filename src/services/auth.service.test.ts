@@ -190,12 +190,18 @@ describe("AuthService", () => {
       password: "secret123",
     });
     const originalRefresh = login.refreshToken;
+    const oldAccess = jwt.decode(login.accessToken) as jwt.JwtPayload;
 
     // refresh #1 → refresh token BARU dikembalikan (rotasi)
     const first = await AuthService.refreshAccessToken(originalRefresh);
     expect(first.refreshToken).toBeDefined();
     expect(first.refreshToken).not.toBe(originalRefresh);
     expect(first.accessToken).not.toBe(login.accessToken);
+
+    // F5: rotasi ikut mencabut access token lama (bukan cuma refresh)
+    expect(await isRevokedBefore("user-1", oldAccess.iat)).toBe(true);
+    const newAccess = jwt.decode(first.accessToken) as jwt.JwtPayload;
+    expect(await isRevokedBefore("user-1", newAccess.iat)).toBe(false);
 
     // refresh #2 dengan token BARU → tetap lolos
     const second = await AuthService.refreshAccessToken(first.refreshToken);
@@ -252,9 +258,8 @@ describe("AuthService", () => {
     // sesi belum mati: refresh dgn token hasil rotasi tetap jalan
     const next = await AuthService.refreshAccessToken(first.refreshToken);
     expect(next.accessToken).toBeDefined();
-    expect(await isRevokedBefore("user-1", Math.floor(Date.now() / 1000))).toBe(
-      false,
-    );
+    const nextAccess = jwt.decode(next.accessToken) as jwt.JwtPayload;
+    expect(await isRevokedBefore("user-1", nextAccess.iat)).toBe(false);
     delete process.env.REFRESH_ROTATION_GRACE_SECONDS;
   });
 
