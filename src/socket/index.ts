@@ -15,7 +15,7 @@ import {
   allowedMaterialsForCourseMaxWeek,
 } from "../utils/citationFilter.js";
 import { DiscussionDirectionService } from "../services/discussion-direction.service.js";
-import { socketRateLimiter } from "../utils/socketRateLimiter.js";
+import { pickRateEvent, socketRateLimiter } from "../utils/socketRateLimiter.js";
 import {
   sanitizeMessageContent,
   sanitizeAttachments,
@@ -476,14 +476,15 @@ export function initSocketIO(server: HttpServer): Server {
         }>;
         mentions?: string[];
       }) => {
-        if (!socketRateLimiter.isAllowed(socket.id, "send_message")) {
+        // Pesan ber-mention @ai memakai limit TERPISAH yang lebih longgar
+        // (SOCKET_AI_RATE_MAX, default 180/menit) — kuota harian AI tetap
+        // menjadi batas utama pemakaian AI.
+        const rateEvent = pickRateEvent(data.content);
+        if (!socketRateLimiter.isAllowed(socket.id, rateEvent)) {
           const violations = socketRateLimiter.recordViolation(socket.id);
           socket.emit("rate_limit_exceeded", {
-            event: "send_message",
-            retryAfter: socketRateLimiter.getRetryAfter(
-              socket.id,
-              "send_message",
-            ),
+            event: rateEvent,
+            retryAfter: socketRateLimiter.getRetryAfter(socket.id, rateEvent),
             message: "Too many messages. Please slow down.",
           });
           if (violations >= socketRateLimiter.disconnectThreshold)

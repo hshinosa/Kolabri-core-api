@@ -3,14 +3,32 @@ interface EventLimit {
     windowMs: number;
 }
 
+// Batas LONGGAR (rancangan Spesifikasi-Batas-RateLimit-Kolabri §4):
+//   - send_message     : 120/menit per koneksi (manusia <10/menit; sisanya
+//                        margin utk burst & uji beban)
+//   - send_message_ai  : 180/menit per koneksi — PALING longgar dari sisi
+//                        socket sesuai permintaan; kuota harian AI tetap jadi
+//                        batas utama pemakaian AI
+//   - join_room        : 30/menit (navigasi normal jauh di bawah ini)
+// Env: SOCKET_MSG_RATE_MAX / SOCKET_AI_RATE_MAX utk penyesuaian tanpa deploy.
+const envNum = (name: string, fallback: number): number =>
+    Number(process.env[name]) || fallback;
+
 const EVENT_LIMITS: Record<string, EventLimit> = {
-    send_message:   { maxRequests: 10, windowMs: 10000 },
-    join_room:      { maxRequests: 5,  windowMs: 60000 },
-    typing:         { maxRequests: 30, windowMs: 10000 },
-    leave_room:     { maxRequests: 10, windowMs: 60000 },
-    delete_message: { maxRequests: 20, windowMs: 60000 },
-    edit_message:   { maxRequests: 20, windowMs: 60000 },
-    load_more_messages: { maxRequests: 20, windowMs: 60000 },
+    send_message: {
+        maxRequests: envNum("SOCKET_MSG_RATE_MAX", 120),
+        windowMs: 60000,
+    },
+    send_message_ai: {
+        maxRequests: envNum("SOCKET_AI_RATE_MAX", 180),
+        windowMs: 60000,
+    },
+    join_room: { maxRequests: 30, windowMs: 60000 },
+    typing: { maxRequests: 30, windowMs: 10000 },
+    leave_room: { maxRequests: 30, windowMs: 60000 },
+    delete_message: { maxRequests: 30, windowMs: 60000 },
+    edit_message: { maxRequests: 30, windowMs: 60000 },
+    load_more_messages: { maxRequests: 30, windowMs: 60000 },
 };
 
 const VIOLATION_WINDOW_MS = 60000;
@@ -81,6 +99,14 @@ export class SocketRateLimiter {
     get disconnectThreshold(): number {
         return DISCONNECT_THRESHOLD;
     }
+}
+
+// Pemilihan event rate untuk pesan chat: mention @ai memakai limit terpisah
+// yang lebih longgar (SOCKET_AI_RATE_MAX) — diuji unit tanpa server socket.
+export function pickRateEvent(content: string | undefined): "send_message" | "send_message_ai" {
+    return typeof content === "string" && content.includes("@ai")
+        ? "send_message_ai"
+        : "send_message";
 }
 
 export const socketRateLimiter = new SocketRateLimiter();

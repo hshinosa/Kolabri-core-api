@@ -38,6 +38,12 @@ import internalRoutes from './routes/internal.routes.js';
 
 const app = express();
 
+// Percayai HOP LOOPBACK saja (nginx -> app lewat loopback/bridge). Setelah
+// nginx menulis X-Forwarded-For dengan $remote_addr (overwrite), req.ip di
+// sini = IP asli client — prasyarat semua kunci rate limit per-IP asli.
+// JANGAN pakai '*' — spoofable bila header tidak ditimpa nginx.
+app.set("trust proxy", "loopback");
+
 const allowedOrigins = [
     process.env.CLIENT_URL || 'http://localhost:8000',
     'http://localhost:8000',

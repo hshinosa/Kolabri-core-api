@@ -20,7 +20,15 @@ describe('rateLimiter Redis store integration', () => {
         const { rateLimiter, authRateLimiter, loginRateLimiter, registerRateLimiter, aiRateLimiter, testConnectionLimiter } =
             await import('./rateLimiter.js');
 
-        for (const limiter of [rateLimiter, authRateLimiter, loginRateLimiter, registerRateLimiter, aiRateLimiter, testConnectionLimiter]) {
+        // login/register kini array multi-lapis (IP + email) — flatten dulu.
+        for (const limiter of [
+            rateLimiter,
+            authRateLimiter,
+            ...loginRateLimiter,
+            ...registerRateLimiter,
+            aiRateLimiter,
+            testConnectionLimiter,
+        ]) {
             expect(typeof limiter).toBe('function');
         }
     });

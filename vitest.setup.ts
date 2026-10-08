@@ -1,6 +1,6 @@
-import 'dotenv/config';
+import "dotenv/config";
 
-import { vi } from 'vitest';
+import { vi } from "vitest";
 
 // Tests import app.ts (not server.ts, the only entry that loads dotenv), so
 // load .env here the same way server.ts does — JWT_SECRET & friends must be
@@ -10,32 +10,32 @@ import { vi } from 'vitest';
 const passThrough = (_req: unknown, _res: unknown, next: () => void) => next();
 
 function useRealRateLimiters(): boolean {
-    return process.env.VITEST_RATE_LIMIT_REAL === '1';
+  return process.env.VITEST_RATE_LIMIT_REAL === "1";
 }
 
-vi.mock('./src/middleware/rateLimiter.js', async (importOriginal) => {
-    const actual = await importOriginal<typeof import('./src/middleware/rateLimiter.js')>();
-    type Limiter = (typeof actual)['rateLimiter'];
+vi.mock("./src/middleware/rateLimiter.js", async (importOriginal) => {
+  const actual =
+    await importOriginal<typeof import("./src/middleware/rateLimiter.js")>();
+  type Limiter = (typeof actual)["rateLimiter"];
 
-    const wrap = (name: keyof typeof actual): Limiter => {
-        const real = actual[name] as Limiter;
-        return ((req, res, next) => {
-            if (useRealRateLimiters()) {
-                return real(req, res, next);
-            }
-            return passThrough(req, res, next);
-        }) as Limiter;
-    };
+  const wrapOne = (real: Limiter): Limiter =>
+    ((req, res, next) => {
+      if (useRealRateLimiters()) {
+        return real(req, res, next);
+      }
+      return passThrough(req, res, next);
+    }) as Limiter;
 
-    return {
-        ...actual,
-        rateLimiter: wrap('rateLimiter'),
-        authRateLimiter: wrap('authRateLimiter'),
-        loginRateLimiter: wrap('loginRateLimiter'),
-        registerRateLimiter: wrap('registerRateLimiter'),
-        aiRateLimiter: wrap('aiRateLimiter'),
-        previewRateLimiter: wrap('previewRateLimiter'),
-        testConnectionLimiter: wrap('testConnectionLimiter'),
-        exportRateLimiter: wrap('exportRateLimiter'),
-    };
+  // Dukung dua bentuk export: middleware tunggal MAUPUN array multi-lapis
+  // (mis. loginRateLimiter = [lapis IP, lapis email] — spesifikasi rate limit
+  // baru). Semua export module dibungkus otomatis sehingga export baru ikut
+  // terkendali oleh VITEST_RATE_LIMIT_REAL.
+  const wrapAny = (value: unknown): unknown =>
+    Array.isArray(value)
+      ? value.map((item) => wrapOne(item as Limiter))
+      : wrapOne(value as Limiter);
+
+  return Object.fromEntries(
+    Object.entries(actual).map(([name, value]) => [name, wrapAny(value)]),
+  ) as typeof actual;
 });
