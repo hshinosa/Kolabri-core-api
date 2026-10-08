@@ -210,6 +210,10 @@ model SessionDiscussion {
   closedBy String?   @map("closed_by")
   summary  String?   @db.Text @map("summary")
   summaryGeneratedAt DateTime? @map("summary_generated_at")
+  /// Penilaian capaian tujuan (goalAchieved/topics/contributions/assessment)
+  /// dihasilkan sekali di server saat sesi ditutup — client tak memanggil
+  /// endpoint direction/summary (dosen-only, P2-04).
+  goalAssessment Json? @map("goal_assessment")
 
   // Creator
   createdBy String @map("created_by")

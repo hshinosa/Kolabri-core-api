@@ -102,6 +102,7 @@ export class SessionDiscussionController {
             res.json({
                 summary: result.summary,
                 generatedAt: result.generatedAt,
+                goalAssessment: result.goalAssessment ?? null,
             });
         } catch (error) {
             next(error);

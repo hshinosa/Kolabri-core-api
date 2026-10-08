@@ -6,6 +6,7 @@ import { getSocketEmitter } from "../utils/socketEmitter.js";
 import { logger } from "../utils/logger.js";
 import { ChatLog } from "../models/ChatLog.js";
 import { aiEngineService } from "./aiEngine.service.js";
+import { DiscussionDirectionService } from "./discussion-direction.service.js";
 import {
   AttendanceService,
   type AttendanceResult,
@@ -114,8 +115,16 @@ export class SessionDiscussionService {
     let summary: string | null = null;
     let summaryGeneratedAt: Date | null = null;
     let summaryError: string | null = null;
+    // Dipakai bersama oleh ringkasan teks dan penilaian tujuan (di bawah).
+    let recentMessages: Array<{
+      content: string;
+      senderName: string;
+      senderId: string;
+      senderType: string;
+      createdAt: Date;
+    }> = [];
     try {
-      const recentMessages = await ChatLog.find({
+      recentMessages = await ChatLog.find({
         sessionDiscussionId,
         deletedAt: null,
         senderType: { $in: ["student", "lecturer", "ai"] },
@@ -162,6 +171,43 @@ export class SessionDiscussionService {
       summaryError =
         error instanceof Error ? error.message : "Failed to generate summary";
     }
+
+    // Penilaian capaian tujuan — dihasilkan sekali di sini (server-side),
+    // bukan oleh client: endpoint direction/summary dosen-only (P2-04) agar
+    // kuota AI tak bisa dibakar sembarang client, sementara modal ringkasan
+    // mahasiswa tetap mendapat penilaian.
+    try {
+      const goal = await prisma.learningGoal.findFirst({
+        where: { sessionDiscussionId },
+        orderBy: { createdAt: "desc" },
+        select: { content: true },
+      });
+      if (goal && recentMessages.length > 0) {
+        const goalAssessment = await DiscussionDirectionService.generateSessionSummary(
+          recentMessages.map((m) => ({
+            content: m.content,
+            senderName: m.senderName || m.senderType,
+          })),
+          goal.content,
+          {
+            totalMessages: recentMessages.length,
+            participantCount: new Set(
+              recentMessages.map((m) => m.senderId).filter(Boolean),
+            ).size,
+          },
+        );
+        await prisma.sessionDiscussion.update({
+          where: { id: sessionDiscussionId },
+          data: { goalAssessment: goalAssessment as never },
+        });
+      }
+    } catch (error) {
+      logger.warn("Goal assessment generation failed during session close", {
+        sessionDiscussionId,
+        error: error instanceof Error ? error.message : String(error),
+      });
+    }
+
     let attendanceData: AttendanceResult | null = null;
     try {
       attendanceData =
@@ -526,6 +572,7 @@ export class SessionDiscussionService {
         id: true,
         summary: true,
         summaryGeneratedAt: true,
+        goalAssessment: true,
         group: {
           select: {
             course: { select: { ownerId: true } },
@@ -555,6 +602,7 @@ export class SessionDiscussionService {
     return {
       summary: sessionDiscussion.summary,
       generatedAt: sessionDiscussion.summaryGeneratedAt,
+      goalAssessment: sessionDiscussion.goalAssessment ?? null,
     };
   }
 
