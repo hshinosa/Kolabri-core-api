@@ -62,6 +62,7 @@ export const loginRateLimiter = rateLimit({
     windowMs: 15 * 60 * 1000,
     max: 5,
     store: buildStore('login'),
+    skip: () => RATE_LIMIT_DISABLED,
     keyGenerator: (req) => req.ip || 'anonymous',
     skipSuccessfulRequests: true,
     message: {
@@ -79,6 +80,7 @@ export const registerRateLimiter = rateLimit({
     windowMs: 60 * 60 * 1000,
     max: 3,
     store: buildStore('register'),
+    skip: () => RATE_LIMIT_DISABLED,
     keyGenerator: (req) => req.ip || 'anonymous',
     message: {
         error: {
