@@ -331,6 +331,43 @@ describe('AIEngineService', () => {
         expect(events).toEqual([{ type: 'done', content: 'Selesai.' }]);
     });
 
+    it('flushes the final event when the stream ends without a trailing delimiter', async () => {
+        // Bug production (2026-10-07): event terakhir 'done' (bawa quality_score)
+        // tiba tanpa '\n\n' penutup lalu stream ditutup — tanpa flush, sisa buffer
+        // terbuang sehingga quality_update tak pernah sampai ke panel kualitas.
+        const payload =
+            'data: {"type":"token","content":"Halo"}\n\n' +
+            'data: {"type":"done","content":"Tuntas","action_taken":"RESPOND"}';
+        const bytes = new TextEncoder().encode(payload);
+        fetchMock.mockResolvedValue({
+            ok: true,
+            status: 200,
+            body: {
+                getReader: () => {
+                    let sent = false;
+                    return {
+                        read: async () => {
+                            if (sent) return { done: true, value: undefined };
+                            sent = true;
+                            return { done: false, value: bytes };
+                        },
+                    };
+                },
+            },
+        } as unknown as Response);
+
+        const events = await collectEvents(
+            service.orchestratedChatStream({
+                user_id: 'user-1',
+                group_id: 'group-1',
+                message: 'Halo teman-teman',
+            })
+        );
+
+        expect(events.map((event) => event.type)).toEqual(['token', 'done']);
+        expect(events[1].content).toBe('Tuntas');
+    });
+
     it('preserves provider_context on orchestrated chat stream requests', async () => {
         const providerContext = createProviderContext();
         fetchMock.mockResolvedValue(createSseResponse([{ type: 'done', content: 'ok' }]));

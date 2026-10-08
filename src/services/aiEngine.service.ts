@@ -897,6 +897,27 @@ export class AIEngineService {
             const reader = response.body.getReader();
             const decoder = new TextDecoder();
             let buffer = '';
+            let sseSelesai = false;
+
+            // Parse potongan SSE yang sudah utuh (dipisah delimiter \n\n).
+            const proses = (chunk: string): StreamEvent[] => {
+                const hasil: StreamEvent[] = [];
+                for (const line of chunk.split('\n\n')) {
+                    const trimmed = line.trim();
+                    if (!trimmed.startsWith('data: ')) continue;
+                    const data = trimmed.slice(6);
+                    if (data === '[DONE]') {
+                        sseSelesai = true;
+                        break;
+                    }
+                    try {
+                        hasil.push(JSON.parse(data) as StreamEvent);
+                    } catch {
+                        // Skip malformed SSE lines
+                    }
+                }
+                return hasil;
+            };
 
             while (true) {
                 const { done, value } = await reader.read();
@@ -904,16 +925,21 @@ export class AIEngineService {
                 buffer += decoder.decode(value, { stream: true });
                 const lines = buffer.split('\n\n');
                 buffer = lines.pop() ?? '';
-                for (const line of lines) {
-                    const trimmed = line.trim();
-                    if (!trimmed.startsWith('data: ')) continue;
-                    const data = trimmed.slice(6);
-                    if (data === '[DONE]') return;
-                    try {
-                        yield JSON.parse(data) as StreamEvent;
-                    } catch {
-                        // Skip malformed SSE lines
-                    }
+                for (const event of proses(lines.join('\n\n'))) {
+                    yield event;
+                }
+                if (sseSelesai) return;
+            }
+
+            // FLUSH akhir: event terakhir (mis. 'done' bawa quality_score) bisa
+            // tiba TANPA delimiter '\n\n' sebelum stream ditutup. Tanpa flush
+            // ini buffer sisa terbuang — ditemukan sebagai bug panel kualitas
+            // quality_update tak pernah sampai (2026-10-07).
+            buffer += decoder.decode();
+            if (!sseSelesai && buffer.trim()) {
+                for (const event of proses(buffer)) {
+                    yield event;
+                    if (sseSelesai) return;
                 }
             }
         } catch (error) {
